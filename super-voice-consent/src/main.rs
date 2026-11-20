@@ -19,13 +19,20 @@
 //!
 //! ## Floating-window behavior
 //!
-//! The dialog is rendered as a Wayland **layer-shell** surface
-//! (`Layer::Overlay`, `KeyboardInteractivity::Exclusive`,
-//! `anchor: Anchor::empty()`). Tiling compositors (cosmic-comp, sway,
-//! Hyprland, niri, etc.) treat layer-shell surfaces as overlays — they
-//! are NOT subject to tiling logic — so the consent dialog floats
-//! everywhere by construction. This is the same protocol cosmic-osd
-//! uses for the polkit-auth dialog and the volume/brightness OSDs.
+//! Where the compositor offers it, the dialog is rendered as a Wayland
+//! **layer-shell** surface (`Layer::Overlay`,
+//! `KeyboardInteractivity::Exclusive`, `anchor: Anchor::empty()`). Tiling
+//! compositors (cosmic-comp, sway, Hyprland, niri, etc.) treat layer-shell
+//! surfaces as overlays — they are NOT subject to tiling logic — so the
+//! consent dialog floats everywhere by construction. This is the same
+//! protocol cosmic-osd uses for the polkit-auth dialog and the
+//! volume/brightness OSDs.
+//!
+//! GNOME's compositor has no layer-shell. A layer surface asked of it never
+//! reaches the screen, and the request would sit unanswered until the
+//! daemon gave up on it. So the dialog first asks the compositor which
+//! protocols it offers, and where layer-shell isn't one of them it opens an
+//! ordinary window instead: see [`Surface`].
 //!
 //! For X11 sessions, layer-shell isn't available; libcosmic falls back
 //! to a regular window. On X11 tiling WMs you'd add a per-class float
@@ -58,6 +65,79 @@ const QUESTION_ICON: &[u8] = include_bytes!("../resources/icons/phosphor/questio
 /// Floor for the autosized surface, in logical pixels. Only applies for the
 /// frames before `autosize` measures the dialog.
 const MIN_SURFACE_DIM: f32 = 1.0;
+
+/// The dialog's question, also the title of the window it gets where there
+/// is no layer-shell, for the compositor's window switcher.
+const TITLE: &str = "Allow access to Super Voice?";
+
+/// The size a window opens at, before `autosize` fits it to the dialog.
+const WINDOW_SIZE: Size = Size::new(480.0, 360.0);
+
+/// The layer-shell protocol's global, as compositors advertise it.
+const LAYER_SHELL: &str = "zwlr_layer_shell_v1";
+
+/// How the dialog reaches the screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Surface {
+    /// A layer-shell overlay, above every window: the default, and what
+    /// every compositor with layer-shell gets.
+    Overlay,
+    /// An ordinary window, on a Wayland compositor without layer-shell:
+    /// GNOME. GNOME brings it to the front and gives it the keyboard, over
+    /// whatever window had them, but unlike an overlay it can be covered or
+    /// switched away from. It reaches the screen, where an overlay would
+    /// not.
+    Window,
+}
+
+impl Surface {
+    /// The surface for a compositor that does (`Some(true)`) or doesn't
+    /// (`Some(false)`) offer layer-shell. `None` is no Wayland compositor to
+    /// ask, an X11 session, which keeps the overlay path and libcosmic's own
+    /// fallback for it.
+    fn for_layer_shell(offered: Option<bool>) -> Self {
+        match offered {
+            Some(false) => Self::Window,
+            Some(true) | None => Self::Overlay,
+        }
+    }
+}
+
+/// Whether a compositor advertising `interfaces` offers layer-shell.
+fn offers_layer_shell<'a>(mut interfaces: impl Iterator<Item = &'a str>) -> bool {
+    interfaces.any(|interface| interface == LAYER_SHELL)
+}
+
+/// Ask the Wayland compositor whether it offers layer-shell. `None` when
+/// there is no Wayland compositor to ask.
+fn compositor_offers_layer_shell() -> Option<bool> {
+    use cosmic::cctk::wayland_client::globals::{GlobalListContents, registry_queue_init};
+    use cosmic::cctk::wayland_client::protocol::wl_registry;
+    use cosmic::cctk::wayland_client::{Connection, Dispatch, QueueHandle};
+
+    /// Receives nothing: one look at the globals the compositor lists when
+    /// first asked is all the dialog needs.
+    struct Probe;
+    impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Probe {
+        fn event(
+            _: &mut Self,
+            _: &wl_registry::WlRegistry,
+            _: wl_registry::Event,
+            _: &GlobalListContents,
+            _: &Connection,
+            _: &QueueHandle<Self>,
+        ) {
+        }
+    }
+
+    let connection = Connection::connect_to_env().ok()?;
+    let (globals, _queue) = registry_queue_init::<Probe>(&connection).ok()?;
+    Some(
+        globals
+            .contents()
+            .with_list(|list| offers_layer_shell(list.iter().map(|g| g.interface.as_str()))),
+    )
+}
 
 /// No compositor-side corner clip. The state the surface starts in, and the
 /// only safe one until it has a size — see [`ConsentApp::sync_corner_radius`].
@@ -107,6 +187,8 @@ enum Message {
 
 struct ConsentApp {
     core: cosmic::Core,
+    surface: Surface,
+    /// The overlay the dialog is drawn on, or the window, by its id.
     surface_id: SurfaceId,
     app_name: String,
     scopes: Vec<String>,
@@ -132,6 +214,24 @@ impl cosmic::Application for ConsentApp {
         mut core: cosmic::Core,
         flags: Self::Flags,
     ) -> (Self, cosmic::Task<cosmic::Action<Self::Message>>) {
+        if flags.surface == Surface::Window {
+            // Just the dialog, with no header bar over it: its title is the
+            // question, and Allow and Deny are the only ways out besides
+            // closing the window.
+            core.window.show_headerbar = false;
+            let surface_id = core.main_window_id().unwrap_or(SurfaceId::RESERVED);
+            let mut app = Self {
+                core,
+                surface: Surface::Window,
+                surface_id,
+                app_name: flags.app_name,
+                scopes: flags.scopes,
+                caller: flags.caller,
+            };
+            let task = app.set_window_title(TITLE.to_string(), surface_id);
+            return (app, task);
+        }
+
         let surface_id = SurfaceId::unique();
 
         // We draw a layer-shell overlay, not an application window, so the
@@ -187,6 +287,7 @@ impl cosmic::Application for ConsentApp {
         (
             Self {
                 core,
+                surface: Surface::Overlay,
                 surface_id,
                 app_name: flags.app_name,
                 scopes: flags.scopes,
@@ -197,18 +298,54 @@ impl cosmic::Application for ConsentApp {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        // We have no main window; the surface is rendered by view_window.
-        // Returning a tiny placeholder keeps libcosmic happy on the rare
-        // build flavors that hit this path.
-        cosmic::widget::text::body("").into()
+        // The window, where there is one, is the dialog. With an overlay
+        // there is no main window, and the overlay is rendered by
+        // view_window; returning a tiny placeholder keeps libcosmic happy on
+        // the rare build flavors that hit this path.
+        match self.surface {
+            Surface::Window => self.dialog(),
+            Surface::Overlay => cosmic::widget::text::body("").into(),
+        }
     }
 
     fn view_window(&self, id: SurfaceId) -> Element<'_, Self::Message> {
         if id != self.surface_id {
             return cosmic::widget::text::body("").into();
         }
+        self.dialog()
+    }
 
-        // The layer-shell surface starts transparent; using
+    fn subscription(&self) -> Subscription<Self::Message> {
+        // `Opened` covers the compositor's first configure, `Resized` any
+        // later one — a font-scale change, say. Both feed the corner radius.
+        listen_with(|ev, _status, id| match ev {
+            event::Event::Window(
+                cosmic::iced::window::Event::Opened { size, .. }
+                | cosmic::iced::window::Event::Resized(size),
+            ) => Some(Message::Resized(id, size)),
+            _ => None,
+        })
+    }
+
+    fn update(&mut self, message: Self::Message) -> cosmic::Task<cosmic::Action<Self::Message>> {
+        let decision = match message {
+            Message::Allow => ALLOW,
+            Message::Deny => DENY,
+            Message::Resized(id, size) => return self.sync_corner_radius(id, size),
+        };
+        // Write the decision to stdout and exit; the compositor tears the
+        // surface down when the process goes away. Returning a destroy task
+        // instead would never run — `emit_and_exit` diverges before the
+        // runtime gets a chance to execute it.
+        emit_and_exit(decision);
+    }
+}
+
+impl ConsentApp {
+    /// The dialog: the question, who is asking, what it would allow, and
+    /// Allow and Deny.
+    fn dialog(&self) -> Element<'_, Message> {
+        // The surface starts transparent; using
         // `widget::dialog::dialog()` gives us the proper themed
         // background, padding, and button layout — same widget the
         // cosmic-osd polkit dialog uses.
@@ -226,17 +363,7 @@ impl cosmic::Application for ConsentApp {
         // a page could otherwise put a string of its own choosing in front of
         // the user, leaving `app_name` out is also what stops a site from
         // labelling itself something it is not.
-        let body_text = match &self.caller {
-            Caller::Native { .. } => {
-                let name = if self.app_name.is_empty() {
-                    "An application"
-                } else {
-                    &self.app_name
-                };
-                format!("{name} wants access to Super Voice.")
-            }
-            Caller::Web { origin } => format!("{origin} wants access to Super Voice."),
-        };
+        let body_text = sentence(&self.caller, &self.app_name);
 
         let permission_lines = super_voice_shared::consent::permissions_for_scopes(&self.scopes);
 
@@ -290,7 +417,7 @@ impl cosmic::Application for ConsentApp {
             // read as a rendering bug. Ours is a standalone surface with the
             // desktop behind it, so it takes the frosted treatment instead.
             .is_overlay(false)
-            .title("Allow access to Super Voice?")
+            .title(TITLE)
             .body(body_text)
             .icon(
                 icon::from_svg_bytes(QUESTION_ICON)
@@ -302,42 +429,15 @@ impl cosmic::Application for ConsentApp {
             .primary_action(button::suggested("Allow").on_press(Message::Allow))
             .secondary_action(button::destructive("Deny").on_press(Message::Deny));
 
-        // `autosize` measures the dialog widget and resizes the
-        // layer-shell surface to match. Without it the surface stays
-        // 0×0 and the dialog is invisible.
+        // `autosize` measures the dialog widget and resizes the surface to
+        // match. Without it an overlay stays 0×0 and the dialog is
+        // invisible, and a window keeps the size it opened at.
         cosmic::widget::autosize::autosize(dialog_widget, AUTOSIZE_ID.clone())
             .min_width(MIN_SURFACE_DIM)
             .min_height(MIN_SURFACE_DIM)
             .into()
     }
 
-    fn subscription(&self) -> Subscription<Self::Message> {
-        // `Opened` covers the compositor's first configure, `Resized` any
-        // later one — a font-scale change, say. Both feed the corner radius.
-        listen_with(|ev, _status, id| match ev {
-            event::Event::Window(
-                cosmic::iced::window::Event::Opened { size, .. }
-                | cosmic::iced::window::Event::Resized(size),
-            ) => Some(Message::Resized(id, size)),
-            _ => None,
-        })
-    }
-
-    fn update(&mut self, message: Self::Message) -> cosmic::Task<cosmic::Action<Self::Message>> {
-        let decision = match message {
-            Message::Allow => ALLOW,
-            Message::Deny => DENY,
-            Message::Resized(id, size) => return self.sync_corner_radius(id, size),
-        };
-        // Write the decision to stdout and exit; the compositor tears the
-        // surface down when the process goes away. Returning a destroy task
-        // instead would never run — `emit_and_exit` diverges before the
-        // runtime gets a chance to execute it.
-        emit_and_exit(decision);
-    }
-}
-
-impl ConsentApp {
     /// Match the compositor's corner clip to the rounded border the dialog
     /// widget draws, now that the surface has a size to measure against.
     ///
@@ -352,7 +452,9 @@ impl ConsentApp {
         id: SurfaceId,
         size: Size,
     ) -> cosmic::Task<cosmic::Action<Message>> {
-        if id != self.surface_id {
+        // Only an overlay is clipped by cosmic-comp's corner protocol. A
+        // window's corners are its own to draw.
+        if id != self.surface_id || self.surface != Surface::Overlay {
             return cosmic::Task::none();
         }
         // Degenerate sizes are the pre-configure state; stay square. The
@@ -377,6 +479,61 @@ impl ConsentApp {
             }),
         )
         .discard()
+    }
+}
+
+/// A program that runs other people's code inside its own process: GNOME
+/// Shell runs every extension in `gnome-shell`. The daemon knows a caller by
+/// its executable, so for one of these it knows the host and nothing more:
+/// any of the code it runs may be asking, under any name. The dialog names
+/// the host, which it can vouch for, and not the name in the request.
+struct Host {
+    /// The executable's file name.
+    binary: &'static str,
+    /// What the user knows it as.
+    name: &'static str,
+}
+
+const HOSTS: &[Host] = &[Host {
+    binary: "gnome-shell",
+    name: "GNOME Shell",
+}];
+
+impl Caller {
+    /// The host this caller is, when it is one. A sandboxed caller never is:
+    /// its path names a file inside its sandbox.
+    fn host(&self) -> Option<&'static Host> {
+        let Caller::Native {
+            exe_path,
+            flatpak_app_id: None,
+        } = self
+        else {
+            return None;
+        };
+        // The kernel marks a binary replaced since it started, as after an
+        // upgrade, with ` (deleted)`.
+        let path = exe_path.strip_suffix(" (deleted)").unwrap_or(exe_path);
+        let name = std::path::Path::new(path).file_name()?.to_str()?;
+        HOSTS.iter().find(|host| host.binary == name)
+    }
+}
+
+/// The sentence naming who asks. A host is named for what it is, never by
+/// the name in the request, which anything it runs could send.
+fn sentence(caller: &Caller, app_name: &str) -> String {
+    if let Some(host) = caller.host() {
+        return format!("{} wants access to Super Voice.", host.name);
+    }
+    match caller {
+        Caller::Native { .. } => {
+            let name = if app_name.is_empty() {
+                "An application"
+            } else {
+                app_name
+            };
+            format!("{name} wants access to Super Voice.")
+        }
+        Caller::Web { origin } => format!("{origin} wants access to Super Voice."),
     }
 }
 
@@ -531,10 +688,14 @@ struct AuthRequestPayload {
     app_name: String,
     scopes: Vec<String>,
     caller: Caller,
+    /// How the dialog reaches the screen: decided once, before the app
+    /// starts, because a window needs settings an overlay doesn't.
+    surface: Surface,
 }
 
-fn read_env() -> AuthRequestPayload {
+fn read_env(surface: Surface) -> AuthRequestPayload {
     AuthRequestPayload {
+        surface,
         app_name: request_var(contract::APP_NAME).unwrap_or_else(|_| "<unknown app>".to_string()),
         scopes: request_var(contract::SCOPES)
             .unwrap_or_default()
@@ -572,14 +733,25 @@ fn main() -> cosmic::iced::Result {
     spawn_dismiss_timer();
     maybe_spawn_auto_approve_timer();
 
-    let payload = read_env();
+    let surface = Surface::for_layer_shell(compositor_offers_layer_shell());
+    log::info!("Showing the consent dialog as {surface:?}");
+    let payload = read_env(surface);
 
-    // `no_main_window(true)` because we use a layer-shell surface
-    // instead of the standard auto-created xdg_toplevel main window.
-    // The surface is created from `init()` via `get_layer_surface(...)`.
-    let settings = cosmic::app::Settings::default()
-        .no_main_window(true)
-        .exit_on_close(true);
+    let settings = match surface {
+        // `no_main_window(true)` because we use a layer-shell surface
+        // instead of the standard auto-created xdg_toplevel main window.
+        // The surface is created from `init()` via `get_layer_surface(...)`.
+        Surface::Overlay => cosmic::app::Settings::default()
+            .no_main_window(true)
+            .exit_on_close(true),
+        // The main window is the dialog, fitted to it by `autosize` rather
+        // than resized by hand. It stays transparent, so the corners outside
+        // the dialog's rounded border show the desktop behind it.
+        Surface::Window => cosmic::app::Settings::default()
+            .size(WINDOW_SIZE)
+            .resizable(None)
+            .exit_on_close(true),
+    };
 
     let result = cosmic::app::run::<ConsentApp>(settings, payload);
 
@@ -591,4 +763,85 @@ fn main() -> cosmic::iced::Result {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Caller, Surface, offers_layer_shell, sentence};
+
+    fn native(exe_path: &str) -> Caller {
+        Caller::Native {
+            exe_path: exe_path.into(),
+            flatpak_app_id: None,
+        }
+    }
+
+    /// GNOME Shell runs every extension in one process, so the daemon can't
+    /// tell which asks, or vouch for the name it gives. The dialog names
+    /// GNOME Shell, which it can vouch for.
+    #[test]
+    fn a_gnome_shell_caller_is_named_gnome_shell() {
+        for exe in ["/usr/bin/gnome-shell", "/usr/bin/gnome-shell (deleted)"] {
+            assert_eq!(
+                sentence(&native(exe), "Super Voice for GNOME"),
+                "GNOME Shell wants access to Super Voice."
+            );
+        }
+    }
+
+    /// Every other program is named as before: by the name it gives, with
+    /// its executable under it.
+    #[test]
+    fn other_callers_keep_their_wording() {
+        for exe in [
+            "/usr/local/bin/super-voice-app",
+            "/opt/gnome-shell-tools/helper",
+        ] {
+            let caller = native(exe);
+            assert_eq!(
+                sentence(&caller, "Notes"),
+                "Notes wants access to Super Voice."
+            );
+        }
+        // A flatpak's path is inside its sandbox, so it names no host.
+        let sandboxed = Caller::Native {
+            exe_path: "/app/bin/gnome-shell".into(),
+            flatpak_app_id: Some("org.example.Shell".into()),
+        };
+        assert_eq!(
+            sentence(&sandboxed, "Shell"),
+            "Shell wants access to Super Voice."
+        );
+        let web = Caller::Web {
+            origin: "https://example.com".into(),
+        };
+        assert_eq!(
+            sentence(&web, "ignored"),
+            "https://example.com wants access to Super Voice."
+        );
+    }
+
+    /// GNOME lists no layer-shell; cosmic-comp, sway and the rest do.
+    #[test]
+    fn layer_shell_is_found_among_the_compositors_globals() {
+        let gnome = [
+            "wl_compositor",
+            "xdg_wm_base",
+            "wl_seat",
+            "xdg_activation_v1",
+        ];
+        let cosmic = ["wl_compositor", "xdg_wm_base", "zwlr_layer_shell_v1"];
+        assert!(!offers_layer_shell(gnome.into_iter()));
+        assert!(offers_layer_shell(cosmic.into_iter()));
+    }
+
+    /// Only a compositor known to lack layer-shell gets a window. Where
+    /// there's no Wayland compositor to ask, an X11 session, the overlay path
+    /// and libcosmic's own fallback for it stay as they were.
+    #[test]
+    fn only_a_compositor_without_layer_shell_gets_a_window() {
+        assert_eq!(Surface::for_layer_shell(Some(false)), Surface::Window);
+        assert_eq!(Surface::for_layer_shell(Some(true)), Surface::Overlay);
+        assert_eq!(Surface::for_layer_shell(None), Surface::Overlay);
+    }
 }

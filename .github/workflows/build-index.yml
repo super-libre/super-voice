@@ -21,19 +21,22 @@ concurrency:
 
 jobs:
   build:
-    uses: super-libre/super-engine/.github/workflows/build-index.yml@feddf88f624ac5725eadb8b59178e6b4b63c3c93
+    uses: super-libre/super-engine/.github/workflows/build-index.yml@58bfe8a8acef6851294c8528bb6e32897a13bebb
     with:
       indexer: super-voice-indexer
       registry-types: super-voice-registry-types
 
-  # Super STT installs read the index from github.io/super-stt/, which went
-  # away when the repo became super-voice: GitHub doesn't redirect a renamed
-  # repo's Pages site. The user site jorge-menjivar/jorge-menjivar.github.io
-  # serves copies there, and this job keeps them in step with the ones just
-  # published. Its deploy key is the SUPER_STT_PAGES_DEPLOY_KEY secret.
+  # Released installs read the index from jorge-menjivar.github.io, where
+  # this repo's Pages site was: GitHub doesn't redirect a renamed or moved
+  # repo's site. Super STT reads it under /super-stt/, from before the repo
+  # became super-voice. Super Voice betas from before the move to super-libre
+  # read it under /super-voice/. The user site
+  # jorge-menjivar/jorge-menjivar.github.io serves copies at both, and this
+  # job keeps them in step with the ones just published. Its deploy key is the
+  # SUPER_STT_PAGES_DEPLOY_KEY secret.
   mirror:
     needs: build
-    if: github.repository == 'jorge-menjivar/super-voice'
+    if: github.repository == 'super-libre/super-voice'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,11 +55,14 @@ jobs:
           repository: jorge-menjivar/jorge-menjivar.github.io
           ssh-key: ${{ secrets.SUPER_STT_PAGES_DEPLOY_KEY }}
           path: mirror
-      - name: Copy the index and schemas to super-stt/
+      - name: Copy the index and schemas to super-stt/ and super-voice/
         run: |
-          cp site/index.json site/backend.schema.json site/registry.schema.json mirror/super-stt/
+          for dir in super-stt super-voice; do
+            mkdir -p "mirror/$dir"
+            cp site/index.json site/backend.schema.json site/registry.schema.json "mirror/$dir/"
+          done
           cd mirror
-          git add super-stt
+          git add super-stt super-voice
           if git diff --cached --quiet; then
             echo "The copies are current."
             exit 0

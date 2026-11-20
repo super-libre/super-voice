@@ -4,8 +4,8 @@
 #
 # Documented entry point:
 #
-#   curl -sSL https://raw.githubusercontent.com/jorge-menjivar/super-voice/main/install.sh | bash
-#   curl -sSL https://raw.githubusercontent.com/jorge-menjivar/super-voice/main/install.sh | bash -s -- --beta
+#   curl -sSL https://raw.githubusercontent.com/super-libre/super-voice/main/install.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/super-libre/super-voice/main/install.sh | bash -s -- --beta
 #
 # This script is deliberately tiny: it detects the architecture, resolves
 # the requested release, downloads the `super-voice-install` binary attached
@@ -35,7 +35,7 @@
 # without making a network call or running a real install. See the guard at
 # the bottom of the file for how that source-only mode is triggered.
 
-GITHUB_REPO="jorge-menjivar/super-voice"
+GITHUB_REPO="super-libre/super-voice"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'

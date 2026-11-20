@@ -54,7 +54,7 @@
     # entirely — by inventing a keycode for it, which lands above 255. X11
     # carries keycodes in one byte, so XWayland discards those and the
     # character never reaches an X11 app: `I think I am OK at NASA` arrived as
-    # ` think  am  at ` (jorge-menjivar/super-stt#432). The branch types
+    # ` think  am  at ` (super-libre/super-voice#432). The branch types
     # capitals as Shift plus the real key and binds off-layout characters to
     # keys the keymap already has. It also presses the Shift key itself around
     # a capital: cosmic-comp 1.10 loses the release of a Shift that is only
@@ -145,35 +145,35 @@
     # `just pin-engine <rev>`.
     super-engine-client      = {
       git = "https://github.com/super-libre/super-engine",
-      rev = "feddf88f624ac5725eadb8b59178e6b4b63c3c93",
+      rev = "58bfe8a8acef6851294c8528bb6e32897a13bebb",
     }
     super-engine-daemon      = {
       git = "https://github.com/super-libre/super-engine",
-      rev = "feddf88f624ac5725eadb8b59178e6b4b63c3c93",
+      rev = "58bfe8a8acef6851294c8528bb6e32897a13bebb",
     }
     super-engine-forge       = {
       git = "https://github.com/super-libre/super-engine",
-      rev = "feddf88f624ac5725eadb8b59178e6b4b63c3c93",
+      rev = "58bfe8a8acef6851294c8528bb6e32897a13bebb",
     }
     super-engine-indexer     = {
       git = "https://github.com/super-libre/super-engine",
-      rev = "feddf88f624ac5725eadb8b59178e6b4b63c3c93",
+      rev = "58bfe8a8acef6851294c8528bb6e32897a13bebb",
     }
     super-engine-installer   = {
       git = "https://github.com/super-libre/super-engine",
-      rev = "feddf88f624ac5725eadb8b59178e6b4b63c3c93",
+      rev = "58bfe8a8acef6851294c8528bb6e32897a13bebb",
     }
     super-engine-protocol    = {
       git = "https://github.com/super-libre/super-engine",
-      rev = "feddf88f624ac5725eadb8b59178e6b4b63c3c93",
+      rev = "58bfe8a8acef6851294c8528bb6e32897a13bebb",
     }
     super-engine-spec        = {
       git = "https://github.com/super-libre/super-engine",
-      rev = "feddf88f624ac5725eadb8b59178e6b4b63c3c93",
+      rev = "58bfe8a8acef6851294c8528bb6e32897a13bebb",
     }
     super-engine-test-daemon = {
       git = "https://github.com/super-libre/super-engine",
-      rev = "feddf88f624ac5725eadb8b59178e6b4b63c3c93",
+      rev = "58bfe8a8acef6851294c8528bb6e32897a13bebb",
     }
     thiserror                = "2.0"
     tokio                    = {

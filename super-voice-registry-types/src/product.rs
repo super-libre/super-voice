@@ -19,7 +19,7 @@ use super_engine_spec::product::{SchemaNames, generation_from_str};
 
 /// Where Super Voice's backend registry is published, for every daemon that
 /// reads it: this repo's Pages site.
-pub const INDEX_URL: &str = "https://jorge-menjivar.github.io/super-voice/index.json";
+pub const INDEX_URL: &str = "https://super-libre.github.io/super-voice/index.json";
 
 /// Super Voice's names: everything its daemon and its clients meet on, from
 /// the socket to the scopes a token can carry. See [`ProductSpec`].
@@ -35,7 +35,7 @@ pub static SUPER_VOICE: ProductSpec = ProductSpec {
     // their contract variables under those products' names.
     former_env_prefixes: &["SUPER_STT", "SUPER_TTS"],
     tcp_port: 7300,
-    repo: "github.com/jorge-menjivar/super-voice",
+    repo: "github.com/super-libre/super-voice",
     index_url: INDEX_URL,
     scopes: &[
         "transcribe",
@@ -639,9 +639,9 @@ impl Product for Voice {
     ];
 
     const SCHEMA: SchemaNames = SchemaNames {
-        backend_id: "https://jorge-menjivar.github.io/super-voice/backend.schema.json",
+        backend_id: "https://super-libre.github.io/super-voice/backend.schema.json",
         backend_title: "Super Voice backend manifest (backend.toml)",
-        registry_id: "https://jorge-menjivar.github.io/super-voice/registry.schema.json",
+        registry_id: "https://super-libre.github.io/super-voice/registry.schema.json",
         registry_title: "Super Voice backend registry",
     };
 

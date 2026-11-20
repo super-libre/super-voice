@@ -20,7 +20,7 @@ A JSON Schema for this file is generated from the shared manifest types in
 Voice's own fields in `super-voice-registry-types`, and published to GitHub
 Pages by CI (it is not committed to the repo). Backends in other repositories
 reference it at
-`https://jorge-menjivar.github.io/super-voice/backend.schema.json`.
+`https://super-libre.github.io/super-voice/backend.schema.json`.
 Add that URL as a `#:schema` comment line at the top of a `backend.toml` to get
 autocomplete and validation in taplo-based editors. Generate it locally with
 `just gen-schemas`, which writes to a gitignored `target/schemas/`.

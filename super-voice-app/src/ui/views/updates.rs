@@ -17,7 +17,7 @@ use crate::ui::messages::{Message, UpdateMessage};
 use crate::ui::press_guard::press_guard;
 
 const INSTALL_SH_URL: &str =
-    "https://raw.githubusercontent.com/jorge-menjivar/super-voice/main/install.sh";
+    "https://raw.githubusercontent.com/super-libre/super-voice/main/install.sh";
 
 /// A tag is a prerelease iff it carries a semver `-<identifier>` suffix
 /// (e.g. `v0.2.3-beta.1`) — the same rule `updater::run_update_stream` uses

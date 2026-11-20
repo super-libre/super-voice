@@ -191,6 +191,7 @@ mod tests {
             daemon: true,
             app: false,
             applet: false,
+            extension: false,
         }
     }
 
@@ -223,6 +224,7 @@ mod tests {
             daemon: false,
             app: true,
             applet: false,
+            extension: false,
         };
         assert!(plan(app_only, true, true).is_empty());
     }

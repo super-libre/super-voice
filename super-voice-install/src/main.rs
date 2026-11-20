@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! `super-voice-install`: installs and updates Super Voice. The installer is
 //! `super_engine_installer`'s; what is here is what makes it Super Voice's:
-//! its two apps, what Super STT and Super TTS installs left to retire, and
-//! its COSMIC shortcuts.
+//! its app, its COSMIC applet and GNOME Shell extension, what Super STT and
+//! Super TTS installs left to retire, and its COSMIC shortcuts.
 
 mod shortcut;
 
-use super_engine_installer::{Installer, Retired};
+use super_engine_installer::{CosmicApplet, GnomeExtension, Installer, Retired};
+use super_engine_protocol::SHARED_APPLET;
 use super_voice_registry_types::product::{SUPER_VOICE, Voice};
 
 static INSTALLER: Installer = Installer {
@@ -14,9 +15,18 @@ static INSTALLER: Installer = Installer {
     user_agent: Voice::USER_AGENT,
     wrapper_usage: "Used by keyboard shortcuts (e.g. Super+Space → \"voice record --write\").",
     after_install: Some(shortcut::after_install),
-    // The daemon serves AI assistants itself, at /v1/mcp.
     extra_binaries: &[],
     apps: &["super-voice-app"],
+    // The applet the daemon trusts by name, from its own releases.
+    cosmic_applet: Some(CosmicApplet {
+        repo: "github.com/super-libre/super-cosmic-applet",
+        name: SHARED_APPLET,
+    }),
+    gnome_extension: Some(GnomeExtension {
+        repo: "github.com/super-libre/super-gnome-shell-extension",
+        uuid: "super-voice@super-libre.github.io",
+        name: "super-gnome-shell-extension",
+    }),
     retired: RETIRED,
 };
 
@@ -84,7 +94,6 @@ mod tests {
             // The shared applet: super-engine's SHARED_APPLET.
             "super-cosmic-applet".to_string(),
         ];
-        installs.extend(INSTALLER.extra_binaries.iter().map(ToString::to_string));
         installs.extend(INSTALLER.apps.iter().map(ToString::to_string));
         for retired in RETIRED
             .binaries

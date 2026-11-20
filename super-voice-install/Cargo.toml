@@ -4,12 +4,14 @@
     authors.workspace = true
     edition.workspace = true
     description = "Installer and self-updater for Super Voice"
-    repository = "https://github.com/jorge-menjivar/super-voice"
+    repository = "https://github.com/super-libre/super-voice"
     license = "GPL-3.0-only"
 
 [dependencies]
     log.workspace = true
     super-engine-installer.workspace = true
+    # The applet's name, which the daemon trusts.
+    super-engine-protocol.workspace = true
     super-voice-registry-types = { path = "../super-voice-registry-types" }
     # The COSMIC shortcuts' rules, shared with the settings app's Shortcuts page.
     super-voice-shared = { path = "../super-voice-shared" }

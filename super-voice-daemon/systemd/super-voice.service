@@ -1,6 +1,6 @@
 [Unit]
 Description=Super Voice daemon - speech to text and text to speech
-Documentation=https://github.com/jorge-menjivar/super-voice
+Documentation=https://github.com/super-libre/super-voice
 After=pipewire.service pulseaudio.service graphical-session.target
 # Stopped with the desktop session, and started again by the next one (see
 # WantedBy). Never Requires= or Wants= the session target: that target stops

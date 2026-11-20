@@ -142,7 +142,7 @@ issued HTTPS via `wasi:http`, constrained by per-backend `allowed_hosts`.
 
 After the registry work, the daemon process itself opens HTTPS to:
 
-- `jorge-menjivar.github.io` — registry index (`index.json`).
+- `super-libre.github.io` — registry index (`index.json`).
 - `api.github.com` — Custom-repo install flow only (latest-release lookup,
   `backend.toml` fetch).
 - `objects.githubusercontent.com` and `github.com` — release asset

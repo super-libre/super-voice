@@ -6,7 +6,7 @@
 # replaced left behind, regardless of which channel installed them.
 #
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/jorge-menjivar/super-voice/main/uninstall.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/super-libre/super-voice/main/uninstall.sh | bash
 #   bash uninstall.sh
 #
 # What gets removed:
@@ -16,6 +16,8 @@
 #   - What Super STT and Super TTS installed: their daemons, CLIs, wrappers
 #     (`stt`, `tts`), consent helpers, installers and applets, in
 #     /usr/local/bin and the legacy ~/.local/bin
+#   - The GNOME Shell extension, turned off first so GNOME Shell drops it from
+#     the top bar without a relogin
 #   - Desktop entries, icons, metainfo (system + per-user)
 #   - Runtime socket dirs under $XDG_RUNTIME_DIR
 #   - systemd user units (/usr/lib/systemd/user + ~/.config/systemd/user)
@@ -57,6 +59,8 @@ SYSTEM_ICON_DIR="$SYSTEM_PREFIX/share/icons/hicolor/scalable/apps"
 SYSTEM_ICON_THEME_DIR="$SYSTEM_PREFIX/share/icons/hicolor"
 SYSTEM_METAINFO_DIR="$SYSTEM_PREFIX/share/metainfo"
 SYSTEM_SYSTEMD_DIR="/usr/lib/systemd/user"
+GNOME_EXTENSION_UUID="super-voice@super-libre.github.io"
+SYSTEM_GNOME_EXTENSION_DIR="$SYSTEM_PREFIX/share/gnome-shell/extensions/$GNOME_EXTENSION_UUID"
 
 # Legacy per-user install locations.
 LEGACY_BIN_DIR="$HOME/.local/bin"
@@ -140,10 +144,11 @@ done
 for service in "${SERVICES[@]}"; do
     [ -e "$SYSTEM_SYSTEMD_DIR/$service.service" ] && SYSTEM_INSTALL_PRESENT=true
 done
+[ -e "$SYSTEM_GNOME_EXTENSION_DIR" ] && SYSTEM_INSTALL_PRESENT=true
 
 # Whether a COSMIC applet was installed, captured here for the same reason:
 # it decides whether the panel needs restarting once the files are gone
-# (step 6), and by then there is nothing left to probe. Both the system and
+# (step 7), and by then there is nothing left to probe. Both the system and
 # the legacy per-user layouts count, and the desktop entries are probed as
 # well as the binary so an install missing one of the two still registers.
 APPLET_INSTALLED=false
@@ -181,7 +186,18 @@ for bin in "${BINARIES[@]}"; do
     done
 done
 
-# 3. Desktop entries (system + legacy per-user).
+# 3. The GNOME Shell extension. Turning it off first takes it out of the
+#    running shell, and off its enabled list, so the top bar drops it now
+#    rather than at the next login.
+if [ -d "$SYSTEM_GNOME_EXTENSION_DIR" ]; then
+    if command -v gnome-extensions &> /dev/null; then
+        gnome-extensions disable "$GNOME_EXTENSION_UUID" 2>/dev/null || true
+    fi
+    rm -rf "${SYSTEM_GNOME_EXTENSION_DIR:?}" 2>/dev/null || $SUDO rm -rf "${SYSTEM_GNOME_EXTENSION_DIR:?}"
+    print_info "Removed the GNOME Shell extension from $SYSTEM_GNOME_EXTENSION_DIR"
+fi
+
+# 4. Desktop entries (system + legacy per-user).
 print_info "Removing desktop entries..."
 for name in "${DESKTOPS[@]}"; do
     for dir in "$SYSTEM_DESKTOP_DIR" "$DESKTOP_DIR"; do
@@ -189,7 +205,7 @@ for name in "${DESKTOPS[@]}"; do
     done
 done
 
-# 4. Icons (system hicolor, legacy hicolor-scalable, and the flat
+# 5. Icons (system hicolor, legacy hicolor-scalable, and the flat
 #    layout some old versions of the script used).
 print_info "Removing icons..."
 for name in "${ICONS[@]}"; do
@@ -198,14 +214,14 @@ for name in "${ICONS[@]}"; do
     done
 done
 
-# 5. metainfo (system + legacy per-user)
+# 6. metainfo (system + legacy per-user)
 for app in "${APPS[@]}"; do
     for dir in "$SYSTEM_METAINFO_DIR" "$METAINFO_DIR"; do
         remove_path "$dir/$app.metainfo.xml" && print_info "Removed $dir/$app.metainfo.xml"
     done
 done
 
-# 6. Refresh icon / desktop caches so the system reflects the removal.
+# 7. Refresh icon / desktop caches so the system reflects the removal.
 if command -v gtk-update-icon-cache &> /dev/null; then
     gtk-update-icon-cache -f "$ICON_DIR_FLAT/hicolor" 2>/dev/null || true
     if [ "$SYSTEM_INSTALL_PRESENT" = true ]; then
@@ -235,7 +251,7 @@ pkill -f '^cosmic-app-library$' 2>/dev/null || true
 pkill -f '^cosmic-launcher$' 2>/dev/null || true
 pkill -f '^pop-launcher( |$)' 2>/dev/null || true
 
-# 7. COSMIC custom keyboard shortcuts. Remove the file only if every entry
+# 8. COSMIC custom keyboard shortcuts. Remove the file only if every entry
 #    is ours (dictation, and reading aloud); otherwise the user has
 #    other custom bindings we shouldn't disturb. They can hand-edit if they
 #    want a finer surgical removal.
@@ -254,8 +270,8 @@ if [ -f "$COSMIC_SHORTCUTS" ] && grep -Eq "$ours" "$COSMIC_SHORTCUTS"; then
     fi
 fi
 
-# 8. Runtime socket dirs (sockets will be cleared when the daemons stop in
-#    step 10).
+# 9. Runtime socket dirs (sockets will be cleared when the daemons stop in
+#    step 11).
 for name in voice stt tts; do
     if [ -d "$RUNTIME_DIR/$name" ]; then
         rm -rf "${RUNTIME_DIR:?}/$name"
@@ -263,7 +279,7 @@ for name in voice stt tts; do
     fi
 done
 
-# 9. systemd unit files (system + legacy per-user) + reload so systemd
+# 10. systemd unit files (system + legacy per-user) + reload so systemd
 #    forgets the units.
 for service in "${SERVICES[@]}"; do
     for unit in \
@@ -277,7 +293,7 @@ if command -v systemctl &> /dev/null; then
     systemctl --user daemon-reload 2>/dev/null || true
 fi
 
-# 10. Stop the daemons LAST. Doing it here means an in-flight transcription
+# 11. Stop the daemons LAST. Doing it here means an in-flight transcription
 #     or utterance has had until this point to either complete or be
 #     force-killed. We use `stop` (clean shutdown) and fall back to `kill`
 #     if the process is still alive.

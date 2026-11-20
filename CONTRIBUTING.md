@@ -28,7 +28,7 @@ Thank you for your interest in contributing to Super Voice! This document provid
 ### Clone and build
 
 ```bash
-git clone https://github.com/jorge-menjivar/super-voice.git
+git clone https://github.com/super-libre/super-voice.git
 cd super-voice
 
 just install            # build and install everything, wired to systemd
