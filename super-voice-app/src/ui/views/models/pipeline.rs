@@ -25,6 +25,7 @@ use crate::state::model_operations::ModelOperationState;
 use crate::state::{BlockStage, Stage};
 use crate::ui::icons;
 use crate::ui::messages::{Message, ModelsPageMessage};
+use crate::ui::views::common::status_dot;
 
 /// The name a stage goes by on its step and above its card.
 pub(super) fn stage_name(stage: Stage) -> String {
@@ -327,7 +328,7 @@ fn step(app: &AppModel, stage: Stage, selected: Stage) -> Element<'_, Message> {
         detail.into()
     };
     let mut content = column![
-        row![label, super::status_dot(stage_status(app, stage), 8.0)].align_y(Alignment::Center),
+        row![label, status_dot(stage_status(app, stage).color(), 8.0)].align_y(Alignment::Center),
         text::body(summary.title).font(cosmic::font::semibold()),
         detail,
     ]

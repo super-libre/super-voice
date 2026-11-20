@@ -246,6 +246,18 @@ pub(super) enum ModelStatus {
 }
 
 impl ModelStatus {
+    /// The color of this state's dot: gray for no backend, yellow for nothing
+    /// loaded or loading, green for ready or idle, red for setup incomplete,
+    /// not running, or no voice to speak in.
+    pub(super) fn color(self) -> fn(&cosmic::Theme) -> cosmic::iced::Color {
+        match self {
+            Self::None => |t| t.cosmic().palette.neutral_5.into(),
+            Self::Blocked | Self::Failed | Self::NoVoice => |t| t.cosmic().destructive.base.into(),
+            Self::NotLoaded => |t| t.cosmic().warning.base.into(),
+            Self::Ready | Self::Idle => |t| t.cosmic().success.base.into(),
+        }
+    }
+
     /// The hover text that names this state, after the feature's name.
     pub(super) fn detail(self) -> String {
         match self {
