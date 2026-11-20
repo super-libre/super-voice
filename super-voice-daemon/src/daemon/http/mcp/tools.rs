@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The tools: `speak` and `listen`, run on the daemon itself.
+//! The tools: `speak` and `listen`, and the plugin's `stop`, `status`,
+//! `announce` and `session`, run on the daemon itself.
+//!
+//! What a session speaks and records is its own ([`Sessions`]): `stop` and
+//! `status` see only the caller's.
 //!
 //! A tool runs on a task of its own, so it ends as the daemon's work does,
 //! never midway because its client went away. It is cancelled through its
@@ -14,7 +18,9 @@
 //!    the same, so the microphone is freed as at any other stop.
 
 use super::protocol::Tool;
+use crate::assistants::sessions::{Sessions, Who};
 use crate::daemon::events::Topic;
+use crate::daemon::recording::Stopped;
 use crate::daemon::types::SuperSTTDaemon;
 use crate::output::typer::Typer;
 use std::sync::Arc;
@@ -31,31 +37,97 @@ use tokio_util::sync::CancellationToken;
 /// besides when speech starts or stops.
 const TICK: Duration = Duration::from_millis(100);
 
+/// Who a call is for: its session, and whether the user lets its assistant
+/// announce.
+pub(crate) struct Caller {
+    pub(crate) who: Who,
+    pub(crate) announces: bool,
+}
+
 /// What `tool` comes to: its text, or the error the model sees. `None` when
 /// it was cancelled, which is answered with nothing.
 pub(crate) async fn run(
     daemon: &Arc<SuperSTTDaemon>,
     tool: Tool,
+    caller: &Caller,
     cancel: &CancellationToken,
 ) -> Option<Result<String, String>> {
+    let who = &caller.who;
     match tool {
-        Tool::Speak { text } => speak(daemon, text, cancel).await,
-        Tool::Listen { question } => listen(daemon, question, cancel).await,
+        Tool::Speak { text } => speak(daemon, who, text, cancel).await,
+        Tool::Listen { question } => listen(daemon, who, question, cancel).await,
+        Tool::Stop => Some(Ok(stop(daemon, who).await)),
+        Tool::Status => Some(Ok(status(daemon, who))),
+        Tool::Announce { text } if caller.announces => speak(daemon, who, text, cancel).await,
+        Tool::Announce { .. } => Some(Ok(
+            "Not said: the user turned announcing off for this assistant.".to_string(),
+        )),
+        Tool::Session { started } => {
+            let sessions = &daemon.assistants.sessions;
+            Some(Ok(if started {
+                sessions.open(who);
+                "Started.".to_string()
+            } else {
+                sessions.close(who);
+                "Ended.".to_string()
+            }))
+        }
     }
 }
 
 async fn speak(
     daemon: &Arc<SuperSTTDaemon>,
+    who: &Who,
     text: String,
     cancel: &CancellationToken,
 ) -> Option<Result<String, String>> {
     let mut spoken = start_speaking(daemon, text);
     tokio::select! {
         biased;
-        joined = &mut spoken => Some(spoken_outcome(joined).map(|_| "Speaking.".to_string())),
+        joined = &mut spoken => Some(spoken_outcome(joined).map(|utterance| {
+            if let Some(utterance) = utterance {
+                daemon.assistants.sessions.spoke(who, utterance);
+            }
+            "Speaking.".to_string()
+        })),
         // The speech goes on: it is on a task of its own.
         () = cancel.cancelled() => None,
     }
+}
+
+/// Stop `who`'s own speech, if it still plays, and end its own recording,
+/// which is transcribed all the same. Another session's are left alone.
+async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
+    let sessions = &daemon.assistants.sessions;
+    let mut stopped = Vec::new();
+    if let Some(utterance) = sessions.utterance(who)
+        && daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
+    {
+        silence_if_speaking(daemon, &utterance).await;
+        stopped.push("speech");
+    }
+    if sessions.is_recording(who)
+        && matches!(
+            daemon.recording.stop(),
+            Stopped::Signalled | Stopped::Cancelled
+        )
+    {
+        stopped.push("recording");
+    }
+    if stopped.is_empty() {
+        "Nothing of this session's was playing or recording.".to_string()
+    } else {
+        format!("Stopped its {}.", stopped.join(" and "))
+    }
+}
+
+/// Whether `who`'s own speech plays, and whether it records, as JSON.
+fn status(daemon: &SuperSTTDaemon, who: &Who) -> String {
+    let sessions = &daemon.assistants.sessions;
+    let speaking = sessions.utterance(who).is_some_and(|utterance| {
+        daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
+    });
+    serde_json::json!({ "speaking": speaking, "listening": sessions.is_recording(who) }).to_string()
 }
 
 /// `text` spoken on a task of its own, so it is never dropped midway: a
@@ -103,11 +175,12 @@ enum Asked {
 
 async fn listen(
     daemon: &Arc<SuperSTTDaemon>,
+    who: &Who,
     question: Option<String>,
     cancel: &CancellationToken,
 ) -> Option<Result<String, String>> {
     if let Some(question) = question {
-        match ask(daemon, question, cancel).await {
+        match ask(daemon, who, question, cancel).await {
             Asked::Done => {}
             Asked::Failed(e) => return Some(Err(e)),
             Asked::Cancelled => return None,
@@ -118,6 +191,7 @@ async fn listen(
     }
     // Never the toggling `record` command: that would stop someone else's
     // recording. This one reserves the microphone or is refused.
+    let _recording = Sessions::recording(&daemon.assistants.sessions, who);
     let mut typer = Typer::without_keyboard();
     let take = daemon.handle_record_internal(
         &mut typer,
@@ -170,7 +244,12 @@ fn heard(response: DaemonResponse) -> Result<String, String> {
 
 /// Speak `question`, and wait for it to finish playing, so the recording
 /// after it hears the answer and not the question.
-async fn ask(daemon: &Arc<SuperSTTDaemon>, question: String, cancel: &CancellationToken) -> Asked {
+async fn ask(
+    daemon: &Arc<SuperSTTDaemon>,
+    who: &Who,
+    question: String,
+    cancel: &CancellationToken,
+) -> Asked {
     // Before speaking, so the question's end is never missed.
     let mut states = daemon.events.subscribe(Topic::SpeakingState);
     let mut spoken = start_speaking(daemon, question);
@@ -190,6 +269,7 @@ async fn ask(daemon: &Arc<SuperSTTDaemon>, question: String, cancel: &Cancellati
     let Some(utterance) = utterance else {
         return Asked::Done;
     };
+    daemon.assistants.sessions.spoke(who, utterance.clone());
     let mut listening = true;
     loop {
         if daemon.tts.speech.current().as_deref() != Some(utterance.as_str()) {
@@ -233,7 +313,20 @@ fn silence_once_spoken(daemon: Arc<SuperSTTDaemon>, spoken: JoinHandle<SpeechRes
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assistants::calls::Caller as By;
+    use crate::assistants::sessions::Named;
     use crate::daemon::types::test_daemon;
+
+    fn caller() -> Caller {
+        Caller {
+            who: Who {
+                caller: By::Key("k".to_string()),
+                named: Named::default(),
+                connection: None,
+            },
+            announces: true,
+        }
+    }
 
     #[tokio::test]
     async fn listen_with_no_model_says_so_and_records_nothing() {
@@ -241,6 +334,7 @@ mod tests {
         let outcome = run(
             &daemon,
             Tool::Listen { question: None },
+            &caller(),
             &CancellationToken::new(),
         )
         .await;
@@ -259,6 +353,7 @@ mod tests {
             Tool::Speak {
                 text: "Hello.".to_string(),
             },
+            &caller(),
             &CancellationToken::new(),
         )
         .await;
@@ -272,9 +367,77 @@ mod tests {
         let daemon = Arc::new(test_daemon().await);
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let outcome = run(&daemon, Tool::Listen { question: None }, &cancel).await;
+        let outcome = run(&daemon, Tool::Listen { question: None }, &caller(), &cancel).await;
         assert_eq!(outcome, None);
         assert!(!daemon.recording.is_busy());
+    }
+
+    /// `stop` and `status` see only the caller's own speech and recording.
+    #[tokio::test]
+    async fn stop_and_status_see_only_the_callers_own() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = caller();
+        let cancel = CancellationToken::new();
+        let Some(Ok(status)) = run(&daemon, Tool::Status, &mine, &cancel).await else {
+            panic!("status answers");
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&status).expect("JSON"),
+            serde_json::json!({ "speaking": false, "listening": false })
+        );
+        // An utterance of its own that is not the one playing is not stopped.
+        daemon
+            .assistants
+            .sessions
+            .spoke(&mine.who, "utt_gone".to_string());
+        let stopped = run(&daemon, Tool::Stop, &mine, &cancel).await;
+        assert_eq!(
+            stopped,
+            Some(Ok(
+                "Nothing of this session's was playing or recording.".to_string()
+            ))
+        );
+    }
+
+    /// With announcing off, `announce` says nothing and says why.
+    #[tokio::test]
+    async fn announce_says_nothing_when_announcing_is_off() {
+        let daemon = Arc::new(test_daemon().await);
+        let quiet = Caller {
+            announces: false,
+            ..caller()
+        };
+        let outcome = run(
+            &daemon,
+            Tool::Announce {
+                text: "Claude needs your permission.".to_string(),
+            },
+            &quiet,
+            &CancellationToken::new(),
+        )
+        .await;
+        let Some(Ok(text)) = outcome else {
+            panic!("expected an answer, got {outcome:?}");
+        };
+        assert!(text.contains("turned announcing off"), "{text}");
+        assert!(daemon.tts.speech.current().is_none());
+    }
+
+    /// A session opens and closes on its plugin's word.
+    #[tokio::test]
+    async fn a_session_opens_and_closes() {
+        let daemon = Arc::new(test_daemon().await);
+        let cancel = CancellationToken::new();
+        run(&daemon, Tool::Session { started: true }, &caller(), &cancel).await;
+        assert_eq!(daemon.assistants.sessions.list().len(), 1);
+        run(
+            &daemon,
+            Tool::Session { started: false },
+            &caller(),
+            &cancel,
+        )
+        .await;
+        assert!(daemon.assistants.sessions.list().is_empty());
     }
 
     #[test]

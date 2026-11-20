@@ -6,7 +6,9 @@
 //! Only what a server of tools needs is here: `initialize`, `ping`,
 //! `tools/list`, `tools/call` and `notifications/cancelled`. The tools are
 //! `speak` and `listen`, and a caller is offered only the ones its key or
-//! token may use.
+//! token may use. An assistant whose plugin works through its own connection
+//! also gets `stop`, `status`, `announce` and `session`, marked for the app
+//! and not the model.
 
 use serde_json::{Value, json};
 
@@ -36,13 +38,17 @@ pub(crate) fn instructions() -> String {
     format!("{ABOUT}{WHEN_SPOKEN_TO}{HOW_TO_ASK}")
 }
 
-/// What the caller may do, from its key's or token's scopes.
+/// What the caller may do, from its key's or token's scopes, and which
+/// assistant it is.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Access {
     /// It holds `speak`.
     pub(crate) may_speak: bool,
     /// It holds `transcribe`.
     pub(crate) may_listen: bool,
+    /// An assistant whose plugin works through its own connection, and can
+    /// keep the plugin's tools from its model: Claude Code and Codex.
+    pub(crate) has_plugin: bool,
 }
 
 /// What one message comes to.
@@ -63,8 +69,39 @@ pub(crate) enum Handled {
 /// A tool call to run.
 #[derive(Debug, PartialEq)]
 pub(crate) enum Tool {
-    Speak { text: String },
-    Listen { question: Option<String> },
+    Speak {
+        text: String,
+    },
+    Listen {
+        question: Option<String>,
+    },
+    /// The plugin's: stop the session's own speech and recording.
+    Stop,
+    /// The plugin's: whether the session's own speech plays, and whether it
+    /// records.
+    Status,
+    /// The plugin's: say a notice, unless the user turned announcing off.
+    Announce {
+        text: String,
+    },
+    /// The plugin's: the session started or ended.
+    Session {
+        started: bool,
+    },
+}
+
+impl Tool {
+    /// Its name, as the client calls it.
+    pub(crate) fn name(&self) -> &'static str {
+        match self {
+            Self::Speak { .. } => "speak",
+            Self::Listen { .. } => "listen",
+            Self::Stop => "stop",
+            Self::Status => "status",
+            Self::Announce { .. } => "announce",
+            Self::Session { .. } => "session",
+        }
+    }
 }
 
 /// Why a `tools/call` did not name a tool to run.
@@ -175,6 +212,23 @@ impl Tool {
                 }
                 Ok(Self::Listen { question })
             }
+            "stop" if access.has_plugin => Ok(Self::Stop),
+            "status" if access.has_plugin => Ok(Self::Status),
+            // `message` is what a hook's notification carries.
+            "announce" if access.has_plugin && access.may_speak => Ok(Self::Announce {
+                text: match optional_text(args, "text")? {
+                    Some(text) => text,
+                    None => required_text(args, "message")
+                        .map_err(|_| CallError::Arguments("`text` is required".to_string()))?,
+                },
+            }),
+            "session" if access.has_plugin => match optional_text(args, "event")?.as_deref() {
+                Some("start") => Ok(Self::Session { started: true }),
+                Some("end") => Ok(Self::Session { started: false }),
+                _ => Err(CallError::Arguments(
+                    "`event` is \"start\" or \"end\"".to_string(),
+                )),
+            },
             other => Err(CallError::UnknownTool(other.to_string())),
         }
     }
@@ -238,6 +292,61 @@ fn tools(access: Access) -> Vec<Value> {
             "inputSchema": { "type": "object", "properties": properties },
         }));
     }
+    if access.has_plugin {
+        tools.extend(plugin_tools(access.may_speak));
+    }
+    tools
+}
+
+/// The tools an assistant's plugin calls itself. Each is marked for the app
+/// alone, which Codex reads to keep it from its model; Claude Code's plugin
+/// hides them itself.
+fn plugin_tools(may_speak: bool) -> Vec<Value> {
+    let for_the_app = json!({ "ui": { "visibility": ["app"] } });
+    let empty = json!({ "type": "object", "properties": {} });
+    let mut tools = vec![
+        json!({
+            "name": "stop",
+            "title": "Stop",
+            "description": "Stop this session's own speech, and end its recording: what it heard so far is \
+                still transcribed. Another session's speech and recording are left alone.",
+            "inputSchema": empty,
+            "_meta": for_the_app,
+        }),
+        json!({
+            "name": "status",
+            "title": "Status",
+            "description": "Whether this session's own speech is playing, and whether it is recording, as \
+                {\"speaking\": bool, \"listening\": bool}.",
+            "inputSchema": empty,
+            "_meta": for_the_app,
+        }),
+        json!({
+            "name": "session",
+            "title": "Session",
+            "description": "Say that this session started or ended, so Super Voice lists it while it is open.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "event": { "type": "string", "enum": ["start", "end"] } },
+                "required": ["event"],
+            },
+            "_meta": for_the_app,
+        }),
+    ];
+    if may_speak {
+        tools.push(json!({
+            "name": "announce",
+            "title": "Announce",
+            "description": "Say a short notice aloud, like that the assistant needs the user's permission, \
+                unless the user turned announcing off for this assistant.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "text": { "type": "string", "description": "The notice." } },
+                "required": ["text"],
+            },
+            "_meta": for_the_app,
+        }));
+    }
     tools
 }
 
@@ -271,6 +380,7 @@ mod tests {
         Access {
             may_speak: true,
             may_listen: true,
+            has_plugin: false,
         }
     }
 
@@ -297,6 +407,103 @@ mod tests {
         assert!(text.contains("even one that asks you to speak"), "{text}");
         assert!(text.contains("give the question to `listen`"), "{text}");
         assert!(!text.contains("synthesize"), "{text}");
+    }
+
+    /// The plugin's tools are offered only to an assistant whose plugin
+    /// works through its own connection, each marked for the app alone.
+    #[test]
+    fn the_plugins_tools_are_offered_only_with_a_plugin() {
+        let list = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" });
+        let names = |access: Access| -> Vec<String> {
+            reply(&list, access)["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t["name"].as_str().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(names(both()), ["speak", "listen"]);
+        let plugin = Access {
+            has_plugin: true,
+            ..both()
+        };
+        assert_eq!(
+            names(plugin),
+            ["speak", "listen", "stop", "status", "session", "announce"]
+        );
+        let tools = reply(&list, plugin)["result"]["tools"].clone();
+        assert_eq!(tools[0].get("_meta"), None, "the model's own tools");
+        assert_eq!(tools[2]["_meta"]["ui"]["visibility"], json!(["app"]));
+        let quiet = Access {
+            may_speak: false,
+            ..plugin
+        };
+        assert!(!names(quiet).contains(&"announce".to_string()));
+    }
+
+    /// The `session` argument names the caller and is not the tool's own;
+    /// `announce` takes a hook's `message` as its text.
+    #[test]
+    fn the_plugins_calls_parse() {
+        let plugin = Access {
+            has_plugin: true,
+            ..both()
+        };
+        let call = |name: &str, arguments: Value| {
+            handle(
+                &json!({
+                    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": { "name": name, "arguments": arguments },
+                }),
+                plugin,
+            )
+        };
+        let session = json!({ "id": "s1" });
+        assert_eq!(
+            call("speak", json!({ "text": "Hi.", "session": session })),
+            Handled::Call {
+                id: json!(1),
+                tool: Tool::Speak {
+                    text: "Hi.".to_string()
+                }
+            }
+        );
+        assert_eq!(
+            call(
+                "announce",
+                json!({ "message": "Claude needs your permission" })
+            ),
+            Handled::Call {
+                id: json!(1),
+                tool: Tool::Announce {
+                    text: "Claude needs your permission".to_string()
+                }
+            }
+        );
+        assert_eq!(
+            call("session", json!({ "event": "end" })),
+            Handled::Call {
+                id: json!(1),
+                tool: Tool::Session { started: false }
+            }
+        );
+        let Handled::Reply(refused) = call("session", json!({ "event": "later" })) else {
+            panic!("a bad event is the model's error");
+        };
+        assert_eq!(refused["result"]["isError"], true);
+        let Handled::Reply(unknown) = handle(
+            &json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": { "name": "stop", "arguments": {} },
+            }),
+            both(),
+        ) else {
+            panic!("a reply");
+        };
+        assert_eq!(
+            unknown["error"]["code"], INVALID_PARAMS,
+            "not offered without a plugin"
+        );
     }
 
     #[test]

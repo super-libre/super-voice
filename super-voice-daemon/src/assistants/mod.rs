@@ -21,6 +21,7 @@
 //! `docs/protocol/endpoints/v1/assistants.md`.
 
 pub mod calls;
+pub mod sessions;
 
 use log::{info, warn};
 use std::ffi::OsString;
@@ -75,8 +76,8 @@ pub enum Error {
     Key(String),
 }
 
-/// The daemon's hold on the assistants: one change at a time, and the tool
-/// calls in flight on `/v1/mcp`.
+/// The daemon's hold on the assistants: one change at a time, the tool calls
+/// in flight on `/v1/mcp`, and the sessions they come from.
 #[derive(Default)]
 pub struct Assistants {
     /// Held across a whole connect or disconnect, so two at once cannot each
@@ -84,6 +85,8 @@ pub struct Assistants {
     changing: tokio::sync::Mutex<()>,
     /// The tool calls in flight on `/v1/mcp`.
     pub calls: std::sync::Arc<calls::Calls>,
+    /// The sessions the calls come from.
+    pub sessions: std::sync::Arc<sessions::Sessions>,
 }
 
 impl Assistants {

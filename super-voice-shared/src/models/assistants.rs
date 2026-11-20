@@ -75,6 +75,38 @@ pub struct Assistant {
     /// Claude Code's own notices that it needs a permission or an answer.
     /// Only Claude Code announces, through its plugin.
     pub announce_when_needed: bool,
+    /// Its open sessions, oldest first.
+    #[serde(default)]
+    pub sessions: Vec<AssistantSession>,
+}
+
+/// An open session of an assistant: one conversation, like one Claude Code
+/// session or one Codex thread. Listed from its first request, or from when
+/// its plugin says it started, until it ends or goes quiet.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AssistantSession {
+    /// The session's id, as the assistant names it. Absent when it names
+    /// none: then all its requests are one session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// The folder it works in, when the assistant says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "openapi", schema(example = "/home/me/super-voice"))]
+    pub folder: Option<String>,
+    /// How many agents besides the session's own, like subagents, have made
+    /// requests.
+    pub agents: usize,
+    /// Speech it started is playing.
+    pub speaking: bool,
+    /// It is recording the user.
+    pub listening: bool,
+    /// When it was first seen, in RFC 3339.
+    #[cfg_attr(feature = "openapi", schema(example = "2026-11-20T09:15:00Z"))]
+    pub started_at: String,
+    /// When it last made a request, in RFC 3339.
+    #[cfg_attr(feature = "openapi", schema(example = "2026-11-20T09:42:10Z"))]
+    pub last_active_at: String,
 }
 
 /// A key made by hand for another MCP client. The key itself is shown only
@@ -90,6 +122,9 @@ pub struct CustomKey {
     /// When the key was made, in RFC 3339.
     #[cfg_attr(feature = "openapi", schema(example = "2026-11-19T20:15:00Z"))]
     pub created_at: String,
+    /// The open sessions of the client it was made for, oldest first.
+    #[serde(default)]
+    pub sessions: Vec<AssistantSession>,
 }
 
 /// Every assistant, every key made by hand, and where the MCP server is.
@@ -139,6 +174,7 @@ mod tests {
             id: AssistantId::ClaudeCode,
             state: AssistantState::NotFound,
             announce_when_needed: true,
+            sessions: Vec::new(),
         };
         let json = serde_json::to_value(&assistant).expect("serializes");
         assert_eq!(
@@ -147,6 +183,7 @@ mod tests {
                 "id": "claude-code",
                 "state": "not_found",
                 "announce_when_needed": true,
+                "sessions": [],
             })
         );
         let back: Assistant = serde_json::from_value(json).expect("deserializes");

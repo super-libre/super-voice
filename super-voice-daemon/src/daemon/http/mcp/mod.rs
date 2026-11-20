@@ -14,6 +14,12 @@
 //!
 //! The scope each tool needs is checked against the caller's: `speak` takes
 //! `speak`, `listen` takes `transcribe`, and `speak` too for a question.
+//! Claude Code and Codex also get their plugin's tools, `stop`, `status`,
+//! `announce` and `session`, marked for the app and not the model.
+//!
+//! Each call names the session it comes from (`identity`), and the speech
+//! and the recording a session starts are its own
+//! ([`crate::assistants::sessions`]).
 //!
 //! MCP is JSON-RPC, a method in the body rather than a path, so `/v1/mcp` is
 //! not in the `OpenAPI` document. `SURFACE` lists what it serves, for the URL
@@ -22,6 +28,7 @@
 //! Contract: `docs/protocol/mcp.md`.
 
 mod handler;
+mod identity;
 pub(crate) mod protocol;
 mod tools;
 

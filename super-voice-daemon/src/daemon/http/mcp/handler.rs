@@ -16,9 +16,12 @@
 //! body that is not JSON is answered as MCP says, not as the rest of the
 //! daemon answers one.
 
+use super::identity::identity;
 use super::protocol::{self, Access, Handled, Tool};
 use super::tools;
 use crate::assistants::calls::Caller;
+use crate::assistants::sessions::Who;
+use crate::daemon::assistant_handlers::key_assistant;
 use crate::daemon::http::state::AppState;
 use crate::daemon::types::SuperSTTDaemon;
 use axum::Extension;
@@ -31,10 +34,16 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
 use super_engine_daemon::auth::{AuthContext, PeerIdentity};
+use super_voice_shared::models::assistants::AssistantId;
 
 /// The header a client names the protocol version in, once it has agreed
 /// one.
 const PROTOCOL_VERSION_HEADER: &str = "mcp-protocol-version";
+
+/// The header the daemon names a connection in, at `initialize`, and a
+/// client on a revision before 2026-07-28 sends back on every request. It
+/// tells apart the sessions of a client that says nothing else of itself.
+const SESSION_HEADER: &str = "mcp-session-id";
 
 /// How long a tool call's stream may go without a byte. Short, as
 /// `/v1/stt/transcribe`'s is: a client may drop a connection that has been
@@ -69,11 +78,30 @@ pub(crate) async fn post(
         Err(refusal) => return json(StatusCode::BAD_REQUEST, &refusal),
     };
     let caller = caller_of(&session);
+    let assistant = match &caller {
+        Caller::Key(key) => key_assistant(&state.auth, key),
+        Caller::Session(_) => None,
+    };
     let access = Access {
         may_speak: session.meta.scopes.iter().any(|s| s == "speak"),
         may_listen: session.meta.scopes.iter().any(|s| s == "transcribe"),
+        has_plugin: matches!(
+            assistant,
+            Some(AssistantId::ClaudeCode | AssistantId::Codex)
+        ),
     };
     match protocol::handle(&message, access) {
+        Handled::Reply(reply)
+            if message["method"] == "initialize" && reply.get("result").is_some() =>
+        {
+            let mut response = json(StatusCode::OK, &reply);
+            if let Ok(id) =
+                header::HeaderValue::from_str(&uuid::Uuid::new_v4().simple().to_string())
+            {
+                response.headers_mut().insert(SESSION_HEADER, id);
+            }
+            response
+        }
         Handled::Reply(reply) => json(StatusCode::OK, &reply),
         Handled::Refuse(refusal) => json(StatusCode::BAD_REQUEST, &refusal),
         Handled::Accepted => StatusCode::ACCEPTED.into_response(),
@@ -84,7 +112,35 @@ pub(crate) async fn post(
             }
             StatusCode::ACCEPTED.into_response()
         }
-        Handled::Call { id, tool } => stream_call(Arc::clone(&state.daemon), caller, id, tool),
+        Handled::Call { id, tool } => {
+            let connection = headers
+                .get(SESSION_HEADER)
+                .and_then(|value| value.to_str().ok());
+            let named = state.daemon.assistants.sessions.resolve(
+                &caller,
+                identity(&message["params"]),
+                connection,
+            );
+            let who = Who {
+                caller: caller.clone(),
+                named,
+                connection: connection.map(str::to_string),
+            };
+            state.daemon.assistants.sessions.touch(&who);
+            // A key made by hand, and the user's own client, have no switch.
+            let announces = match (&tool, assistant) {
+                (Tool::Announce { .. }, Some(id)) => state
+                    .daemon
+                    .config
+                    .read()
+                    .await
+                    .assistants
+                    .announces_when_needed(id),
+                _ => true,
+            };
+            let for_tool = tools::Caller { who, announces };
+            stream_call(Arc::clone(&state.daemon), caller, for_tool, id, tool)
+        }
     }
 }
 
@@ -119,12 +175,18 @@ fn json(status: StatusCode, message: &Value) -> Response {
 /// The tool runs on a task of its own, so it is never dropped midway. The
 /// stream is fed from another, which cancels the call when a keepalive finds
 /// the client gone.
-fn stream_call(daemon: Arc<SuperSTTDaemon>, caller: Caller, id: Value, tool: Tool) -> Response {
-    let name = match &tool {
-        Tool::Speak { .. } => "speak",
-        Tool::Listen { .. } => "listen",
-    };
-    info!("MCP {name} from {}", describe(&caller));
+fn stream_call(
+    daemon: Arc<SuperSTTDaemon>,
+    caller: Caller,
+    for_tool: tools::Caller,
+    id: Value,
+    tool: Tool,
+) -> Response {
+    let name = tool.name();
+    // The plugin's checks come every second or so: not worth a line each.
+    if !matches!(tool, Tool::Status) {
+        info!("MCP {name} from {}", describe(&caller));
+    }
     let in_flight = daemon.assistants.calls.begin(caller, &id);
     let cancel = in_flight.token();
 
@@ -136,7 +198,7 @@ fn stream_call(daemon: Arc<SuperSTTDaemon>, caller: Caller, id: Value, tool: Too
     let call = tokio::spawn({
         let cancel = cancel.clone();
         async move {
-            let outcome = tools::run(&daemon, tool, &cancel).await;
+            let outcome = tools::run(&daemon, tool, &for_tool, &cancel).await;
             // Forgotten once it ends, however it ends.
             drop(in_flight);
             outcome

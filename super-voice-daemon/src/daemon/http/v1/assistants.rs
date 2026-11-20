@@ -101,10 +101,12 @@ The AI assistants Super Voice can connect to, `claude-code`, `codex`, `opencode`
 neither its program nor its config, `found` when it is here and Super Voice is not in \
 its config, and `connected` when Super Voice is in its config with a key of its own. \
 `announce_when_needed` says whether Super Voice says aloud when the assistant needs the \
-user. Only Claude Code announces, through its plugin.
+user. Only Claude Code announces, through its plugin. `sessions` are its open sessions on \
+the MCP server, oldest first: one conversation each, with its folder when the assistant \
+says, and whether speech it started is playing or it is recording.
 
-Also the keys made by hand for other MCP clients, without the keys themselves, and \
-`address`, where an MCP client reaches Super Voice.
+Also the keys made by hand for other MCP clients, without the keys themselves, each with \
+its sessions, and `address`, where an MCP client reaches Super Voice.
 
 Read from the assistants' configs on every request, so an entry changed by hand shows \
 here at once.",

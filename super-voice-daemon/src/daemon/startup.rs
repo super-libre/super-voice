@@ -234,6 +234,26 @@ impl SuperSTTDaemon {
                 }
             });
         }
+
+        // Forget the assistants' sessions gone quiet.
+        {
+            let sessions = std::sync::Arc::clone(&self.assistants.sessions);
+            let mut shutdown = self.shutdown_tx.subscribe();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tokio::select! {
+                        _ = interval.tick() => {}
+                        _ = shutdown.recv() => return,
+                    }
+                    let gone = sessions.sweep(std::time::Instant::now());
+                    if gone > 0 {
+                        log::info!("Forgot {gone} assistant sessions gone quiet");
+                    }
+                }
+            });
+        }
     }
 
     /// Move the backends Super STT and Super TTS installed, and the voices

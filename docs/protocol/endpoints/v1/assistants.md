@@ -86,13 +86,22 @@ Authorization: Bearer …64hex…
 ```json
 {
   "assistants": [
-    { "id": "claude-code", "state": "connected", "announce_when_needed": false },
-    { "id": "codex",       "state": "found",     "announce_when_needed": true },
-    { "id": "opencode",    "state": "not_found", "announce_when_needed": true },
-    { "id": "gemini",      "state": "not_found", "announce_when_needed": true }
+    {
+      "id": "claude-code", "state": "connected", "announce_when_needed": false,
+      "sessions": [
+        {
+          "id": "4f1c…", "folder": "/home/me/super-voice", "agents": 0,
+          "speaking": true, "listening": false,
+          "started_at": "2026-11-20T09:15:00Z", "last_active_at": "2026-11-20T09:42:10Z"
+        }
+      ]
+    },
+    { "id": "codex",       "state": "found",     "announce_when_needed": true, "sessions": [] },
+    { "id": "opencode",    "state": "not_found", "announce_when_needed": true, "sessions": [] },
+    { "id": "gemini",      "state": "not_found", "announce_when_needed": true, "sessions": [] }
   ],
   "custom_keys": [
-    { "id": "0f3c9a1e", "name": "My editor", "created_at": "2026-11-19T20:15:00Z" }
+    { "id": "0f3c9a1e", "name": "My editor", "created_at": "2026-11-19T20:15:00Z", "sessions": [] }
   ],
   "address": "http://127.0.0.1:7300/v1/mcp"
 }
@@ -101,6 +110,12 @@ Authorization: Bearer …64hex…
 `address` is where an MCP client reaches Super Voice: `/v1/mcp` on the daemon's
 TCP listener, on the port its config names. The listener has to be on, which it
 is unless the config turns it off.
+
+`sessions` are the assistant's, or the key's, open sessions, oldest first: one
+conversation each, as [the MCP server tells them apart](../../mcp.md#sessions).
+`id` is absent when the client names none; `folder` when it doesn't say;
+`agents` counts the agents besides the session's own that have made calls;
+`speaking` is whether speech it started is playing.
 
 ## `POST /assistants/{id}/connect`
 

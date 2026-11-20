@@ -5,13 +5,14 @@
 //! [`crate::assistants`].
 
 use crate::assistants::calls::Caller;
+use crate::assistants::sessions::SessionView;
 use crate::assistants::{self, Error, KEY_SCOPES, MCP_PATH};
 use crate::daemon::types::SuperSTTDaemon;
 use chrono::SecondsFormat;
 use log::{info, warn};
 use super_engine_daemon::auth::{AssistantKey, Auth};
 use super_voice_shared::models::assistants::{
-    Assistant, AssistantId, AssistantList, CustomKey, NewKey,
+    Assistant, AssistantId, AssistantList, AssistantSession, CustomKey, NewKey,
 };
 
 /// The key the daemon made for `id`, if it holds one. It names an
@@ -30,6 +31,32 @@ fn key_scopes() -> Vec<String> {
         .iter()
         .map(|scope| (*scope).to_string())
         .collect()
+}
+
+/// The assistant key `key_id` was made for, or `None` for a key made by hand.
+#[must_use]
+pub(crate) fn key_assistant(auth: &Auth, key_id: &str) -> Option<AssistantId> {
+    auth.assistant_keys()
+        .into_iter()
+        .find(|key| key.id == key_id)
+        .and_then(|key| key.name.parse::<AssistantId>().ok())
+}
+
+/// A session as the list shows it. `playing` is the utterance now playing.
+fn listed(session: &SessionView, playing: Option<&str>) -> AssistantSession {
+    AssistantSession {
+        id: session.id.clone(),
+        folder: session.folder.clone(),
+        agents: session.agents,
+        speaking: session.utterance.is_some() && session.utterance.as_deref() == playing,
+        listening: session.listening,
+        started_at: session
+            .started_at
+            .to_rfc3339_opts(SecondsFormat::Secs, true),
+        last_active_at: session
+            .last_active_at
+            .to_rfc3339_opts(SecondsFormat::Secs, true),
+    }
 }
 
 impl SuperSTTDaemon {
@@ -60,6 +87,19 @@ impl SuperSTTDaemon {
             warn!("Could not look for the assistants: {e}");
             Vec::new()
         });
+        let sessions = self.assistants.sessions.list();
+        let playing = self.tts.speech.current();
+        let sessions_of = |key: Option<&AssistantKey>| -> Vec<AssistantSession> {
+            let Some(key) = key else {
+                return Vec::new();
+            };
+            let caller = Caller::Key(key.id.clone());
+            sessions
+                .iter()
+                .filter(|session| session.caller == caller)
+                .map(|session| listed(session, playing.as_deref()))
+                .collect()
+        };
         let config = self.config.read().await;
         let assistants = states
             .into_iter()
@@ -67,6 +107,7 @@ impl SuperSTTDaemon {
                 id,
                 state,
                 announce_when_needed: config.assistants.announces_when_needed(id),
+                sessions: sessions_of(key_of(&keys, id)),
             })
             .collect();
         drop(config);
@@ -77,6 +118,7 @@ impl SuperSTTDaemon {
                 id: key.id.clone(),
                 name: key.name.clone(),
                 created_at: key.created_at.to_rfc3339_opts(SecondsFormat::Secs, true),
+                sessions: sessions_of(Some(key)),
             })
             .collect();
         AssistantList {
@@ -187,17 +229,17 @@ impl SuperSTTDaemon {
         Ok(self.list_assistants(auth).await)
     }
 
-    /// Revoke each of `keys`, and cancel its calls in flight.
+    /// Revoke each of `keys`, cancel its calls in flight, and forget its
+    /// sessions.
     async fn revoke_keys(&self, auth: &Auth, keys: &[String]) {
         for key in keys {
             match auth.revoke_assistant_key(key).await {
                 Ok(_) => info!("Revoked key {key}"),
                 Err(e) => warn!("Could not revoke key {key}: {e}"),
             }
-            let cancelled = self
-                .assistants
-                .calls
-                .cancel_caller(&Caller::Key(key.clone()));
+            let caller = Caller::Key(key.clone());
+            self.assistants.sessions.forget(&caller);
+            let cancelled = self.assistants.calls.cancel_caller(&caller);
             if cancelled > 0 {
                 info!("Cancelled {cancelled} calls made with key {key}");
             }

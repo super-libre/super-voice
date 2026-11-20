@@ -68,6 +68,48 @@ and whose text says why, so the model can tell the user: no model loaded, a
 recording in the way, and so on. Silence is not an error: `listen` answers
 `(no speech detected)`.
 
+### The plugin's tools
+
+Claude Code and Codex also get four tools their plugin calls itself, never the
+model. Each is marked `"_meta": {"ui": {"visibility": ["app"]}}`: Codex keeps
+such a tool from its model, and Claude Code's plugin hides them itself. A key
+made by hand, OpenCode and the Antigravity CLI don't get them.
+
+| Tool       | What it does                                                                                     |
+|------------|--------------------------------------------------------------------------------------------------|
+| `stop`     | Stops this session's own speech, and ends its own recording, which is still transcribed. Another session's are left alone. |
+| `status`   | Whether this session's own speech plays, and whether it records: `{"speaking": bool, "listening": bool}`. |
+| `announce` | Says `text` (or a hook's `message`) aloud, unless the user turned off **Announce when it needs you** for the assistant. Then it says nothing, and answers so. |
+| `session`  | `{"event": "start"}` or `{"event": "end"}`: the session opened or closed, so it is listed while it is open. |
+
+## Sessions
+
+The daemon tells apart the sessions of one assistant: one Claude Code session,
+one Codex thread. A tool call names its session by what the client says of
+itself, first match wins:
+
+1. The argument `session`, `{"id", "agent", "folder"}`. Super Voice's own
+   plugins add it to every call. No tool declares it, so a model never fills
+   it, and it is not a tool's own argument.
+2. `_meta`: Claude Code's `claudecode/sessionId` and `claudecode/agentId`;
+   Codex's `sessionId` (the conversation) and `threadId` (an agent's thread,
+   when it differs), with the folder from the first git root in
+   `x-codex-turn-metadata`; OpenCode's `ai.opencode/sessionID`.
+3. The connection: the `Mcp-Session-Id` the daemon gives each connection at
+   `initialize`, which clients before the 2026-07-28 revision send back. A
+   call that names its session ties its connection to it, so a later call
+   over the same connection that names nothing is that session's too; a
+   connection nothing named is a session of its own.
+4. Otherwise all the caller's calls are one session.
+
+A session is kept from its first call, or from its plugin's `session` start,
+until its plugin says it ended, its assistant is disconnected, or it goes
+quiet: 3 minutes for one its plugin opened, which checks in every minute, and
+30 minutes for any other. One still recording is kept. The speech and the
+recording a session starts are its own: `stop` and `status` see only those.
+[`GET /assistants`](endpoints/v1/assistants.md) lists each assistant's open
+sessions.
+
 ## Instructions
 
 `initialize` answers with instructions for the model: what the tools do, to give

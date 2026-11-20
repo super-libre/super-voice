@@ -22,6 +22,8 @@ use super_voice_shared::daemon::http_client;
 struct Answer {
     status: StatusCode,
     content_type: String,
+    /// The `Mcp-Session-Id` the daemon named the connection, if any.
+    session_id: Option<String>,
     body: String,
 }
 
@@ -101,6 +103,11 @@ async fn send(
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default()
         .to_string();
+    let session_id = response
+        .headers()
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
     let bytes = response
         .into_body()
         .collect()
@@ -110,6 +117,7 @@ async fn send(
     Answer {
         status,
         content_type,
+        session_id,
         body: String::from_utf8_lossy(&bytes).into_owned(),
     }
 }
@@ -398,9 +406,25 @@ async fn an_assistant_gets_in_over_tcp_with_its_key_alone() {
             .is_some_and(|text| text.contains("only while the user is talking to you by voice")),
         "{instructions}"
     );
+    // Codex keeps the plugin's tools from its model by their marks.
     let list = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
     assert_eq!(
         tool_names(&post(&via, &key, &list).await),
+        ["speak", "listen", "stop", "status", "session", "announce"]
+    );
+    // A key made by hand is for a client with no plugin of Super Voice's.
+    let (status, made) = daemon
+        .request(
+            Method::POST,
+            "/assistants/keys",
+            Some(&settings),
+            Some(&json!({ "name": "My editor" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{made}");
+    let by_hand = made["key"].as_str().expect("key").to_string();
+    assert_eq!(
+        tool_names(&post(&via, &by_hand, &list).await),
         ["speak", "listen"]
     );
 
@@ -424,4 +448,186 @@ async fn an_assistant_gets_in_over_tcp_with_its_key_alone() {
     assert_eq!(status, StatusCode::OK);
     let revoked = post(&via, &key, &initialize()).await;
     assert_eq!(revoked.status, StatusCode::UNAUTHORIZED, "{}", revoked.body);
+}
+
+/// A tool call to `name` with `arguments`.
+fn call(id: u64, name: &str, arguments: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0", "id": id, "method": "tools/call",
+        "params": { "name": name, "arguments": arguments },
+    })
+}
+
+/// What a tool call answered, as text.
+fn said(answer: &Answer) -> String {
+    let message = answer.message();
+    message["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no text: {message}"))
+        .to_string()
+}
+
+/// Each session of an assistant is its own: listed apart, with its folder.
+/// The plugin's tools are offered to Claude Code and Codex, for the app
+/// alone; `announce` says nothing once the user turns announcing off; and a
+/// session ends when its plugin says so, or its assistant is disconnected.
+#[tokio::test]
+async fn an_assistants_sessions_are_its_own() {
+    let port = free_port();
+    let daemon = start("mcp-sessions", Some(port)).await;
+    let settings = token(&daemon, &["settings", "speak", "transcribe"]).await;
+    let via = Via::Tcp(port);
+    let (status, _) = daemon
+        .request(
+            Method::POST,
+            "/assistants/codex/connect",
+            Some(&settings),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = daemon
+        .request(Method::GET, "/assistants/codex/key", Some(&settings), None)
+        .await;
+    let key = body["key"].as_str().expect("key").to_string();
+
+    let answer = post(&via, &key, &initialize()).await;
+    assert!(answer.session_id.is_some(), "the connection gets an id");
+
+    let listed = post(
+        &via,
+        &key,
+        &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
+    )
+    .await;
+    assert_eq!(
+        tool_names(&listed),
+        ["speak", "listen", "stop", "status", "session", "announce"]
+    );
+    for tool in &listed.json()["result"]["tools"].as_array().expect("tools")[2..] {
+        assert_eq!(tool["_meta"]["ui"]["visibility"], json!(["app"]), "{tool}");
+    }
+
+    let one = json!({ "id": "s1", "folder": "/home/me/app" });
+    let two = json!({ "id": "s2" });
+    let started = post(
+        &via,
+        &key,
+        &call(3, "session", json!({ "event": "start", "session": one })),
+    )
+    .await;
+    assert_eq!(said(&started), "Started.");
+    post(
+        &via,
+        &key,
+        &call(4, "session", json!({ "event": "start", "session": two })),
+    )
+    .await;
+    let sessions = |list: &Value| list["assistants"][1]["sessions"].clone();
+    let (_, list) = daemon
+        .request(Method::GET, "/assistants", Some(&settings), None)
+        .await;
+    assert_eq!(list["assistants"][1]["id"], "codex");
+    let open = sessions(&list);
+    assert_eq!(open.as_array().map(Vec::len), Some(2), "{list}");
+    assert_eq!(open[0]["id"], "s1");
+    assert_eq!(open[0]["folder"], "/home/me/app");
+    assert_eq!(open[1]["speaking"], false);
+
+    let status = post(&via, &key, &call(5, "status", json!({ "session": one }))).await;
+    assert_eq!(
+        serde_json::from_str::<Value>(&said(&status)).expect("JSON"),
+        json!({ "speaking": false, "listening": false })
+    );
+    let stopped = post(&via, &key, &call(6, "stop", json!({ "session": two }))).await;
+    assert_eq!(
+        said(&stopped),
+        "Nothing of this session's was playing or recording."
+    );
+
+    let (status, _) = daemon
+        .request(
+            Method::PATCH,
+            "/assistants/codex",
+            Some(&settings),
+            Some(&json!({ "announce_when_needed": false })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let announced = post(
+        &via,
+        &key,
+        &call(
+            7,
+            "announce",
+            json!({ "text": "Codex needs you.", "session": one }),
+        ),
+    )
+    .await;
+    assert!(said(&announced).contains("turned announcing off"));
+
+    let ended = post(
+        &via,
+        &key,
+        &call(8, "session", json!({ "event": "end", "session": one })),
+    )
+    .await;
+    assert_eq!(said(&ended), "Ended.");
+    // Codex names its own session in `_meta`, with an agent's thread.
+    let by_codex = json!({
+        "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+        "params": {
+            "name": "status", "arguments": {},
+            "_meta": { "sessionId": "root-9", "threadId": "thread-1" },
+        },
+    });
+    post(&via, &key, &by_codex).await;
+    let (_, list) = daemon
+        .request(Method::GET, "/assistants", Some(&settings), None)
+        .await;
+    let open = sessions(&list);
+    let ids: Vec<&str> = open
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .map(|session| session["id"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(ids, ["s2", "root-9"], "{list}");
+    assert_eq!(open[1]["agents"], 1);
+
+    // A call that names nothing, over a connection a session named itself
+    // on, is that session's.
+    let connection = [("mcp-session-id", "conn-1")];
+    for body in [
+        call(10, "status", json!({ "session": { "id": "s3" } })),
+        call(11, "status", json!({})),
+    ] {
+        send(
+            &via,
+            Method::POST,
+            Some(&key),
+            &connection,
+            &body.to_string(),
+        )
+        .await;
+    }
+    let (_, list) = daemon
+        .request(Method::GET, "/assistants", Some(&settings), None)
+        .await;
+    let ids: Vec<String> = sessions(&list)
+        .as_array()
+        .expect("sessions")
+        .iter()
+        .map(|session| session["id"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(ids, ["s2", "root-9", "s3"], "{list}");
+
+    let (status, _) = daemon
+        .request(Method::DELETE, "/assistants/codex", Some(&settings), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, list) = daemon
+        .request(Method::GET, "/assistants", Some(&settings), None)
+        .await;
+    assert_eq!(sessions(&list), json!([]), "disconnecting forgets them");
 }
