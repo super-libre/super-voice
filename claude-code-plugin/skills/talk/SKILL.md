@@ -22,5 +22,5 @@ The user wants to talk instead of type. Keep going in this one turn until they e
 ## When to stop
 
 1. The user says they are done ("that's all", "stop", "goodbye"): end the turn with a short written summary of what you did.
-2. `listen` returns "(no speech detected)": ask once more. If it happens again, end the turn the same way.
+2. `listen` returns "(no speech detected)": the user stopped it or has nothing to say. End the turn at once, with no question and no summary.
 3. A tool fails: say so in one sentence, and end the turn with the error written out.

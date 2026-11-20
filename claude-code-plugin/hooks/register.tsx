@@ -449,7 +449,16 @@ export const register: Register = on => {
       return heard
     }
     const words = (heard.text ?? '').trim()
-    if (!words || words === NO_SPEECH || phase !== 'idle') {
+    if (!words || words === NO_SPEECH) {
+      // Nothing was said: the user stopped the recording or stayed quiet. The
+      // question is dismissed, so Claude's turn ends here, as the user's Esc
+      // would end it, with nothing for it to answer.
+      if (runningTurnId !== undefined) {
+        await $.turn.abort({ turnId: runningTurnId }).catch(() => undefined)
+      }
+      return heard
+    }
+    if (phase !== 'idle') {
       return heard
     }
     let answer: { text: string | undefined } | undefined
