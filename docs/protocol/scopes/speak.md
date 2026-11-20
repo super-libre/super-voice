@@ -45,11 +45,18 @@ for the wire-level details (HTTP framing, SSE mechanics, example client code).
 | [`/tts/speak/read`](../endpoints/v1/tts/speak/read.md)          | POST     | Speak the selected or copied text, per the user's read method |
 | [`/tts/speak/stop`](../endpoints/v1/tts/speak/stop.md)          | POST     | Stop the current utterance; idempotent                       |
 | [`/tts/speak/stream`](../endpoints/v1/tts/speak/stream.md)      | GET (WS) | Stream text in as it is generated; `start` carries nothing |
+| [`/mcp`](../mcp.md)                                     | POST     | The MCP tool `speak`, and a question asked with `listen`     |
 
 [`/auth/request`](../endpoints/v1/auth/request.md),
 [`/auth/status`](../endpoints/v1/auth/status.md), and
 [`/ping`](../endpoints/v1/ping.md) require only a valid token, not the `speak`
 scope.
+
+An AI assistant the user connects gets this scope with its
+[key](../auth.md#assistant-keys), beside [`transcribe`](./transcribe.md), and
+uses it through Super Voice's [MCP server](../mcp.md): the tool `speak`, and
+the question the tool `listen` asks before it records. A key without it is not
+offered `speak`, and its `listen` takes no question.
 
 ## Which endpoint to use
 

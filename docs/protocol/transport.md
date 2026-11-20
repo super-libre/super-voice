@@ -48,7 +48,9 @@ there from the kernel's own record of the calling process — `SO_PEERCRED`
 plus `/proc/<pid>/exe` on Linux, `LOCAL_PEERCRED` plus `proc_pidpath` on
 macOS — which is what the consent design depends on. The TCP listener is for
 browser clients, which cannot dial a Unix socket and for which there are no
-peer credentials at all — see [auth.md](./auth.md#tcp-bound-clients).
+peer credentials at all — see [auth.md](./auth.md#tcp-bound-clients) — and
+for AI assistants, which reach Super Voice's MCP server there with a key of
+their own — see [AI assistants](#ai-assistants-v1mcp).
 
 A port that cannot be bound is logged and skipped rather than fatal: the
 Unix socket is the daemon's primary transport, and refusing to start
@@ -341,6 +343,33 @@ blocking and needs no certificate.
 Native clients on the Unix socket get peer-credential-verified identity.
 Browser clients on TCP get origin-verified identity. Both hit the same
 endpoints.
+
+### AI assistants: `/v1/mcp`
+
+One path on the TCP listener is for programs rather than pages: `/v1/mcp`,
+Super Voice's [MCP server](./mcp.md), which AI assistants such as Claude
+Code and Codex call. An assistant sends no `Origin`, so the origin gate
+above would refuse it, and the path sits outside that gate, behind one of
+its own:
+
+1. **No `Origin` at all.** A request that sends one is a page, and is
+   refused with `403`, `data.reason = "browser_not_allowed"`, whatever key
+   it holds. It gets no CORS headers, so the page cannot read the refusal
+   either.
+2. **A loopback `Host`**: `127.0.0.1`, `localhost` or `[::1]`, on any port.
+   Any other is a name pointed at the listener from outside, as DNS
+   rebinding does: `403`, `data.reason = "host_not_allowed"`.
+3. **An assistant key** as the bearer, which the daemon made when the user
+   connected the assistant ([auth.md](./auth.md#assistant-keys)). A session
+   token is refused there: `401 invalid_session`.
+
+`http.tcp.allowed_origins` does not apply to `/v1/mcp`, since no page gets
+in. Every other path on the listener is behind the origin gate as before,
+and an assistant key presented on one of them is refused.
+
+`/v1/mcp` answers in JSON-RPC, as MCP says, not in the error envelope
+above, except for the refusals of its gate and its token check, which
+come before the server reads the request.
 
 ### Port 7300
 

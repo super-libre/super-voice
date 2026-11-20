@@ -28,11 +28,19 @@ for the wire-level details (HTTP framing, SSE mechanics, example client code).
 | [`/stt/transcribe`](../endpoints/v1/transcribe.md)               | POST      | Start a transcription                       |
 | [`/stt/transcribe/stop`](../endpoints/v1/transcribe/stop.md)     | POST      | Stop an in-flight daemon-mic capture        |
 | `/stt/transcribe/realtime`                                       | GET (WS)  | Realtime WebSocket transcription session    |
+| [`/mcp`](../mcp.md)                                              | POST      | The MCP tool `listen`                       |
 
 [`/auth/request`](../endpoints/v1/auth/request.md),
 [`/auth/status`](../endpoints/v1/auth/status.md), and
 [`/ping`](../endpoints/v1/ping.md) require only a valid token, not the
 `transcribe` scope.
+
+An AI assistant the user connects gets this scope with its
+[key](../auth.md#assistant-keys), beside [`speak`](./speak.md), and uses it
+through Super Voice's [MCP server](../mcp.md): the tool `listen` records the
+user until they stop talking and hands the assistant what they said. It never
+types, and never toggles a recording someone else started: while one runs, it
+answers with an error.
 
 ## The four `/stt/transcribe` modes
 
