@@ -14,6 +14,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { SuperVoiceTalk } from '../types'
+import { pickTerms } from './terms'
 
 const speaking = atom({ plugin: 'super-voice', key: 'isSpeaking' } as const, false)
 const claudeListening = atom(
@@ -108,6 +109,10 @@ let runningTurnId: string | undefined
 let talkedSinceSubmit = false
 /** The prompt now being answered was spoken, so its reply should be too. */
 let listenAfterReply = false
+/** The main agent's last prompt and reply, which Talk picks the names and
+ * terms of the conversation from. */
+let lastPrompt = ''
+let lastReply = ''
 /** The reply being read answers a spoken prompt: when it has been read to the
  * end, or the user stops it, open the microphone. Typing calls it off. */
 let armed = false
@@ -176,6 +181,9 @@ async function checkIn($: EngineInterface) {
   }
   if (openedId !== undefined) {
     await call($, 'session', { event: 'end' }, openedId)
+    // A new conversation, as after `/clear`: the old one's terms are not its.
+    lastPrompt = ''
+    lastReply = ''
   }
   openedId = id
   await call($, 'session', { event: 'start' })
@@ -309,7 +317,9 @@ async function startTalk($: EngineInterface) {
 async function recordAndFill($: EngineInterface) {
   let words = ''
   // `listen` without a question: it records until the user stops talking.
-  const heard = await call($, 'listen')
+  // The names and terms of the conversation help Super Voice hear them.
+  const vocabulary = pickTerms(`${lastReply}\n${lastPrompt}`)
+  const heard = await call($, 'listen', vocabulary.length > 0 ? { context: { vocabulary } } : {})
   if (heard === undefined) {
     $.ui.toast('Could not record.')
   } else if (heard.isError) {
@@ -492,6 +502,9 @@ export const register: Register = on => {
     if (e.agentId === undefined) {
       runningTurnId = undefined
       await update($, claudeWorking, () => false)
+      if (e.answer.trim()) {
+        lastReply = e.answer
+      }
       if (e.isAborted) {
         // A spoken prompt that stopped this turn is still to be answered.
         await setArmed($, false)
@@ -603,12 +616,14 @@ export const register: Register = on => {
         await stopCountdown($)
       }
       const isSpoken = talkedSinceSubmit
+      lastPrompt = e.text
       listenAfterReply = isSpoken
       talkedSinceSubmit = false
       await setArmed($, false)
       return next(isSpoken ? { ...e, context: [...(e.context ?? []), VOICE_NOTE] } : e)
     }
     if (isOwn) {
+      lastPrompt = e.text
       listenAfterReply = true
       talkedSinceSubmit = false
       return next({ ...e, context: [...(e.context ?? []), VOICE_NOTE] })
