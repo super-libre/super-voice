@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The plugin's buttons, a Claude Code hooks module: one row above the prompt
-// and one key, 0. While Claude speaks, `0: Stop and talk`. Otherwise
-// `0: Talk`, which records the user and puts their words in the prompt box,
-// sent after a short countdown unless they edit them. After a reply to a
-// spoken prompt the microphone opens by itself, and what `listen` hears goes
-// through the box the same way. A 🔊 under each reply block reads it again.
+// The plugin's voice, a Claude Code hooks module. Claude speaks only after
+// being spoken to: a reply to a spoken prompt is read aloud and the microphone
+// opens after it, and Super Voice's tools are refused in a turn the user
+// typed. One row above the prompt and one key, 0: `Talk` records the user and
+// puts their words in the prompt box, sent after a short countdown unless they
+// edit them; while speech plays, 0 stops it, and opens the microphone only in
+// a spoken conversation. What `listen` hears goes through the box the same
+// way. A 🔊 under each reply block reads it again.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
@@ -35,9 +37,8 @@ const NAME = 'super-voice'
 /** How often to ask the daemon while speech may be playing. */
 const POLL_MS = 500
 /**
- * How long to wait for speech to start after something asked for it. The
- * Super Voice plugin's hooks run `voice speak` in the background, so speech
- * starts a moment after the event that asked for it.
+ * How long to wait for speech to start after something asked for it: the
+ * daemon may load its model first.
  */
 const START_WAIT_MS = 10_000
 /** How long the user's words wait in the prompt box before they are sent. */
@@ -60,6 +61,11 @@ const VOICE_NOTE =
   'and the microphone opens after it so they can answer by voice: keep the reply short ' +
   'and plain to listen to, end with any question you have, and do not call `listen` ' +
   'to hear their answer.'
+/** Why Claude's call to a Super Voice tool is refused in a turn the user
+ * typed. */
+const NOT_SPOKEN_TO =
+  'The user typed this prompt, so answer in writing. Super Voice speaks and listens only ' +
+  'while the user is talking to you by voice, which they start with Talk.'
 
 // Watching for speech.
 let speechTimer: Timer | undefined
@@ -181,17 +187,45 @@ async function stopSpeaking($: EngineInterface) {
   await voice($, ['speak', 'stop'])
 }
 
-/** The Stop and talk button: cutting Claude off is the user's turn to talk.
- * A prompt spoken through the Dictate shortcut is typed into the box, so the
- * mod can't tell spoken from typed; saying nothing ends it after a moment.
- * Cutting off a question of Claude's `listen` needs nothing more: it records
- * once the question stops. */
+/** 0 while speech plays: it always stops. Cutting off Claude's reply to a
+ * spoken prompt is the user's turn to talk, so the microphone opens; any other
+ * speech, like a 🔊 or another session's, just stops. Cutting off a question
+ * of Claude's `listen` needs nothing more: it records once the question
+ * stops. */
 async function pressStopSpeaking($: EngineInterface) {
+  const isConversation = armed
   // The stop comes first, whatever else is going on.
   await stopSpeaking($)
-  if (!isClaudeListening && phase === 'idle') {
+  if (isConversation && !isClaudeListening && phase === 'idle') {
     await startTalk($)
   }
+}
+
+/** 0 as Talk. Speech this session did not start, like another session's,
+ * does not show on its row; the key stops that speech, and records nothing. */
+async function pressTalk($: EngineInterface) {
+  if ((await voiceStatus($))?.isSpeaking) {
+    await stopSpeaking($)
+    return
+  }
+  await startTalk($)
+}
+
+/** Read Claude's reply to a spoken prompt aloud, and open the microphone once
+ * it has been read. */
+async function readReply($: EngineInterface, answer: string) {
+  if (!answer.trim()) {
+    return
+  }
+  const spoken = await $.process
+    .run(['voice', 'speak'], { stdin: answer, timeoutMs: 10_000 })
+    .catch(() => undefined)
+  if (spoken?.exitCode !== 0) {
+    $.ui.toast('Could not read the reply aloud.')
+    return
+  }
+  await setArmed($, true)
+  await watchSpeech($)
 }
 
 /** Read one of Claude's reply blocks aloud again, or stop it when it is the
@@ -402,7 +436,8 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // The Super Voice plugin's Stop hook reads the answer aloud.
+  // A reply to a spoken prompt is read aloud, and the microphone opens after
+  // it. A reply to a typed one stays silent.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined) {
       runningTurnId = undefined
@@ -410,10 +445,9 @@ export const register: Register = on => {
       if (e.isAborted) {
         // A spoken prompt that stopped this turn is still to be answered.
         await setArmed($, false)
-      } else {
-        await setArmed($, listenAfterReply)
+      } else if (listenAfterReply) {
         listenAfterReply = false
-        await watchSpeech($)
+        await readReply($, e.answer)
       }
     }
     return next(e)
@@ -422,6 +456,10 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     if (!SPEAKING_TOOLS.has(e.tool)) {
       return next(e)
+    }
+    // Claude speaks only after being spoken to.
+    if (!listenAfterReply) {
+      return { deny: NOT_SPOKEN_TO }
     }
     await watchSpeech($)
     if (e.tool !== LISTEN_TOOL) {
@@ -585,10 +623,11 @@ export const register: Register = on => {
     }
     const isListening = await read($, claudeListening)
     if (await read($, speaking)) {
+      const talksAfter = isListening || (await read($, listensAfter))
       return (
         <Button
           key="stop-speaking"
-          label="Stop and talk"
+          label={talksAfter ? 'Stop and talk' : 'Stop speaking'}
           hotkey="0"
           plain
           onPress={() => void pressStopSpeaking($)}
@@ -615,7 +654,7 @@ export const register: Register = on => {
         label="Talk"
         hotkey="0"
         plain
-        onPress={() => void startTalk($)}
+        onPress={() => void pressTalk($)}
       />
     )
   })

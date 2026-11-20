@@ -3,49 +3,52 @@
 A Claude Code plugin that talks to Claude Code through Super Voice, on your own
 machine. Nothing leaves it.
 
-1. Claude's replies are read aloud when it finishes. Code blocks are said as
-   "code block".
-2. Claude says when it needs your approval.
-3. Sending your next prompt stops whatever it is reading.
-4. Claude gets `speak`, and, once you let it ask questions aloud, `listen`
-   (asks you something aloud and hears your answer).
-5. `/super-voice:talk` starts a spoken conversation: Claude listens, works,
-   answers aloud and listens again until you say you are done. It needs "Ask
-   questions aloud" on.
-6. A row above the prompt, on the key `0` in an empty prompt:
+Claude speaks only after being spoken to. You start talking with the `0` key,
+and from then on:
+
+1. Claude's reply to what you said is read aloud. Code blocks are said as "code
+   block". The microphone opens after it, so you can answer.
+2. Claude can use Super Voice's two tools, `speak`, and `listen` (asks you
+   something aloud and hears your answer).
+
+A prompt you type gets a silent, written reply, and Claude can't use those
+tools, even if the prompt asks it to.
+
+Whether you talk or type:
+
+1. Claude says when it needs your permission. You can turn this off.
+2. Sending your next prompt stops whatever is being read.
+3. A row above the prompt, on the key `0` in an empty prompt:
    1. `Talk` records you and puts your words in the prompt box. They are sent
       after 5 seconds unless you edit them, and Enter sends them at once.
-   2. While Claude speaks, `Stop and talk` cuts it off and listens.
-   3. After Claude answers something you said, the microphone opens by itself.
-   4. What Claude's `listen` hears goes through the prompt box the same way.
-7. A 🔊 under each reply reads it again; press it again to stop. In a terminal
+   2. While something is being read, `0` stops it. In a spoken conversation,
+      `Stop and talk` also opens the microphone.
+   3. What Claude's `listen` hears goes through the prompt box the same way.
+      Stopping it without saying anything ends Claude's turn.
+4. A 🔊 under each reply reads it again; press it again to stop. In a terminal
    it takes a mouse click, in fullscreen mode (`/tui fullscreen`).
 
-To type a prompt by voice, use Super Voice's own shortcut (`voice record --write`):
-it types into the focused terminal like any other window.
+Super Voice's own shortcut (`voice record --write`) types into the focused
+terminal like any other window. A prompt typed that way counts as typed.
 
 ## Requirements
 
 1. Super Voice installed, with the daemon running and a model selected for each
    feature.
-2. `voice` on your `PATH`. Super Voice's installer puts it there. The hooks use
-   it, and so does the plugin to hand Claude Code its key.
-3. `jq`, which the hooks use to read Claude's reply.
+2. `voice` on your `PATH`. Super Voice's installer puts it there. The plugin
+   uses it to talk, to say when Claude needs you, and to hand Claude Code its
+   key.
+3. `jq`, which the hooks use to read Claude Code's notices.
 
 Claude Code reaches Super Voice at `http://127.0.0.1:7300/v1/mcp`, with a key
 only Claude Code has. Disconnecting Claude Code on the Assistants page takes it
 away.
 
-Claude Code also asks before each tool call. For `/super-voice:talk` to be
-hands-free, allow `listen` and `speak` without asking when it first does.
-
 ## Settings
 
-"Ask questions aloud" is a switch on Claude Code's row on the Assistants page.
-When it is on, Claude can hear you: it asks you its questions out loud and hears
-your answer, without you asking to talk. When it is off, Claude can't use your
-microphone at all. Talk, listening after a spoken reply, and replies read aloud
-work either way, since they don't go through Claude.
+"Announce when it needs you" is a switch on Claude Code's row on the Assistants
+page, on by default. It says whether Claude Code's notices, like "Claude needs
+your permission", are said aloud, in every session.
 
 ## Install
 
