@@ -23,6 +23,12 @@ use serde_json::Value;
 /// Sorted, and deliberately spelled out rather than derived: this is the list a
 /// reviewer reads to see what the URL surface became.
 const URL_SURFACE: &[(&str, &str)] = &[
+    ("/v1/assistants", "get"),
+    ("/v1/assistants/keys", "post"),
+    ("/v1/assistants/keys/{id}", "delete"),
+    ("/v1/assistants/{id}", "delete,patch"),
+    ("/v1/assistants/{id}/connect", "post"),
+    ("/v1/assistants/{id}/key", "get"),
     ("/v1/auth/request", "post"),
     ("/v1/auth/status", "get"),
     ("/v1/backend/list", "get"),

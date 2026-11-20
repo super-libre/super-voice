@@ -21,6 +21,7 @@
 #[macro_use]
 mod macros;
 
+pub(crate) mod assistants;
 pub(crate) mod backends;
 pub(crate) mod contexts;
 pub(crate) mod events;
@@ -41,8 +42,8 @@ use crate::daemon::http::state::AppState;
 use axum::Router;
 use axum::middleware;
 use super_engine_daemon::auth::middleware::{
-    require_allowed_origin, require_any_authenticated, require_rate_limit, require_secrets_scope,
-    require_settings_scope, require_status_scope,
+    require_allowed_origin, require_any_authenticated, require_official_client, require_rate_limit,
+    require_secrets_scope, require_settings_scope, require_status_scope,
 };
 use super_engine_daemon::auth::routes as auth;
 use utoipa::OpenApi;
@@ -71,6 +72,10 @@ struct ScopeGroups {
     /// The configuration surface: every module whose paths the `settings`
     /// scope guards, gathered by [`settings_routes`].
     settings: OpenApiRouter<AppState>,
+    /// Under the `settings` scope too, and for Super Voice's own clients
+    /// alone: the routes that make an assistant's key or show one. See
+    /// [`assistants`].
+    settings_official: OpenApiRouter<AppState>,
     secrets: OpenApiRouter<AppState>,
     /// Reachable without a token — it is how a caller gets one.
     unauthenticated: OpenApiRouter<AppState>,
@@ -92,6 +97,7 @@ fn scope_groups() -> ScopeGroups {
         status: OpenApiRouter::new().routes(routes!(status::status)),
         transcribe: OpenApiRouter::new().nest(STT, transcribe::routes()),
         settings: settings_routes(),
+        settings_official: assistants::official_routes(),
         secrets: backends::secrets::routes(),
         unauthenticated: OpenApiRouter::new().routes(routes!(auth::auth_request)),
     }
@@ -113,6 +119,7 @@ fn settings_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(update::post_check))
         .merge(settings::routes())
         .merge(shortcuts::routes())
+        .merge(assistants::routes())
         .merge(backends::routes())
         .merge(registry::routes())
         .nest(
@@ -145,6 +152,16 @@ fn guarded(groups: ScopeGroups, state: &AppState) -> ScopeGroups {
         status: guard!(groups.status, require_status_scope),
         transcribe: guard!(groups.transcribe, require_transcribe_scope),
         settings: guard!(groups.settings, require_settings_scope),
+        // Inside the scope guard, which attaches the session it judges.
+        settings_official: guard!(
+            groups
+                .settings_official
+                .layer(middleware::from_fn_with_state(
+                    state.auth.clone(),
+                    require_official_client,
+                )),
+            require_settings_scope
+        ),
         secrets: guard!(groups.secrets, require_secrets_scope),
         // No guard: this is the endpoint that mints the token the others need.
         unauthenticated: groups.unauthenticated,
@@ -160,6 +177,7 @@ fn assemble(groups: ScopeGroups) -> OpenApiRouter<AppState> {
         .merge(groups.status)
         .merge(groups.transcribe)
         .merge(groups.settings)
+        .merge(groups.settings_official)
         .merge(groups.secrets)
         .merge(groups.unauthenticated);
 
@@ -241,6 +259,7 @@ pub(super) fn enforced_scopes() -> std::collections::BTreeMap<String, Option<Vec
         (groups.status, Some(vec!["status"])),
         (groups.transcribe, Some(vec!["transcribe"])),
         (groups.settings, Some(vec!["settings"])),
+        (groups.settings_official, Some(vec!["settings"])),
         (groups.secrets, Some(vec!["secrets"])),
         (groups.unauthenticated, None),
     ];

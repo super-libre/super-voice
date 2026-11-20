@@ -150,6 +150,12 @@ knowing them means most paths can be guessed rather than looked up:
 | `/v1/gpu_info` | `GET` | `settings` | [gpu_info.md](./endpoints/v1/gpu_info.md) |
 | `/v1/shortcuts` | `GET` | `settings` | [shortcuts.md](./endpoints/v1/shortcuts.md) |
 | `/v1/shortcuts/{id}` | `POST`, `DELETE` | `settings` | [shortcuts.md](./endpoints/v1/shortcuts.md) |
+| `/v1/assistants` | `GET` | `settings` | [assistants.md](./endpoints/v1/assistants.md) |
+| `/v1/assistants/{id}` | `PATCH`, `DELETE` | `settings` | [assistants.md](./endpoints/v1/assistants.md) |
+| `/v1/assistants/{id}/connect` | `POST` | `settings`, own clients only | [assistants.md](./endpoints/v1/assistants.md#post-assistantsidconnect) |
+| `/v1/assistants/{id}/key` | `GET` | `settings`, own clients only | [assistants.md](./endpoints/v1/assistants.md#get-assistantsidkey) |
+| `/v1/assistants/keys` | `POST` | `settings`, own clients only | [assistants.md](./endpoints/v1/assistants.md#post-assistantskeys) |
+| `/v1/assistants/keys/{id}` | `DELETE` | `settings` | [assistants.md](./endpoints/v1/assistants.md#delete-assistantskeysid) |
 | `/v1/update` | `GET` | `settings` | [update.md](./endpoints/v1/update.md) |
 | `/v1/update/check` | `POST` | `settings` | [update/check.md](./endpoints/v1/update/check.md) |
 

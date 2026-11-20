@@ -40,6 +40,9 @@ pub enum ErrorCode {
     /// `POST /shortcuts/{id}`: the user said no in the desktop's dialog, so
     /// the shortcut was not added. Asking again shows the dialog again.
     ShortcutRefused,
+    /// `POST /assistants/{id}/connect`: the daemon found no sign of the
+    /// assistant on this computer, so it was not connected.
+    AssistantNotFound,
 
     // --- 400 Bad Request: the client gave the daemon something it couldn't
     // use. ---
@@ -97,7 +100,8 @@ impl ErrorCode {
             | Self::BuildNotInstalled
             | Self::ShortcutKeysTaken
             | Self::ShortcutsUnsupported
-            | Self::ShortcutRefused => 409,
+            | Self::ShortcutRefused
+            | Self::AssistantNotFound => 409,
             Self::InvalidModel
             | Self::InvalidBackend
             | Self::CudaUnavailable
