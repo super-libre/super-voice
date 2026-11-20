@@ -86,7 +86,7 @@ jobs:
           #
           # What is missing is the release half, and it is not just a matrix
           # row:
-          #   * The steps below build five binaries and tar up systemd units
+          #   * The steps below build six binaries and tar up systemd units
           #     and COSMIC resources. A darwin entry ships the app bundle
           #     instead, so the build and packaging steps need to branch on
           #     the target.
@@ -140,7 +140,7 @@ jobs:
             libdbus-1-dev \
             pkg-config
 
-      # Build all five binaries in one cargo invocation so the shared
+      # Build all six binaries in one cargo invocation so the shared
       # dependency graph compiles once, then assemble the tarball.
       - name: Build binaries
         run: |
@@ -148,6 +148,7 @@ jobs:
             --bin super-voice-daemon \
             --bin super-voice-cli \
             --bin super-voice-consent \
+            --bin super-voice-mcp \
             --bin super-voice-app \
             --bin super-voice-install
 
@@ -160,6 +161,8 @@ jobs:
           cp target/${{ matrix.target }}/release/super-voice-daemon dist/
           cp target/${{ matrix.target }}/release/super-voice-cli dist/
           cp target/${{ matrix.target }}/release/super-voice-consent dist/
+          # The MCP server, for AI assistants such as Claude Code.
+          cp target/${{ matrix.target }}/release/super-voice-mcp dist/
           cp target/${{ matrix.target }}/release/super-voice-app dist/
 
           # Include systemd service files

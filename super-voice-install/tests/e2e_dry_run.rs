@@ -77,6 +77,7 @@ fn product_tarball(dir: &std::path::Path, name: &str) -> Vec<u8> {
             ("super-voice-daemon", b"#!/bin/sh\necho fake\n"),
             ("super-voice-cli", b"#!/bin/sh\necho fake\n"),
             ("super-voice-consent", b"#!/bin/sh\necho fake\n"),
+            ("super-voice-mcp", b"#!/bin/sh\necho fake\n"),
             ("super-voice-app", b"#!/bin/sh\necho fake\n"),
             ("systemd/super-voice.service", b"[Unit]\nDescription=fake\n"),
             (

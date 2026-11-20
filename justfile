@@ -1236,6 +1236,12 @@ install-daemon:
         exit 1
     fi
 
+    # The MCP server goes with the daemon, as the release installer puts it.
+    if ! just install-mcp; then
+        echo "❌ MCP server installation failed"
+        exit 1
+    fi
+
     # Create user directories
     echo "Creating user directories..."
     mkdir -p {{ run_dir }}
@@ -1428,6 +1434,7 @@ uninstall-daemon:
     sudo rm -f {{ consent_dst }}
 
     sudo rm -f {{ wrapper_dst }}
+    sudo rm -f {{ mcp_dst }}
 
     # Remove directories (but preserve logs)
     rm -rf {{ run_dir }}
@@ -1543,9 +1550,10 @@ uninstall-cli:
     sudo rm -f {{ wrapper_dst }}
     echo "✓ Super Voice CLI uninstalled"
 
-# Install the MCP server, for AI assistants such as Claude Code. Not part of
-# `install` while it is an experiment. It must not be on the daemon's list of
-# its own clients: those are let in without asking.
+# Install the MCP server, for AI assistants such as Claude Code.
+# `install-daemon` runs it, as the release installer puts it beside the daemon.
+# It must not be on the daemon's list of its own clients: those are let in
+# without asking.
 install-mcp:
     #!/usr/bin/env bash
     set -euo pipefail
