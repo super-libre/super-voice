@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! `v1/assistants` — the Assistants page's six calls.
+//! `v1/assistants` — the Assistants page's seven calls.
 
 use serde_json::json;
 use super_voice_shared::models::assistants::{AssistantId, AssistantState};
@@ -7,7 +7,7 @@ use super_voice_shared::models::assistants::{AssistantId, AssistantState};
 use super::fake_daemon::{FakeDaemon, Reply};
 use crate::daemon::client::v1::assistants::{
     connect_assistant, create_key, disconnect_assistant, list_assistants, remove_key,
-    set_announce_when_needed,
+    set_announce_when_needed, set_conversation_context,
 };
 
 /// What the daemon answers the list's calls with: Claude Code in `claude`'s
@@ -34,6 +34,7 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
     daemon.reply(Reply::json(&list("found", true)));
     daemon.reply(Reply::json(&list("connected", true)));
     daemon.reply(Reply::json(&list("connected", false)));
+    daemon.reply(Reply::json(&list("connected", false)));
     daemon.reply(Reply::json(&json!({
         "id": "7a2b",
         "name": "Zed",
@@ -59,6 +60,12 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
         .await
         .expect("set");
     assert!(!quiet.assistants[0].announce_when_needed);
+
+    let heard = set_conversation_context(AssistantId::Codex, false)
+        .await
+        .expect("set");
+    // A daemon that does not say uses the conversation.
+    assert!(heard.assistants[1].conversation_context);
 
     let key = create_key("Zed".to_string()).await.expect("made");
     assert_eq!(key.name, "Zed");
@@ -89,6 +96,11 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
                 "PATCH".to_string(),
                 "/assistants/claude-code".to_string(),
                 json!({ "announce_when_needed": false }),
+            ),
+            (
+                "PATCH".to_string(),
+                "/assistants/codex".to_string(),
+                json!({ "conversation_context": false }),
             ),
             (
                 "POST".to_string(),

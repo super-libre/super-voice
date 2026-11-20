@@ -168,9 +168,10 @@ fn row_for<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<'a, Me
     }
 }
 
-/// A connected assistant's row. For Claude Code, the only one Super Voice
-/// announces, whether it does sits under what it does, so the switch is
-/// plainly this assistant's.
+/// A connected assistant's row. Its switches sit under what it does, so they
+/// are plainly this assistant's: whether its `listen` calls use the
+/// conversation, and for Claude Code, the only one Super Voice announces,
+/// whether it does.
 fn connected_row<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<'a, Message> {
     let id = assistant.id;
     let spacing = cosmic::theme::spacing();
@@ -190,14 +191,22 @@ fn connected_row<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<
     ]
     .spacing(2)
     .width(Length::Fill);
+    let switch = |toggler: widget::Toggler<'a, Message>| {
+        widget::container(toggler.spacing(spacing.space_xs)).padding([spacing.space_xxs, 0, 0, 0])
+    };
     // Only Claude Code's plugin announces when it needs the user.
     if id == AssistantId::ClaudeCode {
-        let announce = widget::toggler(assistant.announce_when_needed)
-            .label(crate::fl!("announce-when-needed"))
-            .spacing(spacing.space_xs)
-            .on_toggle(move |on| message(AssistantsMessage::SetAnnounceWhenNeeded(id, on)));
-        label = label.push(widget::container(announce).padding([spacing.space_xxs, 0, 0, 0]));
+        label = label.push(switch(
+            widget::toggler(assistant.announce_when_needed)
+                .label(crate::fl!("announce-when-needed"))
+                .on_toggle(move |on| message(AssistantsMessage::SetAnnounceWhenNeeded(id, on))),
+        ));
     }
+    label = label.push(switch(
+        widget::toggler(assistant.conversation_context)
+            .label(crate::fl!("use-conversation-as-context"))
+            .on_toggle(move |on| message(AssistantsMessage::SetConversationContext(id, on))),
+    ));
     let disconnect = button::standard(crate::fl!("disconnect")).on_press_maybe(
         (!state.disconnecting.contains(&id)).then_some(message(AssistantsMessage::Disconnect(id))),
     );

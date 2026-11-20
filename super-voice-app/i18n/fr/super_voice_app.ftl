@@ -742,6 +742,7 @@ assistant-not-found = Introuvable sur cet ordinateur.
 assistant-restart-to-use = Redémarrez { $name } pour commencer à l’utiliser.
 assistant-connected = Connecté
 announce-when-needed = Annoncer quand il a besoin de vous
+use-conversation-as-context = Utiliser la conversation comme contexte
 session-unnamed = Session
 session-speaking = Parle
 session-listening = Écoute

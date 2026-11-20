@@ -6,7 +6,7 @@
 use crate::core::app::AppModel;
 use crate::daemon::client::v1::assistants::{
     connect_assistant, create_key, disconnect_assistant, list_assistants, remove_key,
-    set_announce_when_needed,
+    set_announce_when_needed, set_conversation_context,
 };
 use crate::state::ErrorScope;
 use crate::state::assistants::{ConnectDialog, KeyDialog};
@@ -70,6 +70,9 @@ impl AppModel {
             AssistantsMessage::Connected(id, result) => self.connect_answered(id, result),
             AssistantsMessage::Disconnect(id) => self.start_disconnect(id),
             AssistantsMessage::Disconnected(id, result) => self.disconnect_answered(id, result),
+            AssistantsMessage::SetConversationContext(id, on) => {
+                self.change_conversation_context(id, on)
+            }
             AssistantsMessage::SetAnnounceWhenNeeded(id, on) => {
                 self.change_announce_when_needed(id, on)
             }
@@ -220,6 +223,32 @@ impl AppModel {
         }
         self.clear_action_error(ErrorScope::Assistants);
         Task::perform(set_announce_when_needed(id, on), move |result| {
+            answer(AssistantsMessage::Changed(result.map_err(|e| {
+                crate::fl!(
+                    "assistant-change-failed",
+                    name = id.display_name(),
+                    error = e.to_string()
+                )
+            })))
+        })
+    }
+
+    /// The switch moves at once, as announcing's does.
+    fn change_conversation_context(
+        &mut self,
+        id: AssistantId,
+        on: bool,
+    ) -> Task<cosmic::Action<Message>> {
+        if let Some(assistant) = self
+            .assistants
+            .list
+            .as_mut()
+            .and_then(|list| list.assistants.iter_mut().find(|a| a.id == id))
+        {
+            assistant.conversation_context = on;
+        }
+        self.clear_action_error(ErrorScope::Assistants);
+        Task::perform(set_conversation_context(id, on), move |result| {
             answer(AssistantsMessage::Changed(result.map_err(|e| {
                 crate::fl!(
                     "assistant-change-failed",

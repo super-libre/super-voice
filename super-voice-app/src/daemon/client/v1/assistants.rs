@@ -56,6 +56,19 @@ pub async fn set_announce_when_needed(id: AssistantId, on: bool) -> HttpResult<A
     .await
 }
 
+/// `PATCH /assistants/{id}` — whether the assistant's `listen` calls are
+/// heard with the context they bring from the conversation. Answers the list.
+pub async fn set_conversation_context(id: AssistantId, on: bool) -> HttpResult<AssistantList> {
+    let path = format!("/assistants/{id}");
+    let body = serde_json::json!({ "conversation_context": on });
+    with_settings_token(move |socket, token| {
+        let path = path.clone();
+        let body = body.clone();
+        async move { transport::patch_json(socket, &token, &path, &body).await }
+    })
+    .await
+}
+
 /// `POST /assistants/keys` — make a key by hand, for another MCP client. The
 /// answer holds the key, which is shown only this once.
 pub async fn create_key(name: String) -> HttpResult<NewKey> {

@@ -662,6 +662,9 @@ pub enum AssistantsMessage {
     Disconnected(AssistantId, Result<AssistantList, String>),
     /// Whether Super Voice says aloud when this assistant needs the user.
     SetAnnounceWhenNeeded(AssistantId, bool),
+    /// Whether this assistant's `listen` calls are heard with the context
+    /// they bring from the conversation.
+    SetConversationContext(AssistantId, bool),
     /// Open the dialog that makes a key for another assistant.
     AskKey,
     /// The key's name, as typed.
