@@ -25,6 +25,8 @@ pub struct TranscribeOptions {
     /// Stream incremental `event: preview` SSE frames before the final `done`
     /// (only meaningful with `wait: true`). Independent of write-mode typing.
     pub stream_realtime: bool,
+    /// Context for this dictation alone, added to the user's.
+    pub context: Option<crate::models::contexts::ExtraContext>,
 }
 
 /// Build the `POST /stt/transcribe` request body from options. Mic-capture options
@@ -37,6 +39,9 @@ fn record_body(opts: &TranscribeOptions) -> serde_json::Value {
     });
     if let Some(mode) = &opts.stop_mode {
         data["stop_mode"] = serde_json::Value::String(mode.clone());
+    }
+    if let Some(context) = &opts.context {
+        data["context"] = serde_json::json!(context);
     }
     data
 }

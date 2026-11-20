@@ -20,7 +20,7 @@
 use super::protocol::Tool;
 use crate::assistants::sessions::{Sessions, Who};
 use crate::daemon::events::Topic;
-use crate::daemon::recording::Stopped;
+use crate::daemon::recording::{Stopped, TakeSettings};
 use crate::daemon::types::SuperSTTDaemon;
 use crate::output::typer::Typer;
 use std::sync::Arc;
@@ -196,11 +196,14 @@ async fn listen(
     let take = daemon.handle_record_internal(
         &mut typer,
         false,
-        // Ends when the user stops talking, and their shortcut still stops
-        // it early.
-        RecordingStopMode::SilenceAndManual,
-        false,
-        daemon.get_audio_theme(),
+        TakeSettings {
+            // Ends when the user stops talking, and their shortcut still
+            // stops it early.
+            stop_mode: RecordingStopMode::SilenceAndManual,
+            preview_typing: false,
+            cue_theme: daemon.get_audio_theme(),
+            context: None,
+        },
         None,
     );
     let mut take = std::pin::pin!(take);

@@ -101,6 +101,7 @@ mod tests {
                 crate::stt_models::transcribe::BackendContext {
                     headers: headers.clone(),
                     user_allowed_hosts: vec!["gateway.example".to_string()],
+                    context: None,
                 }
             ),
             format!(

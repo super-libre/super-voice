@@ -82,8 +82,10 @@ async fn realtime_orchestration_against_mock() {
         consumer_tx
     });
 
-    let session =
-        tokio::time::timeout(Duration::from_secs(30), backend.realtime_session(transport));
+    let session = tokio::time::timeout(
+        Duration::from_secs(30),
+        backend.realtime_session(transport, None),
+    );
     let result = session.await.expect("session timed out");
     let _held = driver.await.unwrap();
     result.expect("session returned an error");
@@ -127,7 +129,7 @@ async fn realtime_model_transcribe_audio_returns_final_transcript() {
         .with_realtime();
 
     let text = backend
-        .transcribe_audio(&[0.0_f32; 1600], 16000, None)
+        .transcribe_audio(&[0.0_f32; 1600], 16000, None, None)
         .await
         .expect("realtime-routed transcribe should succeed");
     assert_eq!(text, "mock realtime transcription");

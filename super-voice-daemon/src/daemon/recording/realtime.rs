@@ -26,6 +26,7 @@ use std::time::Duration;
 
 use log::{debug, info, warn};
 use serde_json::Value;
+use super_voice_shared::models::contexts::ExtraContext;
 use super_voice_shared::models::protocol::PreviewSource;
 
 use super::RecordingSession;
@@ -84,6 +85,7 @@ impl SuperSTTDaemon {
         typer: &mut Typer,
         write_mode: bool,
         request_language: Option<&str>,
+        extra: Option<&ExtraContext>,
     ) -> Option<String> {
         // Held for the session's lifetime, exactly as the consumer WebSocket
         // path holds it: the model must not be swapped mid-stream.
@@ -106,7 +108,7 @@ impl SuperSTTDaemon {
 
         // The guest's session and our pump run concurrently on this task: the
         // pump feeds audio and drains frames, the session drives the backend.
-        let session_fut = loaded.instance.realtime_session(transport);
+        let session_fut = loaded.instance.realtime_session(transport, extra);
         let pump = self.pump_take(
             session,
             typer,

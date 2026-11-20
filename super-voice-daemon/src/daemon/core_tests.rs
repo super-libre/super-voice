@@ -1195,6 +1195,7 @@ impl crate::stt_models::transcribe::Transcribe for MockTranscribe {
         _audio: &[f32],
         _sample_rate: u32,
         _language: Option<&str>,
+        _extra: Option<&super_voice_shared::models::contexts::ExtraContext>,
     ) -> anyhow::Result<String> {
         Ok(String::new())
     }
@@ -2802,6 +2803,7 @@ impl crate::stt_models::transcribe::Transcribe for ScriptedTranscribe {
         _audio: &[f32],
         _sample_rate: u32,
         _language: Option<&str>,
+        _extra: Option<&super_voice_shared::models::contexts::ExtraContext>,
     ) -> anyhow::Result<String> {
         match &self.result {
             Ok(text) => Ok(text.clone()),
@@ -2964,7 +2966,7 @@ async fn handle_transcribe_returns_backend_text() {
     seed_scripted_model(&daemon, true, Ok("hello world".to_string())).await;
 
     let resp = daemon
-        .handle_transcribe(one_second_of_audio(), 16000, "c1".to_string(), None)
+        .handle_transcribe(one_second_of_audio(), 16000, "c1".to_string(), None, None)
         .await;
 
     assert_eq!(resp.status, "success");
@@ -2981,7 +2983,7 @@ async fn handle_transcribe_reports_backend_failure_as_error() {
     seed_scripted_model(&daemon, true, Err(())).await;
 
     let resp = daemon
-        .handle_transcribe(one_second_of_audio(), 16000, "c1".to_string(), None)
+        .handle_transcribe(one_second_of_audio(), 16000, "c1".to_string(), None, None)
         .await;
 
     assert_eq!(resp.status, "error");
@@ -3002,7 +3004,7 @@ async fn handle_transcribe_errors_when_no_model_loaded() {
     let daemon = test_daemon().await;
 
     let resp = daemon
-        .handle_transcribe(one_second_of_audio(), 16000, "c1".to_string(), None)
+        .handle_transcribe(one_second_of_audio(), 16000, "c1".to_string(), None, None)
         .await;
 
     assert_eq!(resp.status, "error");
@@ -3028,9 +3030,12 @@ async fn record_with_no_model_types_a_notice_in_write_mode() {
         .handle_record_internal(
             &mut typer,
             true,
-            RecordingStopMode::ManualOnly,
-            false,
-            AudioTheme::Silent,
+            crate::daemon::recording::TakeSettings {
+                stop_mode: RecordingStopMode::ManualOnly,
+                preview_typing: false,
+                cue_theme: AudioTheme::Silent,
+                context: None,
+            },
             None,
         )
         .await;
@@ -3059,9 +3064,12 @@ async fn record_with_no_model_types_nothing_without_write_mode() {
         .handle_record_internal(
             &mut typer,
             false,
-            RecordingStopMode::ManualOnly,
-            false,
-            AudioTheme::Silent,
+            crate::daemon::recording::TakeSettings {
+                stop_mode: RecordingStopMode::ManualOnly,
+                preview_typing: false,
+                cue_theme: AudioTheme::Silent,
+                context: None,
+            },
             None,
         )
         .await;
@@ -3692,7 +3700,7 @@ async fn post_processing_loads_on_demand_for_a_transcript() {
     let mut rx = daemon.events.subscribe(Topic::DaemonStatusChanged);
 
     let text = daemon
-        .post_process_final("hello there".to_string(), None)
+        .post_process_final("hello there".to_string(), None, None)
         .await;
 
     assert_eq!(text, "hello there");

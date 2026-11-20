@@ -26,8 +26,9 @@ impl SuperSTTDaemon {
                 sample_rate,
                 client_id,
                 language,
+                context,
             } => {
-                self.handle_transcribe(audio_data, sample_rate, client_id, language)
+                self.handle_transcribe(audio_data, sample_rate, client_id, language, context)
                     .await
             }
             Command::Ping { client_id } => self.handle_ping(client_id),
@@ -38,10 +39,13 @@ impl SuperSTTDaemon {
                 preview,
                 language,
                 audio_cues,
+                context,
                 ..
             } => {
-                self.handle_record_command(write_mode, stop_mode, preview, language, audio_cues)
-                    .await
+                self.handle_record_command(
+                    write_mode, stop_mode, preview, language, audio_cues, context,
+                )
+                .await
             }
             Command::SetAudioTheme { theme } => self.handle_set_audio_theme(theme),
             Command::GetAudioTheme => self.handle_get_audio_theme(),
@@ -159,6 +163,7 @@ impl SuperSTTDaemon {
         preview: Option<bool>,
         language: Option<String>,
         audio_cues: Option<bool>,
+        context: Option<super_voice_shared::models::contexts::ExtraContext>,
     ) -> DaemonResponse {
         // Resolve effective mode: per-request override or daemon config default
         let effective_mode = if let Some(mode) = stop_mode {
@@ -232,9 +237,12 @@ impl SuperSTTDaemon {
             .handle_record_internal(
                 &mut typer,
                 write_mode,
-                effective_mode,
-                preview_typing,
-                cue_theme,
+                crate::daemon::recording::TakeSettings {
+                    stop_mode: effective_mode,
+                    preview_typing,
+                    cue_theme,
+                    context,
+                },
                 language.as_deref(),
             )
             .await;

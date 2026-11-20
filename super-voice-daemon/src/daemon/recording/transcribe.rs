@@ -5,6 +5,7 @@ use crate::output::notice::Origin;
 use crate::stt_models::dispatch::{DispatchError, dispatch_transcription};
 use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
+use super_voice_shared::models::contexts::ExtraContext;
 
 /// A final-transcription failure, tagged with who authored the message.
 ///
@@ -63,6 +64,7 @@ impl SuperSTTDaemon {
         &self,
         audio_data: &[f32],
         request_language: Option<&str>,
+        extra: Option<&ExtraContext>,
     ) -> Result<String> {
         debug!(
             "Processing {} samples for preview transcription",
@@ -99,7 +101,15 @@ impl SuperSTTDaemon {
 
         // Preview is best-effort: a backend failure or missing model yields an
         // empty string rather than surfacing an error to the recording flow.
-        match dispatch_transcription(&self.model, processed_audio, 16000, language).await {
+        match dispatch_transcription(
+            &self.model,
+            processed_audio,
+            16000,
+            language,
+            extra.cloned(),
+        )
+        .await
+        {
             Ok(text) => Ok(text),
             Err(DispatchError::Failed(e)) => {
                 warn!("Preview transcription failed, continuing: {e}");
@@ -126,6 +136,7 @@ impl SuperSTTDaemon {
         &self,
         audio_data: &[f32],
         request_language: Option<&str>,
+        extra: Option<&ExtraContext>,
     ) -> std::result::Result<String, FinalFailure> {
         let processed_audio = self
             .audio_processor
@@ -136,7 +147,15 @@ impl SuperSTTDaemon {
         let language = self.resolve_active_language(request_language).await;
         let start_time = std::time::Instant::now();
 
-        match dispatch_transcription(&self.model, processed_audio, 16000, language).await {
+        match dispatch_transcription(
+            &self.model,
+            processed_audio,
+            16000,
+            language,
+            extra.cloned(),
+        )
+        .await
+        {
             Ok(text) => {
                 // The text itself is logged by `post_process_final`, next to
                 // what the processor makes of it.

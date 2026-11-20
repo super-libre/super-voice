@@ -28,6 +28,7 @@ use std::path::PathBuf;
 use super_voice_shared::daemon::http_client::{self, TranscribeOptions};
 use super_voice_shared::daemon::session::{self, AppId};
 use super_voice_shared::models::assistants::AssistantId;
+use super_voice_shared::models::contexts::ExtraContext;
 use super_voice_shared::validation::get_http_socket_path;
 
 #[cfg(target_os = "macos")]
@@ -104,8 +105,16 @@ async fn dispatch(matches: &ArgMatches, socket_path: PathBuf) -> Result<()> {
             let write = sub.get_flag("write");
             let wait = sub.get_flag("wait");
             let stop_mode = sub.get_one::<String>("stop-mode").cloned();
+            let context = record_context(sub);
             run_with_token(socket_path.clone(), |t| {
-                cmd_record(socket_path.clone(), t, write, wait, stop_mode.clone())
+                cmd_record(
+                    socket_path.clone(),
+                    t,
+                    write,
+                    wait,
+                    stop_mode.clone(),
+                    context.clone(),
+                )
             })
             .await
             .context("record failed")
@@ -191,6 +200,25 @@ fn build_cli() -> Command {
                                 .iter()
                                 .copied(),
                         )),
+                )
+                .arg(
+                    Arg::new("prompt")
+                        .long("prompt")
+                        .value_name("TEXT")
+                        .help(
+                            "Context for this recording, added to your selected context: \
+                             what you are about to talk about",
+                        ),
+                )
+                .arg(
+                    Arg::new("term")
+                        .long("term")
+                        .value_name("WORD")
+                        .help(
+                            "A word or name you may say, added to your selected context's \
+                             vocabulary for this recording. Repeat it for more",
+                        )
+                        .action(ArgAction::Append),
                 ),
         )
         .subcommand(read_arg(
@@ -351,12 +379,25 @@ fn model_line(part: &super_voice_shared::models::status::FeatureStatus) -> Strin
     }
 }
 
+/// The context `voice record --prompt` and `--term` add to the user's for
+/// this recording, if they add any.
+fn record_context(sub: &clap::ArgMatches) -> Option<ExtraContext> {
+    let context = ExtraContext {
+        prompt: sub.get_one::<String>("prompt").cloned().unwrap_or_default(),
+        vocabulary: sub
+            .get_many::<String>("term")
+            .map_or_else(Vec::new, |terms| terms.cloned().collect()),
+    };
+    (!context.is_empty()).then_some(context)
+}
+
 async fn cmd_record(
     socket_path: PathBuf,
     token: String,
     write_mode: bool,
     wait: bool,
     stop_mode: Option<String>,
+    context: Option<ExtraContext>,
 ) -> super_voice_shared::daemon::http_client::HttpResult<()> {
     // Toggle behavior: probe `/v1/status` first. If a daemon-mic
     // capture is already in progress, this invocation acts as a stop
@@ -380,6 +421,7 @@ async fn cmd_record(
             // The CLI prints the final result (or fire-and-forgets); it does not
             // render incremental preview, so it never asks to stream it.
             stream_realtime: false,
+            context,
         },
     )
     .await?;
@@ -770,6 +812,35 @@ mod tests {
                 .try_get_matches_from(["voice", "record", "--write", "stop"])
                 .is_err()
         );
+    }
+
+    /// `--prompt` and each `--term` make the recording's own context, and
+    /// a recording without them has none.
+    #[test]
+    fn record_takes_a_context_of_its_own() {
+        let matches = super::build_cli()
+            .try_get_matches_from([
+                "voice",
+                "record",
+                "--wait",
+                "--prompt",
+                "About the release.",
+                "--term",
+                "agy",
+                "--term",
+                "Antigravity",
+            ])
+            .expect("the context flags parse");
+        let (_, sub) = matches.subcommand().expect("record");
+        let context = super::record_context(sub).expect("a context");
+        assert_eq!(context.prompt, "About the release.");
+        assert_eq!(context.vocabulary, ["agy", "Antigravity"]);
+
+        let matches = super::build_cli()
+            .try_get_matches_from(["voice", "record"])
+            .expect("a bare record parses");
+        let (_, sub) = matches.subcommand().expect("record");
+        assert_eq!(super::record_context(sub), None);
     }
 
     /// The hotkey `LaunchAgent`'s arguments must parse. launchd restarts the

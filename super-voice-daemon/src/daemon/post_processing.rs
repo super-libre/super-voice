@@ -25,6 +25,7 @@ use crate::daemon::device_management::PipelineStage;
 use crate::daemon::types::SuperSTTDaemon;
 use crate::stt_models::dispatch::{DispatchError, dispatch_post_process};
 use super_engine_daemon::stage::StageExt;
+use super_voice_shared::models::contexts::ExtraContext;
 
 /// How long a post-processing pass may take before the raw transcript is used
 /// instead.
@@ -60,6 +61,7 @@ impl SuperSTTDaemon {
         &self,
         text: String,
         language: Option<String>,
+        extra: Option<&ExtraContext>,
     ) -> String {
         // Whole, and before any early return: this is the one line that says
         // what the model heard, whether or not a processor rewrites it.
@@ -94,7 +96,7 @@ impl SuperSTTDaemon {
         let raw = text.clone();
         match tokio::time::timeout(
             POST_PROCESS_TIMEOUT,
-            dispatch_post_process(&self.post_processor, text, language),
+            dispatch_post_process(&self.post_processor, text, language, extra.cloned()),
         )
         .await
         {
@@ -229,6 +231,7 @@ mod tests {
             _audio: &[f32],
             _sample_rate: u32,
             _language: Option<&str>,
+            _extra: Option<&super_voice_shared::models::contexts::ExtraContext>,
         ) -> anyhow::Result<String> {
             anyhow::bail!("not a transcription model")
         }
@@ -237,6 +240,7 @@ mod tests {
             &mut self,
             text: &str,
             _language: Option<&str>,
+            _extra: Option<&super_voice_shared::models::contexts::ExtraContext>,
         ) -> anyhow::Result<String> {
             match self.behavior {
                 Behavior::Uppercase => Ok(text.to_uppercase()),
@@ -288,7 +292,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_loaded_processor_rewrites_the_transcript() {
         let daemon = daemon_with(Behavior::Uppercase).await;
-        let out = daemon.post_process_final("hello there".into(), None).await;
+        let out = daemon
+            .post_process_final("hello there".into(), None, None)
+            .await;
         assert_eq!(out, "HELLO THERE");
     }
 
@@ -297,7 +303,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_failing_processor_yields_the_raw_transcript() {
         let daemon = daemon_with(Behavior::Fail).await;
-        let out = daemon.post_process_final("hello there".into(), None).await;
+        let out = daemon
+            .post_process_final("hello there".into(), None, None)
+            .await;
         assert_eq!(out, "hello there");
     }
 
@@ -306,7 +314,9 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn an_empty_answer_yields_the_raw_transcript() {
         let daemon = daemon_with(Behavior::Empty).await;
-        let out = daemon.post_process_final("hello there".into(), None).await;
+        let out = daemon
+            .post_process_final("hello there".into(), None, None)
+            .await;
         assert_eq!(out, "hello there");
     }
 
@@ -317,7 +327,7 @@ mod tests {
     async fn an_answer_that_runs_on_yields_the_raw_transcript() {
         let daemon = daemon_with(Behavior::Loop).await;
         let raw = "The second feature similarly is to allow users";
-        let out = daemon.post_process_final(raw.into(), None).await;
+        let out = daemon.post_process_final(raw.into(), None, None).await;
         assert_eq!(out, raw);
     }
 
@@ -339,7 +349,9 @@ mod tests {
     async fn a_disabled_processor_does_not_run() {
         let daemon = daemon_with(Behavior::Uppercase).await;
         daemon.config.write().await.post_processor.enabled = false;
-        let out = daemon.post_process_final("hello there".into(), None).await;
+        let out = daemon
+            .post_process_final("hello there".into(), None, None)
+            .await;
         assert_eq!(out, "hello there");
     }
 
@@ -349,7 +361,9 @@ mod tests {
     async fn nothing_loaded_yields_the_raw_transcript() {
         let daemon = test_daemon().await;
         daemon.config.write().await.post_processor.enabled = true;
-        let out = daemon.post_process_final("hello there".into(), None).await;
+        let out = daemon
+            .post_process_final("hello there".into(), None, None)
+            .await;
         assert_eq!(out, "hello there");
     }
 
@@ -358,8 +372,14 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn empty_text_is_never_sent_to_the_processor() {
         let daemon = daemon_with(Behavior::Uppercase).await;
-        assert_eq!(daemon.post_process_final(String::new(), None).await, "");
-        assert_eq!(daemon.post_process_final("   ".into(), None).await, "   ");
+        assert_eq!(
+            daemon.post_process_final(String::new(), None, None).await,
+            ""
+        );
+        assert_eq!(
+            daemon.post_process_final("   ".into(), None, None).await,
+            "   "
+        );
         assert!(
             Arc::strong_count(&daemon.post_processor) >= 1,
             "the slot is untouched"

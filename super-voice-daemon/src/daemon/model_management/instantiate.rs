@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #[cfg(any(feature = "wasm-backends", feature = "subprocess-backends"))]
+use crate::backend_headers::push_context;
+#[cfg(any(feature = "wasm-backends", feature = "subprocess-backends"))]
 use crate::backend_headers::{self, Feature};
 use crate::daemon::types::{LoadTurn, SuperSTTDaemon};
 use crate::stt_models::ModelDefinition;
 use crate::stt_models::backends::{self, DiscoveredBackend};
 use crate::stt_models::transcribe::Transcribe;
 use anyhow::{Result, anyhow, bail};
+#[cfg(any(feature = "wasm-backends", feature = "subprocess-backends"))]
+use super_voice_shared::models::contexts::DictationContext;
 
 impl SuperSTTDaemon {
     /// Build a running backend instance for `(name, source)` plus its
@@ -107,7 +111,8 @@ impl SuperSTTDaemon {
             context.headers,
             websocket_capability,
             def.realtime,
-        )?;
+        )?
+        .with_user_context(context.context);
         Ok(Box::new(inst))
     }
 
@@ -136,7 +141,7 @@ impl SuperSTTDaemon {
         // subprocess backend reads its `[[options]]` off the request too.
         // Resolved before the download tracker exists, so a missing required
         // secret fails the load without leaving a progress card behind.
-        let headers = self.backend_context(backend, def).await?.headers;
+        let context = self.backend_context(backend, def).await?;
 
         // Count the files we'll provision so the tracker's denominator is
         // accurate from the first broadcast. Each `[[models.files]]` entry is
@@ -189,9 +194,10 @@ impl SuperSTTDaemon {
             name,
             device_pref,
             tracker.as_ref(),
-            headers,
+            context.headers,
         )
-        .await;
+        .await
+        .map(|backend| backend.with_user_context(context.context));
 
         // Whatever happened (success, error, cancel), the tracker has done
         // its job — mark the terminal status and clear the manager so the
@@ -255,7 +261,37 @@ impl SuperSTTDaemon {
         Ok(crate::stt_models::transcribe::BackendContext {
             headers,
             user_allowed_hosts,
+            context: self.user_context(backend, model).await,
         })
+    }
+
+    /// The user's dictation context for `model` of `backend`, when the model
+    /// takes one: the context in force for the backend, or an empty one when
+    /// none is. `None` when the model takes no context, so that nothing a
+    /// request adds reaches it either.
+    ///
+    /// Gated on the model's declaration rather than sent to everyone,
+    /// because a model that does not read the context headers has no way to
+    /// say so and would silently ignore a vocabulary the user watched
+    /// themselves type. With the declaration, a settings UI can tell them
+    /// which models will actually hear it.
+    #[cfg(any(feature = "wasm-backends", feature = "subprocess-backends"))]
+    async fn user_context(
+        &self,
+        backend: &DiscoveredBackend,
+        model: &ModelDefinition,
+    ) -> Option<DictationContext> {
+        if !model.product.takes_context(&backend.capabilities.product) {
+            return None;
+        }
+        Some(
+            self.config
+                .read()
+                .await
+                .resolve_context(&backend.source)
+                .cloned()
+                .unwrap_or_default(),
+        )
     }
 
     /// Form the `x-voice-secret-*` / `x-voice-option-*` headers a backend is
@@ -315,41 +351,8 @@ impl SuperSTTDaemon {
         // Read last and in a scope of its own: no await may happen under the
         // config guard, and everything above this works from the secrets in
         // memory or the `overrides` snapshot it was handed.
-        //
-        // Gated on the model's declaration rather than sent to everyone,
-        // because a model that does not read these headers has no way to say
-        // so and would silently ignore a vocabulary the user watched themselves
-        // type. With the declaration, a settings UI can tell them which models
-        // will actually hear it.
-        if model.product.takes_context(&backend.capabilities.product) {
-            let context = self
-                .config
-                .read()
-                .await
-                .resolve_context(&backend.source)
-                .filter(|c| !c.is_empty())
-                .cloned();
-            if let Some(context) = context {
-                // Each half is sent only when it has something in it. A
-                // backend reading one and not the other should not have to
-                // distinguish "absent" from "empty".
-                if !context.prompt.trim().is_empty() {
-                    backend_headers::push(
-                        &mut headers,
-                        Feature::SpeechToText,
-                        "prompt",
-                        json_ascii(&context.prompt),
-                    );
-                }
-                if !context.vocabulary.is_empty() {
-                    backend_headers::push(
-                        &mut headers,
-                        Feature::SpeechToText,
-                        "vocabulary",
-                        json_ascii_array(&context.vocabulary),
-                    );
-                }
-            }
+        if let Some(context) = self.user_context(backend, model).await {
+            push_context(&mut headers, &context);
         }
         Ok(headers)
     }
@@ -442,80 +445,6 @@ fn resolved_backend_option(
         .get(&opt.name)
         .cloned()
         .or_else(|| opt.default.as_ref().map(ToString::to_string))
-}
-
-/// One JSON string, escaped so every byte of it is printable ASCII.
-///
-/// Both context headers are JSON because a prompt holds line breaks and a
-/// vocabulary is a list, and a header value can carry neither as itself. JSON
-/// is already the encoding every backend has a parser for, so the far side is
-/// `serde_json::from_str` and nothing else.
-///
-/// Written by hand rather than through `serde_json::to_string` for one reason:
-/// serde emits non-ASCII characters as themselves, and
-/// [`HeaderValue`](axum::http::HeaderValue) is asymmetric about those. It
-/// *accepts* any byte from `0x80` up at construction, and then refuses the same
-/// bytes in `to_str`. So a Spanish prompt builds a header the daemon considers
-/// valid and the backend cannot read back — a failure that shows up as a
-/// context silently going missing for some users and not others. Escaping to
-/// `\uXXXX` keeps the value inside the visible-ASCII range `to_str` will
-/// return.
-#[cfg(any(feature = "wasm-backends", feature = "subprocess-backends"))]
-fn json_ascii(value: &str) -> String {
-    let mut out = String::with_capacity(value.len() + 2);
-    out.push('"');
-    for c in value.chars() {
-        escape_ascii_into(c, &mut out);
-    }
-    out.push('"');
-    out
-}
-
-/// A JSON array of strings, each escaped by [`json_ascii`]'s rules.
-///
-/// The vocabulary rides as an array rather than a joined string because every
-/// consumer splits it differently and a term containing the delimiter —
-/// `"Menjivar, Jorge"` — would be ambiguous in a flat one. Sharing the escaper
-/// with [`json_ascii`] is what keeps the two headers decodable the same way.
-#[cfg(any(feature = "wasm-backends", feature = "subprocess-backends"))]
-fn json_ascii_array(values: &[String]) -> String {
-    let mut out = String::with_capacity(values.iter().map(|v| v.len() + 3).sum::<usize>() + 2);
-    out.push('[');
-    for (i, value) in values.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str(&json_ascii(value));
-    }
-    out.push(']');
-    out
-}
-
-/// Append one character in its JSON form, using only printable ASCII.
-///
-/// Anything outside `0x20..=0x7e` goes out as `\uXXXX`, astral characters as
-/// the surrogate pair JSON spells them with — which is what `encode_utf16`
-/// produces, so the two agree without a special case.
-#[cfg(any(feature = "wasm-backends", feature = "subprocess-backends"))]
-fn escape_ascii_into(c: char, out: &mut String) {
-    use std::fmt::Write as _;
-    match c {
-        '"' => out.push_str("\\\""),
-        '\\' => out.push_str("\\\\"),
-        '\n' => out.push_str("\\n"),
-        '\r' => out.push_str("\\r"),
-        '\t' => out.push_str("\\t"),
-        '\u{8}' => out.push_str("\\b"),
-        '\u{c}' => out.push_str("\\f"),
-        c if c.is_ascii_graphic() || c == ' ' => out.push(c),
-        c => {
-            let mut buf = [0u16; 2];
-            for unit in c.encode_utf16(&mut buf) {
-                // Writing to a String is infallible.
-                let _ = write!(out, "\\u{unit:04x}");
-            }
-        }
-    }
 }
 
 #[cfg(all(test, feature = "wasm-backends"))]
@@ -862,6 +791,23 @@ mod tests {
         for name in ["x-voice-vocabulary", "x-stt-vocabulary"] {
             assert_eq!(value(name), Some(r#"["kubectl"]"#), "{name}");
         }
+
+        // The bundle a load hands the backend keeps the user's context whole,
+        // for a dictation's own to be added to, under the same rule.
+        let context = |model| {
+            let daemon = &daemon;
+            let backend = &backend;
+            async move {
+                daemon
+                    .backend_context(backend, &model)
+                    .await
+                    .expect("a context")
+                    .context
+            }
+        };
+        assert_eq!(context(transcription_model(source)).await, None);
+        let kept = context(declared).await.expect("the user's context");
+        assert_eq!(kept.vocabulary, ["kubectl"]);
     }
 
     /// A backend still declaring the deprecated `[capabilities] context` hands

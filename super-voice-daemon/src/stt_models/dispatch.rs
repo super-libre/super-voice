@@ -16,6 +16,7 @@
 //! pass surfaces them, the one-shot reports an empty success.
 
 use std::sync::Arc;
+use super_voice_shared::models::contexts::ExtraContext;
 
 use crate::daemon::types::SharedLoadedModel;
 
@@ -33,7 +34,8 @@ pub(crate) enum DispatchError {
 ///
 /// `processed_audio` is the resampled/normalized audio ready for the backend;
 /// `sample_rate` is its rate (callers pass `16000`). `language` is the resolved
-/// BCP-47 tag or `None` to let the model use its primary language.
+/// BCP-47 tag or `None` to let the model use its primary language. `extra` is
+/// the dictation's own context, added to the user's for this pass.
 ///
 /// Online models are awaited on the async runtime; local models run on a
 /// blocking thread. Returns the transcribed text, or a [`DispatchError`] the
@@ -43,6 +45,7 @@ pub(crate) async fn dispatch_transcription(
     processed_audio: Vec<f32>,
     sample_rate: u32,
     language: Option<String>,
+    extra: Option<ExtraContext>,
 ) -> Result<String, DispatchError> {
     let is_online = {
         let guard = model.read().await;
@@ -59,7 +62,12 @@ pub(crate) async fn dispatch_transcription(
         };
         loaded
             .instance
-            .transcribe_audio(&processed_audio, sample_rate, language.as_deref())
+            .transcribe_audio(
+                &processed_audio,
+                sample_rate,
+                language.as_deref(),
+                extra.as_ref(),
+            )
             .await
             .map_err(DispatchError::Failed)
     } else {
@@ -77,6 +85,7 @@ pub(crate) async fn dispatch_transcription(
                     &processed_audio,
                     sample_rate,
                     language.as_deref(),
+                    extra.as_ref(),
                 ))
                 .map_err(DispatchError::Failed)
         })
@@ -99,6 +108,7 @@ pub(crate) async fn dispatch_post_process(
     post_processor: &SharedLoadedModel,
     text: String,
     language: Option<String>,
+    extra: Option<ExtraContext>,
 ) -> Result<String, DispatchError> {
     let is_online = {
         let guard = post_processor.read().await;
@@ -114,7 +124,7 @@ pub(crate) async fn dispatch_post_process(
         };
         loaded
             .instance
-            .process_text(&text, language.as_deref())
+            .process_text(&text, language.as_deref(), extra.as_ref())
             .await
             .map_err(DispatchError::Failed)
     } else {
@@ -126,7 +136,11 @@ pub(crate) async fn dispatch_post_process(
                 return Err(DispatchError::NotLoaded);
             };
             handle
-                .block_on(loaded.instance.process_text(&text, language.as_deref()))
+                .block_on(
+                    loaded
+                        .instance
+                        .process_text(&text, language.as_deref(), extra.as_ref()),
+                )
                 .map_err(DispatchError::Failed)
         })
         .await
@@ -183,11 +197,12 @@ mod tests {
             audio: &[f32],
             _sample_rate: u32,
             language: Option<&str>,
+            extra: Option<&ExtraContext>,
         ) -> anyhow::Result<String> {
             *self.seen_language.lock().unwrap() = Some(language.map(str::to_string));
             *self.seen_audio_len.lock().unwrap() = Some(audio.len());
             match &self.outcome {
-                Outcome::Ok(text) => Ok(text.clone()),
+                Outcome::Ok(text) => Ok(with_terms(text, extra)),
                 Outcome::Err => anyhow::bail!("backend boom"),
             }
         }
@@ -196,14 +211,24 @@ mod tests {
             &mut self,
             text: &str,
             language: Option<&str>,
+            extra: Option<&ExtraContext>,
         ) -> anyhow::Result<String> {
             *self.seen_language.lock().unwrap() = Some(language.map(str::to_string));
             match &self.outcome {
                 // Wrap the input so a test can tell a processed transcript from
                 // a passed-through one.
-                Outcome::Ok(marker) => Ok(format!("{marker}:{text}")),
+                Outcome::Ok(marker) => Ok(with_terms(&format!("{marker}:{text}"), extra)),
                 Outcome::Err => anyhow::bail!("processor boom"),
             }
+        }
+    }
+
+    /// `text`, with the terms of the dictation's own context after it, so a
+    /// test reads what reached the backend in what it answered.
+    fn with_terms(text: &str, extra: Option<&ExtraContext>) -> String {
+        match extra {
+            Some(extra) => format!("{text} [{}]", extra.vocabulary.join(", ")),
+            None => text.to_string(),
         }
     }
 
@@ -262,7 +287,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn online_model_returns_transcribed_text() {
         let (model, _, _) = loaded(true, Outcome::Ok("hello".to_string())).await;
-        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None).await;
+        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None, None).await;
         assert!(
             matches!(out, Ok(ref t) if t == "hello"),
             "online path should return the backend text"
@@ -273,7 +298,7 @@ mod tests {
     async fn local_model_returns_transcribed_text() {
         // Exercises the spawn_blocking path used for non-online models.
         let (model, _, _) = loaded(false, Outcome::Ok("world".to_string())).await;
-        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None).await;
+        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None, None).await;
         assert!(
             matches!(out, Ok(ref t) if t == "world"),
             "local blocking path should return the backend text"
@@ -283,28 +308,28 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn online_backend_error_maps_to_failed() {
         let (model, _, _) = loaded(true, Outcome::Err).await;
-        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None).await;
+        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None, None).await;
         assert!(matches!(out, Err(DispatchError::Failed(_))));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn local_backend_error_maps_to_failed() {
         let (model, _, _) = loaded(false, Outcome::Err).await;
-        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None).await;
+        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None, None).await;
         assert!(matches!(out, Err(DispatchError::Failed(_))));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn no_model_loaded_maps_to_not_loaded() {
         let model: SharedLoadedModel = Arc::default();
-        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None).await;
+        let out = dispatch_transcription(&model, vec![0.0; 16000], 16000, None, None).await;
         assert!(matches!(out, Err(DispatchError::NotLoaded)));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn online_post_processor_returns_processed_text() {
         let (model, _, _) = loaded(true, Outcome::Ok("clean".to_string())).await;
-        let out = dispatch_post_process(&model, "um hello".to_string(), None).await;
+        let out = dispatch_post_process(&model, "um hello".to_string(), None, None).await;
         assert!(
             matches!(out, Ok(ref t) if t == "clean:um hello"),
             "online path should return the processor's text"
@@ -316,21 +341,21 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn local_post_processor_returns_processed_text() {
         let (model, _, _) = loaded(false, Outcome::Ok("clean".to_string())).await;
-        let out = dispatch_post_process(&model, "um hello".to_string(), None).await;
+        let out = dispatch_post_process(&model, "um hello".to_string(), None, None).await;
         assert!(matches!(out, Ok(ref t) if t == "clean:um hello"));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn post_processor_error_maps_to_failed() {
         let (model, _, _) = loaded(true, Outcome::Err).await;
-        let out = dispatch_post_process(&model, "hi".to_string(), None).await;
+        let out = dispatch_post_process(&model, "hi".to_string(), None, None).await;
         assert!(matches!(out, Err(DispatchError::Failed(_))));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn no_post_processor_loaded_maps_to_not_loaded() {
         let model: SharedLoadedModel = Arc::default();
-        let out = dispatch_post_process(&model, "hi".to_string(), None).await;
+        let out = dispatch_post_process(&model, "hi".to_string(), None, None).await;
         assert!(matches!(out, Err(DispatchError::NotLoaded)));
     }
 
@@ -339,7 +364,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn language_is_forwarded_to_the_post_processor() {
         let (model, seen_lang, _) = loaded(true, Outcome::Ok("clean".to_string())).await;
-        let _ = dispatch_post_process(&model, "hola".to_string(), Some("es-MX".to_string())).await;
+        let _ = dispatch_post_process(&model, "hola".to_string(), Some("es-MX".to_string()), None)
+            .await;
         assert_eq!(
             seen_lang.lock().unwrap().clone(),
             Some(Some("es-MX".to_string()))
@@ -349,13 +375,36 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn language_and_audio_are_forwarded_to_backend() {
         let (model, seen_lang, seen_len) = loaded(true, Outcome::Ok("ok".to_string())).await;
-        let _ =
-            dispatch_transcription(&model, vec![0.0; 1234], 16000, Some("es-MX".to_string())).await;
+        let _ = dispatch_transcription(
+            &model,
+            vec![0.0; 1234],
+            16000,
+            Some("es-MX".to_string()),
+            None,
+        )
+        .await;
         assert_eq!(
             seen_lang.lock().unwrap().clone(),
             Some(Some("es-MX".to_string())),
             "the resolved language must reach the backend unchanged"
         );
         assert_eq!(*seen_len.lock().unwrap(), Some(1234));
+    }
+
+    /// A dictation's own context reaches both stages, as the language does.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_dictations_context_reaches_both_stages() {
+        let extra = ExtraContext {
+            prompt: String::new(),
+            vocabulary: vec!["agy".to_string()],
+        };
+        let (model, _, _) = loaded(true, Outcome::Ok("open it".to_string())).await;
+        let heard =
+            dispatch_transcription(&model, vec![0.0; 16], 16000, None, Some(extra.clone())).await;
+        assert!(matches!(heard.as_deref(), Ok("open it [agy]")));
+        let (processor, _, _) = loaded(false, Outcome::Ok("clean".to_string())).await;
+        let processed =
+            dispatch_post_process(&processor, "open it".to_string(), None, Some(extra)).await;
+        assert!(matches!(processed.as_deref(), Ok("clean:open it [agy]")));
     }
 }

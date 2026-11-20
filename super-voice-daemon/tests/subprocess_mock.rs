@@ -144,7 +144,7 @@ async fn subprocess_orchestration_against_mock() {
     // Transcribe drives /v1/transcribe → canned text.
     let samples = vec![0.0f32; 1600];
     let text = backend
-        .transcribe_audio(&samples, 16000, None)
+        .transcribe_audio(&samples, 16000, None, None)
         .await
         .expect("transcribe");
     assert_eq!(text, "mock transcription");
@@ -178,13 +178,13 @@ async fn two_backends_from_one_directory_run_concurrently() {
 
     // Both are live: each answers on its own socket, over its own route.
     let text = transcriber
-        .transcribe_audio(&vec![0.0f32; 1600], 16000, None)
+        .transcribe_audio(&vec![0.0f32; 1600], 16000, None, None)
         .await
         .expect("the transcription model still serves after the second spawn");
     assert_eq!(text, "mock transcription");
 
     let processed = processor
-        .process_text("um so hello", Some("en"))
+        .process_text("um so hello", Some("en"), None)
         .await
         .expect("the post-processor serves /v1/process");
     assert_eq!(processed, "processed: um so hello");
@@ -196,7 +196,7 @@ async fn two_backends_from_one_directory_run_concurrently() {
         .await
         .expect("clean processor shutdown");
     let text = transcriber
-        .transcribe_audio(&vec![0.0f32; 1600], 16000, None)
+        .transcribe_audio(&vec![0.0f32; 1600], 16000, None, None)
         .await
         .expect("the transcription model survives the post-processor's teardown");
     assert_eq!(text, "mock transcription");
@@ -243,7 +243,7 @@ async fn a_model_reloads_only_once_its_instance_is_released() {
 
     // And the refused attempt left the running instance alone.
     let processed = running
-        .process_text("um so hello", Some("en"))
+        .process_text("um so hello", Some("en"), None)
         .await
         .expect("a refused spawn must not take the running instance's socket");
     assert_eq!(processed, "processed: um so hello");
@@ -255,7 +255,7 @@ async fn a_model_reloads_only_once_its_instance_is_released() {
         .await
         .expect("the model reloads once its instance is released");
     let processed = reloaded
-        .process_text("um so hello", Some("en"))
+        .process_text("um so hello", Some("en"), None)
         .await
         .expect("the reloaded instance serves");
     assert_eq!(processed, "processed: um so hello");
@@ -375,7 +375,7 @@ async fn a_changed_option_reaches_a_running_subprocess() {
 
     assert_eq!(
         processor
-            .process_text("hello", Some("en"))
+            .process_text("hello", Some("en"), None)
             .await
             .expect("the post-processor serves /v1/process"),
         "processed: hello [styling=formal]",
@@ -385,11 +385,12 @@ async fn a_changed_option_reaches_a_running_subprocess() {
     processor.reconfigure(super_voice_daemon::stt_models::transcribe::BackendContext {
         headers: vec![(option, "casual".to_string())],
         user_allowed_hosts: Vec::new(),
+        context: None,
     });
 
     assert_eq!(
         processor
-            .process_text("hello", Some("en"))
+            .process_text("hello", Some("en"), None)
             .await
             .expect("the post-processor serves /v1/process"),
         "processed: hello [styling=casual]",
@@ -421,7 +422,7 @@ async fn option_headers_reach_the_subprocess() {
         .expect("spawn + load the post-processor");
 
     let processed = processor
-        .process_text("um so hello", Some("en"))
+        .process_text("um so hello", Some("en"), None)
         .await
         .expect("the post-processor serves /v1/process");
     assert_eq!(
@@ -552,7 +553,7 @@ async fn a_prepare_runs_before_the_weights_download() {
     assert!(dir.join("models/mock/weights.bin").exists());
 
     let text = backend
-        .transcribe_audio(&[0.0f32; 1600], 16000, None)
+        .transcribe_audio(&[0.0f32; 1600], 16000, None, None)
         .await
         .expect("transcribe");
     assert_eq!(text, "mock transcription");
@@ -580,7 +581,7 @@ async fn a_failed_prepare_leaves_the_load_unharmed() {
 
     assert_eq!(prepared_with(&dir), None, "the prepare did fail");
     let text = backend
-        .transcribe_audio(&[0.0f32; 1600], 16000, None)
+        .transcribe_audio(&[0.0f32; 1600], 16000, None, None)
         .await
         .expect("transcribe");
     assert_eq!(text, "mock transcription");
@@ -609,7 +610,7 @@ async fn a_backend_that_dies_preparing_is_started_again() {
             .expect("the load must start the backend again");
 
     let text = backend
-        .transcribe_audio(&[0.0f32; 1600], 16000, None)
+        .transcribe_audio(&[0.0f32; 1600], 16000, None, None)
         .await
         .expect("transcribe");
     assert_eq!(text, "mock transcription");

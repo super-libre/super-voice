@@ -195,6 +195,40 @@ async fn precaptured_audio_accepts_a_language_override() {
     assert_eq!(body["transcription"], common::MOCK_TRANSCRIPTION, "{body}");
 }
 
+/// Pre-captured audio may bring context of its own, added to the user's for
+/// that transcription, and one too long to send is refused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn precaptured_audio_takes_a_context_of_its_own() {
+    let Some(component) = common::mock_component() else {
+        eprintln!("skipping: mock component not built (run `just build-mock-wasm-backend`)");
+        return;
+    };
+    let (_guard, sock, token) = start_daemon(&component).await;
+    load_stage_one(&sock, &token).await;
+
+    let context = serde_json::json!({ "prompt": "About the release.", "vocabulary": ["agy"] });
+    let (status, body) = post(
+        &sock,
+        "/stt/transcribe",
+        &token,
+        serde_json::json!({ "audio_data": silence(), "context": context }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "with a context: {body}");
+    assert_eq!(body["transcription"], common::MOCK_TRANSCRIPTION, "{body}");
+
+    let too_long = serde_json::json!({ "prompt": "a".repeat(4001) });
+    let (status, body) = post(
+        &sock,
+        "/stt/transcribe",
+        &token,
+        serde_json::json!({ "audio_data": silence(), "context": too_long }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "too long: {body}");
+    assert_eq!(body["error_code"], "invalid_value", "{body}");
+}
+
 /// `stream_realtime` asks for incremental frames off the microphone, and
 /// `audio_data` says there is no microphone in this request. The two cannot both
 /// be honored, so the daemon refuses rather than silently dropping one — a
@@ -301,6 +335,8 @@ async fn an_invalid_microphone_option_is_a_bad_request() {
     let bad_options = [
         serde_json::json!({ "stop_mode": "not_a_real_mode" }),
         serde_json::json!({ "audio_cues": "false" }),
+        // A dictation's own context of the wrong shape.
+        serde_json::json!({ "context": { "vocabulary": "agy" } }),
     ];
     for option in bad_options {
         for wait in [false, true] {

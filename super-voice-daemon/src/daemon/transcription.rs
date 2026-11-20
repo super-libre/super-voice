@@ -2,6 +2,7 @@
 use crate::daemon::types::SuperSTTDaemon;
 use crate::stt_models::dispatch::{DispatchError, dispatch_transcription};
 use log::{debug, error, info, warn};
+use super_voice_shared::models::contexts::ExtraContext;
 use super_voice_shared::models::protocol::{DaemonResponse, ErrorCode};
 use super_voice_shared::utils::audio::validate_audio;
 
@@ -25,6 +26,7 @@ impl SuperSTTDaemon {
         sample_rate: u32,
         client_id: String,
         language: Option<String>,
+        extra: Option<ExtraContext>,
     ) -> DaemonResponse {
         info!("Processing transcription request from client: {client_id}");
 
@@ -42,6 +44,7 @@ impl SuperSTTDaemon {
         // fails is logged; this answer's code says only that no model is
         // loaded, which the inference below reports.
         let _ = self.ensure_pipeline_loaded().await;
+        crate::daemon::recording::log_extra_context(extra.as_ref());
 
         // Process audio
         let processed_audio = match self.audio_processor.process_audio(&audio_data, sample_rate) {
@@ -54,7 +57,7 @@ impl SuperSTTDaemon {
 
         // Run the model inference (online or blocking path)
         let transcription_result = self
-            .run_transcription(processed_audio, language.as_deref())
+            .run_transcription(processed_audio, language.as_deref(), extra.as_ref())
             .await;
         // The models' idle time starts when the transcription ends.
         self.finished_using_pipeline();
@@ -124,12 +127,21 @@ impl SuperSTTDaemon {
         &self,
         processed_audio: Vec<f32>,
         request_language: Option<&str>,
+        extra: Option<&ExtraContext>,
     ) -> Result<Result<(String, std::time::Duration), RunTranscriptionError>, tokio::task::JoinError>
     {
         let language = self.resolve_active_language(request_language).await;
         let start_time = std::time::Instant::now();
 
-        match dispatch_transcription(&self.model, processed_audio, 16000, language.clone()).await {
+        match dispatch_transcription(
+            &self.model,
+            processed_audio,
+            16000,
+            language.clone(),
+            extra.cloned(),
+        )
+        .await
+        {
             Ok(text) => {
                 let duration = start_time.elapsed();
                 info!("Transcription completed in {duration:?}");
@@ -137,7 +149,7 @@ impl SuperSTTDaemon {
                 // it lands inside the reported duration. Best-effort: this
                 // returns the raw text unchanged when it is off or fails. It
                 // also logs the raw text and the processed one side by side.
-                let text = self.post_process_final(text, language).await;
+                let text = self.post_process_final(text, language, extra).await;
                 Ok(Ok((text, start_time.elapsed())))
             }
             // A real backend failure is surfaced, not masked as empty success —
