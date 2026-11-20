@@ -37,9 +37,21 @@ case "$*" in
 esac
 "#;
 
+/// The variable that names where Claude Code's plugin comes from.
+const MARKETPLACE_VAR: &str = "SUPER_VOICE_CLAUDE_MARKETPLACE";
+
 /// A daemon whose home is `home`, finding the programs in `home/bin`, and
 /// a token for it with the `settings` scope.
 async fn start(label: &str, official: bool) -> (TestDaemon, String, PathBuf) {
+    start_with(label, official, &[]).await
+}
+
+/// [`start`], with `env` set for the daemon as well.
+async fn start_with(
+    label: &str,
+    official: bool,
+    env: &[(&str, &str)],
+) -> (TestDaemon, String, PathBuf) {
     let mut builder = common::daemon(label);
     let home = builder.home().root().join("home");
     let bin = home.join("bin");
@@ -53,6 +65,11 @@ async fn start(label: &str, official: bool) -> (TestDaemon, String, PathBuf) {
         .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/bus");
     for var in ELSEWHERE {
         builder = builder.without(var);
+    }
+    // The plugin comes from where the test says, not the shell running it.
+    builder = builder.without(MARKETPLACE_VAR);
+    for (key, value) in env {
+        builder = builder.env(key, value);
     }
     if official {
         builder = builder.env("SUPER_VOICE_TREAT_AS_OFFICIAL", "1");
@@ -271,6 +288,36 @@ async fn claude_code_gets_the_plugin_installed() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "the key is revoked");
+}
+
+/// With `SUPER_VOICE_CLAUDE_MARKETPLACE` set, Connect adds that marketplace,
+/// like a checkout's directory, in place of the one on GitHub.
+#[tokio::test]
+async fn the_variable_names_where_the_plugin_comes_from() {
+    let (daemon, token, home) = start_with(
+        "assistants-claude-marketplace",
+        true,
+        &[(MARKETPLACE_VAR, "/src/super-voice")],
+    )
+    .await;
+
+    let (status, list) = call(
+        &daemon,
+        &token,
+        Method::POST,
+        "/assistants/claude-code/connect",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let ran = std::fs::read_to_string(home.join("claude-calls")).expect("claude ran");
+    assert_eq!(
+        ran.lines().collect::<Vec<_>>(),
+        [
+            "plugin marketplace add /src/super-voice --scope user",
+            "plugin install super-voice@super-voice --scope user",
+        ]
+    );
 }
 
 /// Asking aloud is kept per assistant.

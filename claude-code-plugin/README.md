@@ -50,9 +50,15 @@ In the Super Voice app, open Assistants and press Connect next to Claude Code.
 Super Voice installs this plugin and gives Claude Code its key. Restart Claude
 Code to start using it.
 
-To try it from a checkout, for one session only, connect Claude Code in the app
-first so it has a key, then:
+To try it from a checkout instead, have the daemon install it from there: set
+`SUPER_VOICE_CLAUDE_MARKETPLACE` to the checkout's directory in the daemon's
+environment, restart the daemon, and press Connect. `set-environment` lasts
+until you log out.
 
 ```
-claude --plugin-dir ./claude-code-plugin
+systemctl --user set-environment SUPER_VOICE_CLAUDE_MARKETPLACE=/path/to/super-voice
+systemctl --user restart super-voice
 ```
+
+The plugin then loads from the checkout, so edits reach Claude Code at its next
+start. Connecting again without the variable goes back to the plugin on GitHub.

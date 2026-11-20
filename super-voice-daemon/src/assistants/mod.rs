@@ -26,6 +26,7 @@ use log::{info, warn};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use super_voice_shared::SUPER_VOICE;
 use super_voice_shared::assistant_configs;
 use super_voice_shared::models::assistants::{AssistantId, AssistantState};
 
@@ -35,8 +36,16 @@ pub const MCP_PATH: &str = "/v1/mcp";
 /// What a key made for an assistant may do: speak, and hear the user.
 pub const KEY_SCOPES: [&str; 2] = ["speak", "transcribe"];
 
-/// The marketplace Claude Code installs Super Voice's plugin from.
+/// The marketplace Claude Code installs Super Voice's plugin from, unless
+/// [`CLAUDE_MARKETPLACE_VAR`] names another.
 pub const CLAUDE_MARKETPLACE: &str = "super-libre/super-voice";
+
+/// The variable, after the product's prefix (`SUPER_VOICE_CLAUDE_MARKETPLACE`),
+/// that names another marketplace to install the plugin from: anything
+/// `claude plugin marketplace add` takes, like a checkout's directory, to try
+/// a plugin that is not on GitHub yet. That marketplace must be named
+/// `super-voice` too, as [`CLAUDE_PLUGIN`] says.
+pub const CLAUDE_MARKETPLACE_VAR: &str = "CLAUDE_MARKETPLACE";
 
 /// Super Voice's plugin, as Claude Code names it: the plugin, at the
 /// marketplace.
@@ -303,21 +312,34 @@ fn config_file(id: AssistantId) -> Result<PathBuf, Error> {
     file.ok_or_else(|| Error::Config("there is no home directory".to_string()))
 }
 
+/// The marketplace to install the plugin from: `set`, the value of
+/// [`CLAUDE_MARKETPLACE_VAR`], unless it is missing or blank, else
+/// [`CLAUDE_MARKETPLACE`].
+fn claude_marketplace(set: Option<String>) -> String {
+    set.filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| CLAUDE_MARKETPLACE.to_string())
+}
+
 /// Install Super Voice's plugin in Claude Code, with `claude`, the program
-/// found: add its marketplace, then install it, for the user. Either already
-/// done is fine.
+/// found: add its marketplace ([`claude_marketplace`]), then install it, for
+/// the user. Either already done is fine.
 ///
 /// # Errors
 ///
 /// [`Error::Plugin`] when a command fails or runs too long.
 pub async fn install_claude_plugin(claude: &Path) -> Result<(), Error> {
+    let var = SUPER_VOICE.env(CLAUDE_MARKETPLACE_VAR);
+    let marketplace = claude_marketplace(std::env::var(&var).ok());
+    if marketplace != CLAUDE_MARKETPLACE {
+        info!("Installing Claude Code's plugin from {marketplace}, as {var} says");
+    }
     run_claude(
         claude,
         &[
             "plugin",
             "marketplace",
             "add",
-            CLAUDE_MARKETPLACE,
+            &marketplace,
             "--scope",
             "user",
         ],
@@ -428,6 +450,21 @@ mod tests {
             .map(|id| program_name(*id))
             .collect();
         assert_eq!(names, ["claude", "codex", "opencode", "gemini"]);
+    }
+
+    #[test]
+    fn the_plugin_comes_from_github_unless_the_variable_names_elsewhere() {
+        assert_eq!(claude_marketplace(None), CLAUDE_MARKETPLACE);
+        assert_eq!(claude_marketplace(Some(String::new())), CLAUDE_MARKETPLACE);
+        assert_eq!(claude_marketplace(Some("  ".into())), CLAUDE_MARKETPLACE);
+        assert_eq!(
+            claude_marketplace(Some("/home/me/super-voice".into())),
+            "/home/me/super-voice"
+        );
+        assert_eq!(
+            SUPER_VOICE.env(CLAUDE_MARKETPLACE_VAR),
+            "SUPER_VOICE_CLAUDE_MARKETPLACE"
+        );
     }
 
     #[test]

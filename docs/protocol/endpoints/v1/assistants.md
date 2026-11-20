@@ -115,6 +115,14 @@ claude plugin install super-voice@super-voice --scope user
 A marketplace already added or a plugin already installed counts as done. Each
 command may run for up to two minutes, since adding the marketplace clones it.
 
+When the daemon's environment sets `SUPER_VOICE_CLAUDE_MARKETPLACE`, it adds
+that marketplace instead: anything `claude plugin marketplace add` takes, like
+a checkout's directory, to try a plugin that is not on GitHub yet. Its
+marketplace must be named `super-voice` too. A plugin from a directory loads in
+place, so edits there reach Claude Code at its next start. Adding a marketplace
+under a name already taken points that name at the new one, so connecting
+again without the variable goes back to GitHub's.
+
 Connecting one that is connected already writes its entry again, which changes
 nothing. No request body. Answers the whole list, as `GET /assistants` does.
 
