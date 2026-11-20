@@ -6,7 +6,7 @@
 //! An assistant reaches it on the TCP listener with the key the daemon made
 //! it when the user connected it ([`crate::assistants`]). It is a program,
 //! not a page, so it sends no `Origin` and cannot pass the origin gate the
-//! rest of `/v1` is behind. This router is merged outside that gate, and is
+//! rest of `/v1` is behind. This router answers before that gate, and is
 //! behind the engine's `require_assistant_caller` instead, which admits a
 //! TCP caller by its key alone: no `Origin`, a loopback `Host`, and an
 //! assistant key as the bearer. A caller on the Unix socket passes it with a

@@ -199,10 +199,13 @@ fn assemble(groups: ScopeGroups) -> OpenApiRouter<AppState> {
 /// ([`envelope_rejection`](crate::daemon::http::rejection::envelope_rejection)),
 /// the router's bodiless `404` and `405` included.
 ///
-/// `/v1/mcp` is merged after the origin gate, so the gate does not reach it:
-/// an AI assistant sends no `Origin`, and the gate would refuse it. It has a
-/// gate of its own instead, and answers in JSON-RPC rather than the house
-/// envelope. See [`crate::daemon::http::mcp`].
+/// `/v1/mcp` is answered before the origin gate, so the gate does not reach
+/// it: an AI assistant sends no `Origin`, and the gate would refuse it. It has
+/// a gate of its own instead, and answers in JSON-RPC rather than the house
+/// envelope. See [`crate::daemon::http::mcp`]. Every other request falls
+/// through to the router the origin gate wraps, as its fallback. Merging the
+/// two instead would drop the envelope from the router's own `404`, since a
+/// merge keeps the fallback of the router merged in.
 pub(crate) fn router(state: AppState) -> Router {
     let (router, _spec) = assemble(guarded(scope_groups(), &state)).split_for_parts();
     let tts = crate::tts::daemon::http::v1::router(crate::tts::daemon::http::state::AppState::new(
@@ -211,14 +214,14 @@ pub(crate) fn router(state: AppState) -> Router {
     ));
     let auth = state.auth.clone();
     let mcp = crate::daemon::http::mcp::router(state.clone());
-    router
+    let gated = router
         .with_state(state)
         .merge(tts)
         .layer(middleware::from_fn(
             crate::daemon::http::rejection::envelope_rejections,
         ))
-        .layer(middleware::from_fn_with_state(auth, require_allowed_origin))
-        .merge(mcp)
+        .layer(middleware::from_fn_with_state(auth, require_allowed_origin));
+    mcp.fallback_service(gated)
 }
 
 /// The paths the daemon serves outside the `OpenAPI` document, with the
