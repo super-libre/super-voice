@@ -146,6 +146,7 @@ impl SuperSTTDaemon {
             )),
             self_update: Arc::new(crate::self_update::checker()),
             shortcuts: Arc::new(crate::shortcuts::Shortcuts::default()),
+            assistants: Arc::new(crate::assistants::Assistants::default()),
             secrets,
             tts,
         };

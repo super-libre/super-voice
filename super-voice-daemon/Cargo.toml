@@ -95,6 +95,8 @@
         ]
     }
     tokio-stream = { version = "0.1.18", features = ["sync"] }
+    # `CancellationToken`, for cancelling a tool call on `/v1/mcp`.
+    tokio-util = "0.7.18"
     urlencoding = "2.1.3"
     utoipa.workspace = true
     utoipa-axum.workspace = true

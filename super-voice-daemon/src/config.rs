@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use super_voice_shared::models::assistants::AssistantId;
 use super_voice_shared::models::contexts::DictationContext;
 use super_voice_shared::models::notification_method::NotificationMethod;
 use super_voice_shared::models::read_method::ReadMethod;
@@ -51,6 +52,8 @@ pub struct DaemonConfig {
     pub idle_unload: IdleUnloadConfig,
     #[serde(default)]
     pub shortcuts: ShortcutsConfig,
+    #[serde(default)]
+    pub assistants: AssistantsConfig,
 }
 
 /// Keeping a model in memory only while it is in use.
@@ -119,6 +122,44 @@ impl ShortcutsConfig {
             self.portal.remove(desktop);
         } else {
             self.portal.insert(desktop.to_string(), set);
+        }
+    }
+}
+
+/// The AI assistants Super Voice connects to. Their keys are in the secrets
+/// file and their entries in their own configs, so only what the user chose
+/// for each is here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AssistantsConfig {
+    /// Whether each assistant asks the user its questions aloud without being
+    /// asked to talk, by its wire id, such as `claude-code`. One that is not
+    /// here does not. An id this daemon does not know is kept, for a newer
+    /// one that does, and an unparseable stored value degrades to none rather
+    /// than failing the config load.
+    #[serde(
+        default,
+        deserialize_with = "super_voice_shared::utils::serde_helpers::deserialize_or_default"
+    )]
+    pub ask_questions_aloud: BTreeMap<String, bool>,
+}
+
+impl AssistantsConfig {
+    /// Whether `id` asks its questions aloud.
+    #[must_use]
+    pub fn asks_questions_aloud(&self, id: AssistantId) -> bool {
+        self.ask_questions_aloud
+            .get(id.as_wire_str())
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// Keep whether `id` asks its questions aloud. No is kept as nothing.
+    pub fn set_asks_questions_aloud(&mut self, id: AssistantId, on: bool) {
+        if on {
+            self.ask_questions_aloud
+                .insert(id.as_wire_str().to_string(), true);
+        } else {
+            self.ask_questions_aloud.remove(id.as_wire_str());
         }
     }
 }
@@ -439,6 +480,7 @@ impl Default for DaemonConfig {
             http: HttpConfig::default(),
             idle_unload: IdleUnloadConfig::default(),
             shortcuts: ShortcutsConfig::default(),
+            assistants: AssistantsConfig::default(),
         }
     }
 }

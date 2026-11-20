@@ -148,6 +148,9 @@ pub struct SuperSTTDaemon {
     // `GlobalShortcuts` portal, the session holding them. See
     // `crate::shortcuts`.
     pub shortcuts: Arc<crate::shortcuts::Shortcuts>,
+    // The AI assistants Super Voice connects to: one change at a time, and
+    // the tool calls in flight on `/v1/mcp`. See `crate::assistants`.
+    pub assistants: Arc<crate::assistants::Assistants>,
     // The secrets file: the session tokens the daemon has issued and every
     // backend's API keys. One per process, opened at startup; clones share it.
     pub secrets: Secrets,
@@ -209,6 +212,7 @@ pub(crate) async fn test_daemon() -> SuperSTTDaemon {
         )),
         self_update: Arc::new(crate::self_update::checker()),
         shortcuts: Arc::new(crate::shortcuts::Shortcuts::default()),
+        assistants: Arc::new(crate::assistants::Assistants::default()),
         // In memory: no daemon test reads or writes the user's secrets file.
         secrets: Secrets::in_memory(),
         tts,

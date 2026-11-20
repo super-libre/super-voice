@@ -770,3 +770,48 @@ fn portal_shortcuts_are_kept_by_desktop() {
     assert!(before.shortcuts.portal.is_empty());
     assert_eq!(before.transcription.preferred_model, "whisper-tiny");
 }
+
+/// Each assistant asks its questions aloud only once the user turns it on,
+/// and turning it off leaves nothing behind. An id this daemon does not know
+/// is kept for a newer one, and a stored value it cannot read is none, with
+/// the rest of the config still loaded.
+#[test]
+fn assistants_ask_aloud_only_when_turned_on() {
+    use super_voice_shared::models::assistants::AssistantId::{ClaudeCode, Codex};
+    let mut config = DaemonConfig::default();
+    assert!(!config.assistants.asks_questions_aloud(ClaudeCode));
+    config.assistants.set_asks_questions_aloud(ClaudeCode, true);
+    let back = round_trip(&config);
+    assert!(back.assistants.asks_questions_aloud(ClaudeCode));
+    assert!(!back.assistants.asks_questions_aloud(Codex));
+
+    config
+        .assistants
+        .set_asks_questions_aloud(ClaudeCode, false);
+    assert!(config.assistants.ask_questions_aloud.is_empty());
+
+    let newer = from_ron(
+        r#"(
+    audio: (theme: "classic", volume: 100),
+    transcription: (preferred_model: "whisper-tiny"),
+    assistants: (ask_questions_aloud: {"codex": true, "some-later-assistant": true}),
+)"#,
+    );
+    assert!(newer.assistants.asks_questions_aloud(Codex));
+    assert!(
+        round_trip(&newer)
+            .assistants
+            .ask_questions_aloud
+            .contains_key("some-later-assistant")
+    );
+
+    let unreadable = from_ron(
+        r#"(
+    audio: (theme: "classic", volume: 100),
+    transcription: (preferred_model: "whisper-tiny"),
+    assistants: (ask_questions_aloud: ["codex"]),
+)"#,
+    );
+    assert!(unreadable.assistants.ask_questions_aloud.is_empty());
+    assert_eq!(unreadable.transcription.preferred_model, "whisper-tiny");
+}
