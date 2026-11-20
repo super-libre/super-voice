@@ -21,20 +21,26 @@ pub enum AssistantId {
     Codex,
     /// `OpenCode`.
     OpenCode,
-    /// The Gemini CLI.
-    Gemini,
+    /// The Antigravity CLI, `agy`: Google's terminal agent, which took the
+    /// Gemini CLI's place.
+    Antigravity,
 }
 
 wire_enum_strings!(AssistantId {
     ClaudeCode => "claude-code",
     Codex => "codex",
     OpenCode => "opencode",
-    Gemini => "gemini",
+    Antigravity => "antigravity",
 });
 
 impl AssistantId {
     /// Every assistant, in the order a list shows them.
-    pub const ALL: [Self; 4] = [Self::ClaudeCode, Self::Codex, Self::OpenCode, Self::Gemini];
+    pub const ALL: [Self; 4] = [
+        Self::ClaudeCode,
+        Self::Codex,
+        Self::OpenCode,
+        Self::Antigravity,
+    ];
 
     /// The assistant's name, as people know it.
     #[must_use]
@@ -43,7 +49,7 @@ impl AssistantId {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex",
             Self::OpenCode => "OpenCode",
-            Self::Gemini => "Gemini CLI",
+            Self::Antigravity => "Antigravity CLI",
         }
     }
 }

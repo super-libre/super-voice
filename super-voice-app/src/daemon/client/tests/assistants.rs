@@ -18,7 +18,7 @@ fn list(claude: &str, announced: bool) -> serde_json::Value {
             { "id": "claude-code", "state": claude, "announce_when_needed": announced },
             { "id": "codex", "state": "found", "announce_when_needed": true },
             { "id": "opencode", "state": "not_found", "announce_when_needed": true },
-            { "id": "gemini", "state": "not_found", "announce_when_needed": true },
+            { "id": "antigravity", "state": "not_found", "announce_when_needed": true },
         ],
         "custom_keys": [
             { "id": "0f3c9a1e", "name": "My editor", "created_at": "2026-11-19T20:15:00Z" },
@@ -122,10 +122,10 @@ async fn a_refused_connect_reports_the_daemons_reason() {
         }),
     ));
 
-    let error = connect_assistant(AssistantId::Gemini)
+    let error = connect_assistant(AssistantId::Antigravity)
         .await
         .expect_err("refused");
 
     assert!(error.to_string().contains("assistant_not_found"), "{error}");
-    assert_eq!(daemon.request().path(), "/assistants/gemini/connect");
+    assert_eq!(daemon.request().path(), "/assistants/antigravity/connect");
 }

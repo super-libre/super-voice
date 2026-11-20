@@ -97,7 +97,7 @@ fn unknown_assistant() -> Response {
     summary = "List the AI assistants",
     description = "\
 The AI assistants Super Voice can connect to, `claude-code`, `codex`, `opencode` and \
-`gemini`, and where each stands on this computer: `not_found` when the daemon finds \
+`antigravity`, and where each stands on this computer: `not_found` when the daemon finds \
 neither its program nor its config, `found` when it is here and Super Voice is not in \
 its config, and `connected` when Super Voice is in its config with a key of its own. \
 `announce_when_needed` says whether Super Voice says aloud when the assistant needs the \
@@ -132,7 +132,7 @@ Makes the assistant a key of its own, or uses the one it has, and writes Super V
 into its config. For Claude Code the daemon installs Super Voice's plugin, with \
 `claude plugin install`, and the plugin gets its key from `voice assistant-header \
 claude-code`. Codex gets its key the same way, from `voice assistant-header codex`. \
-`OpenCode` and Gemini CLI have the key written into their configs. Connecting one that \
+`OpenCode` and the Antigravity CLI have the key written into their configs. Connecting one that \
 is connected already writes its entry again. Answers the whole list, as `GET \
 /assistants` does.
 
@@ -145,7 +145,7 @@ this request is revoked again.
 
 For Super Voice's own clients alone, since it makes a key: any other caller is `403` \
 with reason `not_official_client`.",
-    params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `gemini`.")),
+    params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `antigravity`.")),
     security(("session_token" = ["settings"])),
     responses(
         (status = 200, description = "Connected. Every assistant.", body = AssistantList),
@@ -180,7 +180,7 @@ Answers the whole list, as `GET /assistants` does.
 
 The key is revoked even when the config cannot be changed, which is `500`: the entry \
 left behind does nothing without it.",
-    params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `gemini`.")),
+    params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `antigravity`.")),
     security(("session_token" = ["settings"])),
     responses(
         (status = 200, description = "Disconnected, or not connected. Every assistant.", body = AssistantList),
@@ -211,7 +211,7 @@ Sets whether Super Voice says aloud when the assistant needs the user, like Clau
 Code's own notices that it needs a permission or an answer. On until the user turns it \
 off. The next announcement reads it, in every session. Answers the whole list, as \
 `GET /assistants` does.",
-    params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `gemini`.")),
+    params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `antigravity`.")),
     request_body = AssistantChange,
     security(("session_token" = ["settings"])),
     responses(
@@ -314,7 +314,7 @@ none: `404 not_connected`.
 
 For Super Voice's own clients alone, since it shows a key: any other caller is `403` \
 with reason `not_official_client`.",
-    params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `gemini`.")),
+    params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `antigravity`.")),
     security(("session_token" = ["settings"])),
     responses(
         (status = 200, description = "The key.", body = AssistantKeyValue),

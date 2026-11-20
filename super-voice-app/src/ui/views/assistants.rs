@@ -28,7 +28,7 @@ pub fn key_name_id() -> Id {
 fn does(id: AssistantId) -> String {
     match id {
         AssistantId::ClaudeCode => crate::fl!("assistant-claude-code-description"),
-        AssistantId::Codex | AssistantId::OpenCode | AssistantId::Gemini => {
+        AssistantId::Codex | AssistantId::OpenCode | AssistantId::Antigravity => {
             crate::fl!("assistant-speaks-and-listens")
         }
     }

@@ -10,14 +10,14 @@
 //! 1. Codex: `config.toml`. Codex gets the key from a command it runs,
 //!    `voice assistant-header codex`, so the file holds no key.
 //! 2. `OpenCode`: `opencode.json`, with the key in a header.
-//! 3. Gemini CLI: `settings.json`, with the key in a header.
+//! 3. Antigravity CLI: `mcp_config.json`, with the key in a header.
 //!
 //! The transforms are pure functions over a file's text, tested on strings.
 //! [`read`] and [`update`] are the file wrappers around them. Everything else
 //! in a file is kept: comments and layout in Codex's TOML, and keys and their
-//! order in the JSON files. `OpenCode` and Gemini CLI also read comments and
-//! trailing commas, which a JSON parser would drop, so a JSON file with them
-//! is refused, not rewritten.
+//! order in the JSON files. `OpenCode` also reads comments and trailing
+//! commas, which a JSON parser would drop, so a JSON file with them is
+//! refused, not rewritten.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -350,59 +350,64 @@ pub fn opencode_has_super_voice(text: &str) -> bool {
     })
 }
 
-// Gemini CLI.
+// Antigravity CLI (`agy`).
 //
-// From its docs, docs/tools/mcp-server.md in google-gemini/gemini-cli
-// (https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md):
-// a server is an entry of `mcpServers` in `settings.json`; `httpUrl` is a
-// Streamable HTTP endpoint (`url` is SSE), `headers` its headers, and a tool
-// may run 10 minutes unless `timeout` says otherwise. The user's file is
-// `~/.gemini/settings.json`, with `$GEMINI_CLI_HOME` in place of `~` when it
-// is set.
+// From its docs, https://antigravity.google/docs/mcp.md: a server is an entry
+// of `mcpServers` in `mcp_config.json`. The user's is
+// `~/.gemini/config/mcp_config.json`, which the CLI, the Antigravity App and
+// its IDE all read. A remote server is `serverUrl` (Streamable HTTP; `httpUrl`
+// is not taken), with `headers` as they are, and `timeoutSeconds` for both
+// connecting and each tool call, 180 by default.
 
-/// Keys that make an entry some other kind of server: an SSE, stdio or
-/// WebSocket one.
-const GEMINI_STALE_KEYS: [&str; 7] = ["url", "type", "command", "args", "cwd", "env", "tcp"];
+/// Keys that make an entry some other kind of server, a stdio one, or name
+/// its endpoint another way.
+const ANTIGRAVITY_STALE_KEYS: [&str; 7] =
+    ["url", "httpUrl", "type", "command", "args", "cwd", "env"];
 
-/// Gemini CLI's user settings file: `.gemini/settings.json` in
-/// `$GEMINI_CLI_HOME`, or in the home directory when it is not set.
+/// How long a tool call may run: `listen` waits for the user, often longer
+/// than the default 3 minutes.
+const ANTIGRAVITY_TIMEOUT_SECONDS: u64 = 600;
+
+/// The Antigravity CLI's MCP config: `.gemini/config/mcp_config.json` in the
+/// home directory.
 #[must_use]
-pub fn gemini_file() -> Option<PathBuf> {
-    let home = std::env::var_os("GEMINI_CLI_HOME")
-        .filter(|home| !home.is_empty())
-        .map(PathBuf::from)
-        .or_else(dirs::home_dir)?;
-    Some(home.join(".gemini/settings.json"))
+pub fn antigravity_file() -> Option<PathBuf> {
+    Some(dirs::home_dir()?.join(".gemini/config/mcp_config.json"))
 }
 
-/// `text`, Gemini CLI's settings, with Super Voice's entry: the server at
-/// `url` over Streamable HTTP, sending `key` as its bearer token. An entry
-/// already there is updated in place, keeping the keys and headers it has of
-/// its own.
+/// `text`, the Antigravity CLI's MCP config, with Super Voice's entry: the
+/// server at `url` over Streamable HTTP, sending `key` as its bearer token,
+/// with time for `listen`. An entry already there is updated in place,
+/// keeping the keys and headers it has of its own.
 ///
 /// # Errors
 ///
 /// When `text` is not plain JSON, or a key on the way to the entry is not an
 /// object.
-pub fn gemini_with_super_voice(text: &str, url: &str, key: &str) -> Result<String, Error> {
+pub fn antigravity_with_super_voice(text: &str, url: &str, key: &str) -> Result<String, Error> {
     let mut root = json_object(text)?;
     let servers = object_at(&mut root, "mcpServers", "mcpServers")?;
     let entry = object_at(servers, ENTRY, &format!("mcpServers.{ENTRY}"))?;
-    for stale in GEMINI_STALE_KEYS {
+    for stale in ANTIGRAVITY_STALE_KEYS {
         entry.shift_remove(stale);
     }
-    entry.insert("httpUrl".to_string(), url.into());
+    entry.insert("serverUrl".to_string(), url.into());
     set_bearer(entry, key);
+    entry.insert(
+        "timeoutSeconds".to_string(),
+        ANTIGRAVITY_TIMEOUT_SECONDS.into(),
+    );
     json_text(root, text)
 }
 
-/// `text`, Gemini CLI's settings, without Super Voice's entry. `mcpServers`
-/// goes too if that leaves it empty. `text` as it is when it has none.
+/// `text`, the Antigravity CLI's MCP config, without Super Voice's entry.
+/// `mcpServers` goes too if that leaves it empty. `text` as it is when it
+/// has none.
 ///
 /// # Errors
 ///
 /// When `text` is not plain JSON.
-pub fn gemini_without_super_voice(text: &str) -> Result<String, Error> {
+pub fn antigravity_without_super_voice(text: &str) -> Result<String, Error> {
     let mut root = json_object(text)?;
     let Some(servers) = root.get_mut("mcpServers").and_then(Value::as_object_mut) else {
         return Ok(text.to_string());
@@ -416,10 +421,10 @@ pub fn gemini_without_super_voice(text: &str) -> Result<String, Error> {
     json_text(root, text)
 }
 
-/// Whether `text`, Gemini CLI's settings, has Super Voice's entry. Text that
-/// is not plain JSON has none.
+/// Whether `text`, the Antigravity CLI's MCP config, has Super Voice's entry.
+/// Text that is not plain JSON has none.
 #[must_use]
-pub fn gemini_has_super_voice(text: &str) -> bool {
+pub fn antigravity_has_super_voice(text: &str) -> bool {
     json_object(text).is_ok_and(|root| {
         root.get("mcpServers")
             .and_then(|servers| servers.get(ENTRY))
@@ -516,7 +521,7 @@ pub fn read(path: &Path) -> Result<String, Error> {
 }
 
 /// Rewrite the config file at `path` with `transform`, such as
-/// [`gemini_without_super_voice`], and say whether it changed. A file that is
+/// [`antigravity_without_super_voice`], and say whether it changed. A file that is
 /// not there is `transform`ed from empty text.
 ///
 /// The new text is written to a file beside it, then put in its place, so the
@@ -981,52 +986,56 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
         ));
     }
 
-    // Gemini CLI.
+    // Antigravity CLI.
 
     #[test]
-    fn gemini_entry_in_an_empty_file() {
-        let text = gemini_with_super_voice("", URL, "k1").unwrap();
+    fn antigravity_entry_in_an_empty_file() {
+        let text = antigravity_with_super_voice("", URL, "k1").unwrap();
         assert_eq!(
             text,
             r#"{
   "mcpServers": {
     "super-voice": {
-      "httpUrl": "http://127.0.0.1:7300/v1/mcp",
+      "serverUrl": "http://127.0.0.1:7300/v1/mcp",
       "headers": {
         "Authorization": "Bearer k1"
-      }
+      },
+      "timeoutSeconds": 600
     }
   }
 }
 "#
         );
-        assert!(gemini_has_super_voice(&text));
-        assert!(!gemini_has_super_voice(""));
-        assert_eq!(gemini_without_super_voice(&text).unwrap(), "{}\n");
+        assert!(antigravity_has_super_voice(&text));
+        assert!(!antigravity_has_super_voice(""));
+        assert_eq!(antigravity_without_super_voice(&text).unwrap(), "{}\n");
     }
 
-    const GEMINI_CONFIG: &str = "{\n\t\"theme\": \"GitHub\",\n\t\"mcpServers\": {\n\t\t\"docs\": {\n\t\t\t\"command\": \"docs-mcp\"\n\t\t}\n\t},\n\t\"selectedAuthType\": \"oauth-personal\"\n}\n";
+    const ANTIGRAVITY_CONFIG: &str = "{\n\t\"theme\": \"GitHub\",\n\t\"mcpServers\": {\n\t\t\"docs\": {\n\t\t\t\"command\": \"docs-mcp\"\n\t\t}\n\t},\n\t\"selectedAuthType\": \"oauth-personal\"\n}\n";
 
-    /// Settings indented with tabs keep them, and their order.
+    /// A config indented with tabs keeps them, and its order.
     #[test]
-    fn gemini_entry_keeps_the_rest_of_the_file() {
-        let text = gemini_with_super_voice(GEMINI_CONFIG, URL, "k1").unwrap();
+    fn antigravity_entry_keeps_the_rest_of_the_file() {
+        let text = antigravity_with_super_voice(ANTIGRAVITY_CONFIG, URL, "k1").unwrap();
         assert_eq!(
             text,
-            "{\n\t\"theme\": \"GitHub\",\n\t\"mcpServers\": {\n\t\t\"docs\": {\n\t\t\t\"command\": \"docs-mcp\"\n\t\t},\n\t\t\"super-voice\": {\n\t\t\t\"httpUrl\": \"http://127.0.0.1:7300/v1/mcp\",\n\t\t\t\"headers\": {\n\t\t\t\t\"Authorization\": \"Bearer k1\"\n\t\t\t}\n\t\t}\n\t},\n\t\"selectedAuthType\": \"oauth-personal\"\n}\n"
+            "{\n\t\"theme\": \"GitHub\",\n\t\"mcpServers\": {\n\t\t\"docs\": {\n\t\t\t\"command\": \"docs-mcp\"\n\t\t},\n\t\t\"super-voice\": {\n\t\t\t\"serverUrl\": \"http://127.0.0.1:7300/v1/mcp\",\n\t\t\t\"headers\": {\n\t\t\t\t\"Authorization\": \"Bearer k1\"\n\t\t\t},\n\t\t\t\"timeoutSeconds\": 600\n\t\t}\n\t},\n\t\"selectedAuthType\": \"oauth-personal\"\n}\n"
         );
-        assert_eq!(gemini_without_super_voice(&text).unwrap(), GEMINI_CONFIG);
+        assert_eq!(
+            antigravity_without_super_voice(&text).unwrap(),
+            ANTIGRAVITY_CONFIG
+        );
     }
 
     /// Connecting again updates the entry, keeps what the user set, such as
-    /// `trust`, and drops another transport's keys.
+    /// `disabled`, and drops another way of naming the endpoint.
     #[test]
-    fn gemini_entry_is_updated_not_added_again() {
+    fn antigravity_entry_is_updated_not_added_again() {
         let old = r#"{
   "mcpServers": {
     "super-voice": {
-      "url": "http://127.0.0.1:7000/sse",
-      "trust": true,
+      "url": "http://127.0.0.1:7000/mcp",
+      "disabled": false,
       "headers": {
         "Authorization": "Bearer old"
       }
@@ -1034,47 +1043,51 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
   }
 }
 "#;
-        let text = gemini_with_super_voice(old, URL, "k2").unwrap();
+        let text = antigravity_with_super_voice(old, URL, "k2").unwrap();
         assert_eq!(
             text,
             r#"{
   "mcpServers": {
     "super-voice": {
-      "trust": true,
+      "disabled": false,
       "headers": {
         "Authorization": "Bearer k2"
       },
-      "httpUrl": "http://127.0.0.1:7300/v1/mcp"
+      "serverUrl": "http://127.0.0.1:7300/v1/mcp",
+      "timeoutSeconds": 600
     }
   }
 }
 "#
         );
-        assert_eq!(gemini_with_super_voice(&text, URL, "k2").unwrap(), text);
+        assert_eq!(
+            antigravity_with_super_voice(&text, URL, "k2").unwrap(),
+            text
+        );
     }
 
     #[test]
-    fn gemini_removing_an_absent_entry_changes_nothing() {
-        for text in ["", GEMINI_CONFIG, "{}", r#"{"mcpServers": []}"#] {
-            assert_eq!(gemini_without_super_voice(text).unwrap(), text);
-            assert!(!gemini_has_super_voice(text), "{text}");
+    fn antigravity_removing_an_absent_entry_changes_nothing() {
+        for text in ["", ANTIGRAVITY_CONFIG, "{}", r#"{"mcpServers": []}"#] {
+            assert_eq!(antigravity_without_super_voice(text).unwrap(), text);
+            assert!(!antigravity_has_super_voice(text), "{text}");
         }
     }
 
     #[test]
-    fn gemini_refuses_what_it_would_lose() {
+    fn antigravity_refuses_what_it_would_lose() {
         let commented = "{\n  /* Mine. */\n  \"theme\": \"GitHub\"\n}\n";
         assert!(matches!(
-            gemini_with_super_voice(commented, URL, "k1"),
+            antigravity_with_super_voice(commented, URL, "k1"),
             Err(Error::NotPlainJson(_))
         ));
         assert!(matches!(
-            gemini_without_super_voice(commented),
+            antigravity_without_super_voice(commented),
             Err(Error::NotPlainJson(_))
         ));
-        assert!(!gemini_has_super_voice(commented));
+        assert!(!antigravity_has_super_voice(commented));
         assert!(matches!(
-            gemini_with_super_voice(r#"{"mcpServers": []}"#, URL, "k1"),
+            antigravity_with_super_voice(r#"{"mcpServers": []}"#, URL, "k1"),
             Err(Error::NotATable(path)) if path == "mcpServers"
         ));
     }
@@ -1091,12 +1104,12 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
     #[test]
     fn update_makes_a_new_file() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(".gemini/settings.json");
+        let path = dir.path().join(".gemini/config/mcp_config.json");
         assert_eq!(read(&path).unwrap(), "");
 
-        let changed = update(&path, |text| gemini_with_super_voice(text, URL, "k1")).unwrap();
+        let changed = update(&path, |text| antigravity_with_super_voice(text, URL, "k1")).unwrap();
         assert!(changed);
-        assert!(gemini_has_super_voice(&read(&path).unwrap()));
+        assert!(antigravity_has_super_voice(&read(&path).unwrap()));
         #[cfg(unix)]
         assert_eq!(mode(&path), 0o600);
         // No temporary file is left beside it.
@@ -1154,17 +1167,17 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("dotfiles/settings.json");
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-        std::fs::write(&target, GEMINI_CONFIG).unwrap();
+        std::fs::write(&target, ANTIGRAVITY_CONFIG).unwrap();
         let link = dir.path().join("settings.json");
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
-        assert!(update(&link, |text| gemini_with_super_voice(text, URL, "k1")).unwrap());
+        assert!(update(&link, |text| antigravity_with_super_voice(text, URL, "k1")).unwrap());
         assert!(
             std::fs::symlink_metadata(&link)
                 .unwrap()
                 .file_type()
                 .is_symlink()
         );
-        assert!(gemini_has_super_voice(&read(&target).unwrap()));
+        assert!(antigravity_has_super_voice(&read(&target).unwrap()));
     }
 }

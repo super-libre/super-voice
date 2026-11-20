@@ -1,8 +1,8 @@
 # `/v1/mcp`: Super Voice's MCP server
 
 The daemon serves the [Model Context Protocol](https://modelcontextprotocol.io)
-at `/v1/mcp`, so an AI assistant such as Claude Code, Codex, OpenCode or Gemini
-CLI can speak to the user and hear them. It is one server for every assistant,
+at `/v1/mcp`, so an AI assistant such as Claude Code, Codex, OpenCode or the
+Antigravity CLI can speak to the user and hear them. It is one server for every assistant,
 on the daemon's TCP listener: `http://127.0.0.1:7300/v1/mcp`, or the port
 `http.tcp.port` names in `daemon.ron`.
 

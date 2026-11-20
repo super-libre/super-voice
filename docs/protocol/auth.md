@@ -299,8 +299,8 @@ the user's consent.
 - **Where it is kept:** in the secrets file beside the session tokens, and
   in the assistant's own config. Claude Code's plugin and Codex get it by
   running `voice assistant-header <assistant>`, so their configs hold no
-  key. OpenCode and Gemini CLI have no way to run a command for it, so the
-  key is written into their configs.
+  key. OpenCode and the Antigravity CLI have no way to run a command for
+  it, so the key is written into their configs.
 
 ## Per-request authorization
 

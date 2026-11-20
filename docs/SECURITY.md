@@ -107,7 +107,7 @@ ls -la "${XDG_RUNTIME_DIR:-$(getconf DARWIN_USER_TEMP_DIR)}/voice/super-voice-ht
 - **Speak and hear, nothing else**: a key carries the `speak` and `transcribe` scopes, for the tools `speak` and `listen`, and no other. `listen` never types and never toggles a recording someone else started
 - **Only where it is meant to work**: a key works on `/v1/mcp` alone, over TCP, with no `Origin` header (any `Origin` is a browser page, refused whatever key it holds) and a loopback `Host` (a guard against DNS rebinding). A key presented anywhere else is refused
 - **Only Super Voice's own clients make or see a key**: the routes that make a key or show one are refused to every caller but the settings app, the applet and the CLI installed beside the daemon, whatever scopes it holds, so an assistant cannot make itself another key
-- **Where a key is kept**: in the secrets file, and in the assistant's own config. Claude Code's plugin and Codex get theirs by running `voice assistant-header`, so their configs hold none; OpenCode and Gemini CLI cannot run a command for it, so it is written into their configs, which a new file gets with mode `0600`
+- **Where a key is kept**: in the secrets file, and in the assistant's own config. Claude Code's plugin and Codex get theirs by running `voice assistant-header`, so their configs hold none; OpenCode and the Antigravity CLI cannot run a command for it, so it is written into their configs, which a new file gets with mode `0600`
 - **Revoked at once**: disconnecting an assistant, or revoking a key made by hand, stops the key's next request and cancels its calls in flight, a `listen` waiting for the user included
 
 ### 7. Input Validation and DoS Protection

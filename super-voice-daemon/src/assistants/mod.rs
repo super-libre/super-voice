@@ -10,7 +10,7 @@
 //!
 //! 1. Claude Code: the daemon runs `claude plugin install`, and the plugin
 //!    gets its key from `voice assistant-header claude-code`.
-//! 2. Codex, `OpenCode` and Gemini CLI: an entry in their config files
+//! 2. Codex, `OpenCode` and the Antigravity CLI: an entry in their config files
 //!    ([`super_voice_shared::assistant_configs`]).
 //!
 //! Disconnecting takes the entry out and revokes the key, which also cancels
@@ -103,7 +103,7 @@ pub fn program_name(id: AssistantId) -> &'static str {
         AssistantId::ClaudeCode => "claude",
         AssistantId::Codex => "codex",
         AssistantId::OpenCode => "opencode",
-        AssistantId::Gemini => "gemini",
+        AssistantId::Antigravity => "agy",
     }
 }
 
@@ -187,9 +187,11 @@ fn config_dir(id: AssistantId) -> Option<PathBuf> {
                 .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
             Some(config.join("opencode"))
         }
-        AssistantId::Gemini => assistant_configs::gemini_file()?
-            .parent()
-            .map(Path::to_path_buf),
+        // Its own: `~/.gemini` is the Gemini CLI's too, and the config's
+        // folder the Antigravity App's.
+        AssistantId::Antigravity => {
+            dirs::home_dir().map(|home| home.join(".gemini/antigravity-cli"))
+        }
     }
 }
 
@@ -229,9 +231,9 @@ pub fn has_entry(id: AssistantId) -> bool {
             assistant_configs::opencode_file(),
             assistant_configs::opencode_has_super_voice,
         ),
-        AssistantId::Gemini => (
-            assistant_configs::gemini_file(),
-            assistant_configs::gemini_has_super_voice,
+        AssistantId::Antigravity => (
+            assistant_configs::antigravity_file(),
+            assistant_configs::antigravity_has_super_voice,
         ),
     };
     file.and_then(|file| assistant_configs::read(&file).ok())
@@ -271,8 +273,8 @@ pub fn write_entry(id: AssistantId, url: &str, key: &str) -> Result<(), Error> {
         AssistantId::OpenCode => assistant_configs::update(&config_file(id)?, |text| {
             assistant_configs::opencode_with_super_voice(text, url, key)
         }),
-        AssistantId::Gemini => assistant_configs::update(&config_file(id)?, |text| {
-            assistant_configs::gemini_with_super_voice(text, url, key)
+        AssistantId::Antigravity => assistant_configs::update(&config_file(id)?, |text| {
+            assistant_configs::antigravity_with_super_voice(text, url, key)
         }),
     };
     match changed {
@@ -294,7 +296,7 @@ pub fn remove_entry(id: AssistantId) -> Result<(), Error> {
         AssistantId::ClaudeCode => return Ok(()),
         AssistantId::Codex => assistant_configs::codex_without_super_voice,
         AssistantId::OpenCode => assistant_configs::opencode_without_super_voice,
-        AssistantId::Gemini => assistant_configs::gemini_without_super_voice,
+        AssistantId::Antigravity => assistant_configs::antigravity_without_super_voice,
     };
     match assistant_configs::update(&config_file(id)?, without) {
         Ok(true) => info!("Took Super Voice out of {}'s config", id.display_name()),
@@ -310,7 +312,7 @@ fn config_file(id: AssistantId) -> Result<PathBuf, Error> {
         AssistantId::ClaudeCode => claude_dir().map(|dir| dir.join("settings.json")),
         AssistantId::Codex => assistant_configs::codex_file(),
         AssistantId::OpenCode => assistant_configs::opencode_file(),
-        AssistantId::Gemini => assistant_configs::gemini_file(),
+        AssistantId::Antigravity => assistant_configs::antigravity_file(),
     };
     file.ok_or_else(|| Error::Config("there is no home directory".to_string()))
 }
@@ -452,7 +454,7 @@ mod tests {
             .iter()
             .map(|id| program_name(*id))
             .collect();
-        assert_eq!(names, ["claude", "codex", "opencode", "gemini"]);
+        assert_eq!(names, ["claude", "codex", "opencode", "agy"]);
     }
 
     #[test]

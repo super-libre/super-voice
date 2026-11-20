@@ -22,7 +22,7 @@ use super_voice_shared::daemon::http_client;
 
 /// The variables that would point an assistant's config out of the test's
 /// home.
-const ELSEWHERE: [&str; 3] = ["CODEX_HOME", "GEMINI_CLI_HOME", "CLAUDE_CONFIG_DIR"];
+const ELSEWHERE: [&str; 2] = ["CODEX_HOME", "CLAUDE_CONFIG_DIR"];
 
 /// A fake `claude`: notes each command in `$HOME/claude-calls`, and installs
 /// and uninstalls the plugin in the settings Claude Code keeps it in.
@@ -157,7 +157,7 @@ async fn codex_is_connected_and_disconnected() {
     assert_eq!(state_of(&list, "claude-code"), "found");
     assert_eq!(state_of(&list, "codex"), "found");
     assert_eq!(state_of(&list, "opencode"), on_this_machine("opencode"));
-    assert_eq!(state_of(&list, "gemini"), on_this_machine("gemini"));
+    assert_eq!(state_of(&list, "antigravity"), on_this_machine("agy"));
     assert_eq!(list["custom_keys"], json!([]));
     assert!(
         list["address"]
@@ -448,8 +448,8 @@ async fn keys_made_by_hand_are_listed_and_revoked() {
 /// An assistant the daemon finds no sign of is not connected.
 #[tokio::test]
 async fn an_assistant_that_is_not_here_is_not_connected() {
-    if on_this_machine("gemini") == "found" {
-        eprintln!("skipped: this machine has gemini where the daemon looks for it");
+    if on_this_machine("agy") == "found" {
+        eprintln!("skipped: this machine has agy where the daemon looks for it");
         return;
     }
     let (daemon, token, home) = start("assistants-missing", true).await;
@@ -457,7 +457,7 @@ async fn an_assistant_that_is_not_here_is_not_connected() {
         &daemon,
         &token,
         Method::POST,
-        "/assistants/gemini/connect",
+        "/assistants/antigravity/connect",
         None,
     )
     .await;
@@ -465,7 +465,7 @@ async fn an_assistant_that_is_not_here_is_not_connected() {
     assert_eq!(body["error_code"], "assistant_not_found");
     assert!(!home.join(".gemini").exists(), "nothing was written");
     let (_, list) = call(&daemon, &token, Method::GET, "/assistants", None).await;
-    assert_eq!(state_of(&list, "gemini"), "not_found");
+    assert_eq!(state_of(&list, "antigravity"), "not_found");
 }
 
 /// Only Super Voice's own clients may make a key or see one. Listing,

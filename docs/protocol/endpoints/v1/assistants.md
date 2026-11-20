@@ -17,7 +17,7 @@ one.
 | `claude-code` | Claude Code | The daemon installs Super Voice's plugin, with `claude plugin install`.                 | The plugin runs `voice assistant-header claude-code`. |
 | `codex`       | Codex       | An entry in `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`.                       | Codex runs `voice assistant-header codex`.   |
 | `opencode`    | OpenCode    | An entry in its global `opencode.json`, under `$XDG_CONFIG_HOME/opencode`, or `~/.config/opencode`. | Written into the entry.             |
-| `gemini`      | Gemini CLI  | An entry in `~/.gemini/settings.json`, with `$GEMINI_CLI_HOME` in place of `~` when it is set. | Written into the entry.               |
+| `antigravity` | Antigravity CLI (`agy`) | An entry in `~/.gemini/config/mcp_config.json`, which the Antigravity App and IDE read too. | Written into the entry.  |
 
 The entry is named `super-voice` in every file, and everything else in the file
 is kept. A JSON file with comments or trailing commas is refused rather than
@@ -98,7 +98,7 @@ Authorization: Bearer …64hex…
     },
     { "id": "codex",       "state": "found",     "announce_when_needed": true, "sessions": [] },
     { "id": "opencode",    "state": "not_found", "announce_when_needed": true, "sessions": [] },
-    { "id": "gemini",      "state": "not_found", "announce_when_needed": true, "sessions": [] }
+    { "id": "antigravity", "state": "not_found", "announce_when_needed": true, "sessions": [] }
   ],
   "custom_keys": [
     { "id": "0f3c9a1e", "name": "My editor", "created_at": "2026-11-19T20:15:00Z", "sessions": [] }
