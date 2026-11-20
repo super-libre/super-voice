@@ -53,9 +53,9 @@ fn listed(session: &SessionView, playing: Option<&str>) -> AssistantSession {
         started_at: session
             .started_at
             .to_rfc3339_opts(SecondsFormat::Secs, true),
-        last_active_at: session
-            .last_active_at
-            .to_rfc3339_opts(SecondsFormat::Secs, true),
+        last_used_at: session
+            .last_used_at
+            .map(|at| at.to_rfc3339_opts(SecondsFormat::Secs, true)),
     }
 }
 

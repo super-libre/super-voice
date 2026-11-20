@@ -92,7 +92,7 @@ Authorization: Bearer …64hex…
         {
           "id": "4f1c…", "folder": "/home/me/super-voice", "agents": 0,
           "speaking": true, "listening": false,
-          "started_at": "2026-11-20T09:15:00Z", "last_active_at": "2026-11-20T09:42:10Z"
+          "started_at": "2026-11-20T09:15:00Z", "last_used_at": "2026-11-20T09:42:10Z"
         }
       ]
     },
@@ -115,7 +115,9 @@ is unless the config turns it off.
 conversation each, as [the MCP server tells them apart](../../mcp.md#sessions).
 `id` is absent when the client names none; `folder` when it doesn't say;
 `agents` counts the agents besides the session's own that have made calls;
-`speaking` is whether speech it started is playing.
+`speaking` is whether speech it started is playing. `last_used_at` is when it
+last spoke or listened, absent until it does: a call that only checks in, like
+its plugin's heartbeat, is not a use.
 
 ## `POST /assistants/{id}/connect`
 

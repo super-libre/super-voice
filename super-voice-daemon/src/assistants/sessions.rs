@@ -57,7 +57,9 @@ pub struct SessionView {
     /// Whether one of its `listen` calls is recording.
     pub listening: bool,
     pub started_at: DateTime<Utc>,
-    pub last_active_at: DateTime<Utc>,
+    /// When it last spoke or listened. A request that only checks in, like
+    /// its plugin's heartbeat, is not a use.
+    pub last_used_at: Option<DateTime<Utc>>,
 }
 
 struct Entry {
@@ -69,8 +71,10 @@ struct Entry {
     folder: Option<String>,
     agents: BTreeSet<String>,
     started_at: DateTime<Utc>,
-    last_active_at: DateTime<Utc>,
+    /// When it last made any request, which keeps it listed.
     last_active: Instant,
+    /// When it last spoke or listened.
+    used_at: Option<DateTime<Utc>>,
     /// Its plugin said it started, so it checks in while it is open.
     opened: bool,
     utterance: Option<String>,
@@ -91,7 +95,7 @@ impl Entry {
             utterance: self.utterance.clone(),
             listening: self.recordings > 0,
             started_at: self.started_at,
-            last_active_at: self.last_active_at,
+            last_used_at: self.used_at,
         }
     }
 }
@@ -173,7 +177,10 @@ impl Sessions {
 
     /// `who` started `utterance`.
     pub fn spoke(&self, who: &Who, utterance: String) {
-        self.with(who, |entry| entry.utterance = Some(utterance));
+        self.with(who, |entry| {
+            entry.utterance = Some(utterance);
+            entry.used_at = Some(Utc::now());
+        });
     }
 
     /// The utterance `who` started last, whether or not it still plays.
@@ -188,7 +195,10 @@ impl Sessions {
 
     /// `who`'s `listen` is recording until the returned guard is dropped.
     pub fn recording(self: &Arc<Self>, who: &Who) -> Recording {
-        self.with(who, |entry| entry.recordings += 1);
+        self.with(who, |entry| {
+            entry.recordings += 1;
+            entry.used_at = Some(Utc::now());
+        });
         Recording {
             sessions: Arc::clone(self),
             who: who.clone(),
@@ -234,16 +244,15 @@ impl Sessions {
         let index = if let Some(index) = entries.iter().position(|entry| entry.is(who)) {
             index
         } else {
-            let now = Utc::now();
             entries.push(Entry {
                 caller: who.caller.clone(),
                 id: who.named.id.clone(),
                 connection: None,
                 folder: None,
                 agents: BTreeSet::new(),
-                started_at: now,
-                last_active_at: now,
+                started_at: Utc::now(),
                 last_active: Instant::now(),
+                used_at: None,
                 opened: false,
                 utterance: None,
                 recordings: 0,
@@ -252,7 +261,6 @@ impl Sessions {
         };
         let entry = &mut entries[index];
         entry.last_active = Instant::now();
-        entry.last_active_at = Utc::now();
         if let Some(connection) = &who.connection {
             entry.connection = Some(connection.clone());
         }
@@ -354,6 +362,23 @@ mod tests {
         assert!(!sessions.is_recording(&one));
         drop(take);
         assert!(!sessions.is_recording(&two));
+    }
+
+    /// A session is used when it speaks or listens, not when it only checks
+    /// in, as a plugin's heartbeat does.
+    #[test]
+    fn a_session_is_used_when_it_speaks_or_listens() {
+        let sessions = Arc::new(Sessions::default());
+        let speaks = who("a", Some("s1"));
+        let listens = who("a", Some("s2"));
+        sessions.open(&speaks);
+        sessions.touch(&speaks);
+        sessions.touch(&listens);
+        assert!(sessions.list().iter().all(|s| s.last_used_at.is_none()));
+
+        sessions.spoke(&speaks, "utt_1".to_string());
+        drop(sessions.recording(&listens));
+        assert!(sessions.list().iter().all(|s| s.last_used_at.is_some()));
     }
 
     #[test]

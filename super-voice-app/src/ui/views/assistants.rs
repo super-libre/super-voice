@@ -4,14 +4,14 @@
 //! daemon writes each assistant's config and holds the keys; the page shows
 //! what it answers.
 
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use cosmic::Element;
 use cosmic::iced::widget::text::Wrapping;
 use cosmic::iced::widget::{Space, column, row};
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, Id, button, settings, text};
 use super_voice_shared::models::assistants::{
-    Assistant, AssistantId, AssistantList, AssistantState, CustomKey, NewKey,
+    Assistant, AssistantId, AssistantList, AssistantSession, AssistantState, CustomKey, NewKey,
 };
 
 use super::common::{error_banner, muted, page_layout, status_dot};
@@ -38,17 +38,113 @@ fn message(message: AssistantsMessage) -> Message {
     Message::Assistants(message)
 }
 
-/// Where a connected assistant stands: a green dot and the word, on the
-/// neutral pill the window header's states are drawn on.
-fn connected_pill<'a>() -> Element<'a, Message> {
+/// A state: a dot in its color and the word, on the neutral pill the window
+/// header's states are drawn on.
+fn state_pill<'a>(
+    color: fn(&cosmic::Theme) -> cosmic::iced::Color,
+    word: String,
+) -> Element<'a, Message> {
     super::models::header_pill(
-        row![
-            status_dot(|theme| theme.cosmic().success.base.into(), 10.0),
-            super::models::pill_label(crate::fl!("assistant-connected")),
-        ]
-        .spacing(6.0)
-        .align_y(Alignment::Center),
+        row![status_dot(color, 10.0), super::models::pill_label(word)]
+            .spacing(6.0)
+            .align_y(Alignment::Center),
     )
+}
+
+/// Where a connected assistant stands.
+fn connected_pill<'a>() -> Element<'a, Message> {
+    state_pill(
+        |theme| theme.cosmic().success.base.into(),
+        crate::fl!("assistant-connected"),
+    )
+}
+
+/// The last part of a session's folder, which names it in its row.
+fn folder_name(folder: &str) -> String {
+    std::path::Path::new(folder).file_name().map_or_else(
+        || folder.to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
+/// A folder as a terminal shows it: under the home folder, from `~`.
+fn shown_folder(folder: &str, home: Option<&std::path::Path>) -> String {
+    home.and_then(|home| std::path::Path::new(folder).strip_prefix(home).ok())
+        .map_or_else(
+            || folder.to_string(),
+            |rest| {
+                if rest.as_os_str().is_empty() {
+                    "~".to_string()
+                } else {
+                    format!("~/{}", rest.display())
+                }
+            },
+        )
+}
+
+/// When a session last spoke or listened: "Now" within the minute, then
+/// minutes, then hours. Nothing before it has, or for what is not a time.
+fn used_ago(last_used_at: Option<&str>, now: DateTime<Utc>) -> Option<String> {
+    let at = chrono::DateTime::parse_from_rfc3339(last_used_at?).ok()?;
+    let minutes = (now - at.with_timezone(&Utc)).num_minutes().max(0);
+    Some(match minutes {
+        0 => crate::fl!("used-now"),
+        1..=59 => crate::fl!("used-minutes-ago", minutes = minutes),
+        _ => {
+            let hours = minutes / 60;
+            crate::fl!("used-hours-ago", hours = hours)
+        }
+    })
+}
+
+/// One open session, under the assistant it belongs to: the folder it works
+/// in, whether it speaks or listens, and when it last did.
+fn session_row(
+    session: &AssistantSession,
+    home: Option<&std::path::Path>,
+    now: DateTime<Utc>,
+) -> Element<'static, Message> {
+    let spacing = cosmic::theme::spacing();
+    let name = session
+        .folder
+        .as_deref()
+        .map_or_else(|| crate::fl!("session-unnamed"), folder_name);
+    let mut about = Vec::new();
+    if let Some(folder) = &session.folder {
+        about.push(shown_folder(folder, home));
+    }
+    if session.agents > 0 {
+        about.push(crate::fl!("session-agents", count = session.agents));
+    }
+    let mut label = column![text::body(name).wrapping(Wrapping::Word)]
+        .spacing(2)
+        .width(Length::Fill);
+    if !about.is_empty() {
+        label = label.push(text::caption(about.join(" · ")).wrapping(Wrapping::Word));
+    }
+    let mut control = row![].spacing(spacing.space_xs).align_y(Alignment::Center);
+    if session.speaking {
+        control = control.push(state_pill(
+            |theme| theme.cosmic().success.base.into(),
+            crate::fl!("session-speaking"),
+        ));
+    } else if session.listening {
+        control = control.push(state_pill(
+            |theme| theme.cosmic().warning.base.into(),
+            crate::fl!("session-listening"),
+        ));
+    }
+    if let Some(ago) = used_ago(session.last_used_at.as_deref(), now) {
+        control = control.push(muted(
+            text::caption(ago)
+                .width(Length::Fixed(84.0))
+                .align_x(cosmic::iced::alignment::Horizontal::Right),
+        ));
+    }
+    // Set in from its assistant's row, so it reads as that assistant's.
+    widget::container(settings::item_row(vec![label.into(), control.into()]))
+        .padding([0, 0, 0, spacing.space_l])
+        .into()
 }
 
 /// One assistant's row: what it does, and Connect, or where it stands once
@@ -145,8 +241,13 @@ fn another_assistant(list: &AssistantList) -> Element<'_, Message> {
                 ),
         );
     let today = chrono::Local::now().date_naive();
+    let home = dirs::home_dir();
+    let now = Utc::now();
     for key in &list.custom_keys {
         section = section.add(key_row(key, today));
+        for session in &key.sessions {
+            section = section.add(session_row(session, home.as_deref(), now));
+        }
     }
     section.into()
 }
@@ -170,9 +271,14 @@ pub fn page<'a>(state: &'a AssistantsState, action_error: Option<&'a str>) -> El
     blocks.push(intro());
     if let Some(list) = &state.list {
         let mut section = settings::section().title(crate::fl!("on-this-computer"));
+        let home = dirs::home_dir();
+        let now = Utc::now();
         for id in AssistantId::ALL {
             if let Some(assistant) = list.assistants.iter().find(|a| a.id == id) {
                 section = section.add(row_for(assistant, state));
+                for session in &assistant.sessions {
+                    section = section.add(session_row(session, home.as_deref(), now));
+                }
             }
         }
         blocks.push(section.into());
@@ -205,7 +311,7 @@ fn connect_dialog(dialog: ConnectDialog, error: Option<&str>) -> Element<'_, Mes
     .spacing(spacing.space_xxs);
     let how = match dialog.id {
         AssistantId::ClaudeCode => crate::fl!("connect-claude-code-caption"),
-        AssistantId::Codex | AssistantId::OpenCode | AssistantId::Gemini => {
+        AssistantId::Codex | AssistantId::OpenCode | AssistantId::Antigravity => {
             crate::fl!("connect-assistant-caption", name = name)
         }
     };
@@ -325,8 +431,42 @@ fn key_dialog<'a>(dialog: &'a KeyDialog, error: Option<&'a str>) -> Element<'a, 
 
 #[cfg(test)]
 mod tests {
-    use super::made_on;
-    use chrono::NaiveDate;
+    use super::{folder_name, made_on, shown_folder, used_ago};
+    use chrono::{NaiveDate, TimeZone, Utc};
+    use std::path::Path;
+
+    /// A session is named by its folder's last part, and shows the folder
+    /// from `~` when it is under the home folder.
+    #[test]
+    fn a_session_shows_its_folder() {
+        let home = Some(Path::new("/home/me"));
+        assert_eq!(folder_name("/home/me/super-voice"), "super-voice");
+        assert_eq!(folder_name("/"), "/");
+        assert_eq!(
+            shown_folder("/home/me/super-libre/super-voice", home),
+            "~/super-libre/super-voice"
+        );
+        assert_eq!(shown_folder("/home/me", home), "~");
+        assert_eq!(shown_folder("/home/meta/x", home), "/home/meta/x");
+        assert_eq!(shown_folder("/srv/site", None), "/srv/site");
+    }
+
+    /// When a session last spoke or listened reads as now, minutes or hours,
+    /// and as nothing before it has.
+    #[test]
+    fn a_session_shows_when_it_last_spoke_or_listened() {
+        let now = Utc.with_ymd_and_hms(2026, 11, 20, 10, 0, 0).unwrap();
+        // Without Fluent's isolation marks around the numbers.
+        let ago =
+            |at: &str| used_ago(Some(at), now).map(|ago| ago.replace(['\u{2068}', '\u{2069}'], ""));
+        assert_eq!(ago("2026-11-20T09:59:30Z").as_deref(), Some("Now"));
+        assert_eq!(ago("2026-11-20T09:57:00Z").as_deref(), Some("3 min ago"));
+        assert_eq!(ago("2026-11-20T07:30:00Z").as_deref(), Some("2 h ago"));
+        // A clock a little ahead of the app's is still now.
+        assert_eq!(ago("2026-11-20T10:00:05Z").as_deref(), Some("Now"));
+        assert_eq!(used_ago(None, now), None);
+        assert_eq!(ago("soon"), None);
+    }
 
     /// A key's time is the daemon's in UTC, shown in local time; words that
     /// are not a time are shown as they are.

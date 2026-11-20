@@ -110,9 +110,10 @@ pub struct AssistantSession {
     /// When it was first seen, in RFC 3339.
     #[cfg_attr(feature = "openapi", schema(example = "2026-11-20T09:15:00Z"))]
     pub started_at: String,
-    /// When it last made a request, in RFC 3339.
+    /// When it last spoke or listened, in RFC 3339. Absent until it does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "openapi", schema(example = "2026-11-20T09:42:10Z"))]
-    pub last_active_at: String,
+    pub last_used_at: Option<String>,
 }
 
 /// A key made by hand for another MCP client. The key itself is shown only

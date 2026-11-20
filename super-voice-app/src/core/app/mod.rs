@@ -437,6 +437,8 @@ impl cosmic::Application for AppModel {
         const GPU_POLL_INTERVAL_SECS: u64 = 3;
         // The Voices tab's level meter and elapsed readout while it records.
         const RECORDING_TICK_MS: u64 = 100;
+        // How often the Assistants page reads its sessions again.
+        const ASSISTANTS_POLL_SECS: u64 = 2;
 
         let mut subs = vec![
             // HTTP /events SSE subscription. Covers the recording /
@@ -464,6 +466,16 @@ impl cosmic::Application for AppModel {
             subs.push(
                 cosmic::iced::time::every(std::time::Duration::from_millis(200))
                     .map(|_| Message::Clips(crate::ui::messages::ClipsMessage::Tick)),
+            );
+        }
+        // The Assistants page's open sessions, while it is shown: they start,
+        // speak, listen and end on their own.
+        if self.daemon_status == DaemonStatus::Connected
+            && self.active_page() == crate::state::Page::Assistants
+        {
+            subs.push(
+                cosmic::iced::time::every(std::time::Duration::from_secs(ASSISTANTS_POLL_SECS))
+                    .map(|_| Message::Assistants(crate::ui::messages::AssistantsMessage::Refresh)),
             );
         }
         // The Notes tab's elapsed time while a note records.

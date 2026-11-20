@@ -742,6 +742,16 @@ assistant-not-found = Introuvable sur cet ordinateur.
 assistant-restart-to-use = Redémarrez { $name } pour commencer à l’utiliser.
 assistant-connected = Connecté
 announce-when-needed = Annoncer quand il a besoin de vous
+session-unnamed = Session
+session-speaking = Parle
+session-listening = Écoute
+session-agents = { $count ->
+        [one] { $count } agent
+       *[other] { $count } agents
+    }
+used-now = Maintenant
+used-minutes-ago = il y a { $minutes } min
+used-hours-ago = il y a { $hours } h
 connect = Connecter
 connecting-assistant = Connexion…
 disconnect = Déconnecter
