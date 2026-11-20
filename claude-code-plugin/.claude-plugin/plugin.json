@@ -1,0 +1,7 @@
+{
+  "name": "super-voice",
+  "description": "Talk to Claude Code and hear its answers, with Super Voice on your own machine.",
+  "author": { "name": "Jorge Menjivar" },
+  "homepage": "https://github.com/jorge-menjivar/super-voice",
+  "license": "GPL-3.0-only"
+}

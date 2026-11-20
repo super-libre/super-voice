@@ -14,10 +14,11 @@
 [dependencies]
     anyhow.workspace = true
     clap.workspace = true
+    serde_json.workspace = true
     super-voice-shared = { path = "../super-voice-shared" }
     tokio = {
         workspace = true,
-        features = ["io-util", "macros", "net", "rt-multi-thread"]
+        features = ["fs", "io-std", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"]
     }
 
 # `voice hotkey` (src/hotkey.rs). macOS only: on Linux the desktop environment
