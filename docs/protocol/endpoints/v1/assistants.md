@@ -2,8 +2,9 @@
 
 The AI assistants Super Voice connects to, so they can speak to the user and
 hear them through Super Voice's MCP server ([`/mcp`](../../mcp.md)): where each
-one stands, connecting one, disconnecting one, and whether it asks its
-questions aloud. Also the keys made by hand, for any other MCP client.
+one stands, connecting one, disconnecting one, and whether Super Voice says
+aloud when it needs the user. Also the keys made by hand, for any other MCP
+client.
 
 The daemon owns them, as it owns the [keyboard shortcuts](./shortcuts.md). It
 makes each assistant a key of its own and writes Super Voice into the
@@ -85,10 +86,10 @@ Authorization: Bearer …64hex…
 ```json
 {
   "assistants": [
-    { "id": "claude-code", "state": "connected", "ask_questions_aloud": true },
-    { "id": "codex",       "state": "found",     "ask_questions_aloud": false },
-    { "id": "opencode",    "state": "not_found", "ask_questions_aloud": false },
-    { "id": "gemini",      "state": "not_found", "ask_questions_aloud": false }
+    { "id": "claude-code", "state": "connected", "announce_when_needed": false },
+    { "id": "codex",       "state": "found",     "announce_when_needed": true },
+    { "id": "opencode",    "state": "not_found", "announce_when_needed": true },
+    { "id": "gemini",      "state": "not_found", "announce_when_needed": true }
   ],
   "custom_keys": [
     { "id": "0f3c9a1e", "name": "My editor", "created_at": "2026-11-19T20:15:00Z" }
@@ -159,22 +160,20 @@ behind does nothing without it.
 
 ## `PATCH /assistants/{id}`
 
-Set whether the assistant may ask the user its questions out loud and hear the
-answer. On, Super Voice's MCP server gives it `listen` and tells it to ask its
-questions aloud, without being asked to talk. Off, it has `speak` alone and
-can't hear the user: a call to `listen` is refused at once, and its
-instructions change from its next session. Kept in the daemon's config. Answers
-the whole list.
+Set whether Super Voice says aloud when the assistant needs the user, like
+Claude Code's own notices that it needs a permission or an answer. On for every
+assistant until the user turns it off. Only Claude Code announces, through its
+plugin. Kept in the daemon's config. Answers the whole list.
 
 ```json
-{ "ask_questions_aloud": true }
+{ "announce_when_needed": false }
 ```
 
 **Errors:**
 
 | HTTP | `error_code`    | Meaning                                         |
 |------|-----------------|-------------------------------------------------|
-| 400  | `invalid_value` | The body is not `{"ask_questions_aloud": <bool>}` |
+| 400  | `invalid_value` | The body is not `{"announce_when_needed": <bool>}` |
 | 404  | `not_found`     | No assistant has that id (`unknown_assistant`)  |
 
 ## `POST /assistants/keys`

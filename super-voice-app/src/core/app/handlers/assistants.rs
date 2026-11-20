@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The Assistants page: asking the daemon where each assistant stands,
-//! connecting and disconnecting one, whether it asks its questions aloud, and
-//! the keys made by hand for other MCP clients.
+//! connecting and disconnecting one, whether Super Voice announces when it
+//! needs the user, and the keys made by hand for other MCP clients.
 
 use crate::core::app::AppModel;
 use crate::daemon::client::v1::assistants::{
     connect_assistant, create_key, disconnect_assistant, list_assistants, remove_key,
-    set_ask_questions_aloud,
+    set_announce_when_needed,
 };
 use crate::state::ErrorScope;
 use crate::state::assistants::{ConnectDialog, KeyDialog};
@@ -70,8 +70,8 @@ impl AppModel {
             AssistantsMessage::Connected(id, result) => self.connect_answered(id, result),
             AssistantsMessage::Disconnect(id) => self.start_disconnect(id),
             AssistantsMessage::Disconnected(id, result) => self.disconnect_answered(id, result),
-            AssistantsMessage::SetAskQuestionsAloud(id, on) => {
-                self.change_ask_questions_aloud(id, on)
+            AssistantsMessage::SetAnnounceWhenNeeded(id, on) => {
+                self.change_announce_when_needed(id, on)
             }
             AssistantsMessage::AskKey => {
                 self.assistants.key = Some(KeyDialog::new());
@@ -205,7 +205,7 @@ impl AppModel {
 
     /// The switch moves at once; the daemon's answer, or the list read again
     /// after a failure, puts it where the daemon has it.
-    fn change_ask_questions_aloud(
+    fn change_announce_when_needed(
         &mut self,
         id: AssistantId,
         on: bool,
@@ -216,10 +216,10 @@ impl AppModel {
             .as_mut()
             .and_then(|list| list.assistants.iter_mut().find(|a| a.id == id))
         {
-            assistant.ask_questions_aloud = on;
+            assistant.announce_when_needed = on;
         }
         self.clear_action_error(ErrorScope::Assistants);
-        Task::perform(set_ask_questions_aloud(id, on), move |result| {
+        Task::perform(set_announce_when_needed(id, on), move |result| {
             answer(AssistantsMessage::Changed(result.map_err(|e| {
                 crate::fl!(
                     "assistant-change-failed",

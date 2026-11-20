@@ -771,37 +771,39 @@ fn portal_shortcuts_are_kept_by_desktop() {
     assert_eq!(before.transcription.preferred_model, "whisper-tiny");
 }
 
-/// Each assistant asks its questions aloud only once the user turns it on,
-/// and turning it off leaves nothing behind. An id this daemon does not know
-/// is kept for a newer one, and a stored value it cannot read is none, with
-/// the rest of the config still loaded.
+/// Super Voice announces when each assistant needs the user until the user
+/// turns it off, and turning it back on leaves nothing behind. An id this
+/// daemon does not know is kept for a newer one, and a stored value it cannot
+/// read is none, with the rest of the config still loaded.
 #[test]
-fn assistants_ask_aloud_only_when_turned_on() {
+fn assistants_are_announced_until_turned_off() {
     use super_voice_shared::models::assistants::AssistantId::{ClaudeCode, Codex};
     let mut config = DaemonConfig::default();
-    assert!(!config.assistants.asks_questions_aloud(ClaudeCode));
-    config.assistants.set_asks_questions_aloud(ClaudeCode, true);
+    assert!(config.assistants.announces_when_needed(ClaudeCode));
+    config
+        .assistants
+        .set_announces_when_needed(ClaudeCode, false);
     let back = round_trip(&config);
-    assert!(back.assistants.asks_questions_aloud(ClaudeCode));
-    assert!(!back.assistants.asks_questions_aloud(Codex));
+    assert!(!back.assistants.announces_when_needed(ClaudeCode));
+    assert!(back.assistants.announces_when_needed(Codex));
 
     config
         .assistants
-        .set_asks_questions_aloud(ClaudeCode, false);
-    assert!(config.assistants.ask_questions_aloud.is_empty());
+        .set_announces_when_needed(ClaudeCode, true);
+    assert!(config.assistants.announce_when_needed.is_empty());
 
     let newer = from_ron(
         r#"(
     audio: (theme: "classic", volume: 100),
     transcription: (preferred_model: "whisper-tiny"),
-    assistants: (ask_questions_aloud: {"codex": true, "some-later-assistant": true}),
+    assistants: (announce_when_needed: {"codex": false, "some-later-assistant": false}),
 )"#,
     );
-    assert!(newer.assistants.asks_questions_aloud(Codex));
+    assert!(!newer.assistants.announces_when_needed(Codex));
     assert!(
         round_trip(&newer)
             .assistants
-            .ask_questions_aloud
+            .announce_when_needed
             .contains_key("some-later-assistant")
     );
 
@@ -809,9 +811,9 @@ fn assistants_ask_aloud_only_when_turned_on() {
         r#"(
     audio: (theme: "classic", volume: 100),
     transcription: (preferred_model: "whisper-tiny"),
-    assistants: (ask_questions_aloud: ["codex"]),
+    assistants: (announce_when_needed: ["codex"]),
 )"#,
     );
-    assert!(unreadable.assistants.ask_questions_aloud.is_empty());
+    assert!(unreadable.assistants.announce_when_needed.is_empty());
     assert_eq!(unreadable.transcription.preferred_model, "whisper-tiny");
 }

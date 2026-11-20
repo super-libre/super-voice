@@ -43,11 +43,11 @@ pub async fn disconnect_assistant(id: AssistantId) -> HttpResult<AssistantList> 
     .await
 }
 
-/// `PATCH /assistants/{id}` — whether the assistant asks its questions aloud.
-/// Answers the list.
-pub async fn set_ask_questions_aloud(id: AssistantId, on: bool) -> HttpResult<AssistantList> {
+/// `PATCH /assistants/{id}` — whether Super Voice says aloud when the
+/// assistant needs the user. Answers the list.
+pub async fn set_announce_when_needed(id: AssistantId, on: bool) -> HttpResult<AssistantList> {
     let path = format!("/assistants/{id}");
-    let body = serde_json::json!({ "ask_questions_aloud": on });
+    let body = serde_json::json!({ "announce_when_needed": on });
     with_settings_token(move |socket, token| {
         let path = path.clone();
         let body = body.clone();

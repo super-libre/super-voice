@@ -660,8 +660,8 @@ pub enum AssistantsMessage {
     Disconnect(AssistantId),
     /// The daemon's answer to a disconnect: the list, or why not.
     Disconnected(AssistantId, Result<AssistantList, String>),
-    /// Whether this assistant asks its questions aloud.
-    SetAskQuestionsAloud(AssistantId, bool),
+    /// Whether Super Voice says aloud when this assistant needs the user.
+    SetAnnounceWhenNeeded(AssistantId, bool),
     /// Open the dialog that makes a key for another assistant.
     AskKey,
     /// The key's name, as typed.

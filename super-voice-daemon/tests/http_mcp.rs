@@ -207,8 +207,8 @@ async fn a_session_starts_and_lists_the_tools_it_may_use() {
     assert!(
         result["instructions"]
             .as_str()
-            .is_some_and(|text| text.contains("don't speak unasked")),
-        "a session is not one the user let ask aloud: {result}"
+            .is_some_and(|text| text.contains("only while the user is talking to you by voice")),
+        "{result}"
     );
 
     let answer = post(
@@ -357,8 +357,8 @@ fn free_port() -> u16 {
         .port()
 }
 
-/// Over TCP an assistant gets in with its key, and is told what the user
-/// chose for it; a page, a session token, and a key revoked do not get in.
+/// Over TCP an assistant gets in with its key alone; a page, a session
+/// token, and a key revoked do not get in.
 #[tokio::test]
 async fn an_assistant_gets_in_over_tcp_with_its_key_alone() {
     let port = free_port();
@@ -395,70 +395,13 @@ async fn an_assistant_gets_in_over_tcp_with_its_key_alone() {
     assert!(
         instructions
             .as_str()
-            .is_some_and(|text| text.contains("don't speak unasked")),
+            .is_some_and(|text| text.contains("only while the user is talking to you by voice")),
         "{instructions}"
     );
-    // Until the user lets it ask its questions aloud, it can't listen.
     let list = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
-    assert_eq!(tool_names(&post(&via, &key, &list).await), ["speak"]);
-    let listen = json!({
-        "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-        "params": { "name": "listen", "arguments": { "question": "Which one?" } },
-    });
-    let refused = post(&via, &key, &listen).await.json();
-    assert_eq!(refused["result"]["isError"], true, "{refused}");
-    assert!(
-        refused["result"]["content"][0]["text"]
-            .as_str()
-            .is_some_and(|text| text.contains("Ask questions aloud")),
-        "{refused}"
-    );
-
-    let (status, _) = daemon
-        .request(
-            Method::PATCH,
-            "/assistants/codex",
-            Some(&settings),
-            Some(&json!({ "ask_questions_aloud": true })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    let answer = post(&via, &key, &initialize()).await;
-    assert!(
-        answer.json()["result"]["instructions"]
-            .as_str()
-            .is_some_and(|text| text.contains("ask them questions aloud")),
-        "{}",
-        answer.body
-    );
     assert_eq!(
         tool_names(&post(&via, &key, &list).await),
         ["speak", "listen"]
-    );
-
-    // A key made by hand has no such switch: its client may listen, and is
-    // not told to ask on its own.
-    let (status, made) = daemon
-        .request(
-            Method::POST,
-            "/assistants/keys",
-            Some(&settings),
-            Some(&json!({ "name": "My editor" })),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{made}");
-    let by_hand = made["key"].as_str().expect("key").to_string();
-    assert_eq!(
-        tool_names(&post(&via, &by_hand, &list).await),
-        ["speak", "listen"]
-    );
-    let answer = post(&via, &by_hand, &initialize()).await;
-    assert!(
-        answer.json()["result"]["instructions"]
-            .as_str()
-            .is_some_and(|text| text.contains("don't speak unasked")),
-        "{}",
-        answer.body
     );
 
     let page = send(

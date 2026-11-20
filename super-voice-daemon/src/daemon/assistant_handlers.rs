@@ -66,7 +66,7 @@ impl SuperSTTDaemon {
             .map(|(id, state)| Assistant {
                 id,
                 state,
-                ask_questions_aloud: config.assistants.asks_questions_aloud(id),
+                announce_when_needed: config.assistants.announces_when_needed(id),
             })
             .collect();
         drop(config);
@@ -204,19 +204,19 @@ impl SuperSTTDaemon {
         }
     }
 
-    /// Keep whether assistant `id` asks its questions aloud. It is told when
-    /// it next starts a session.
-    pub async fn set_assistant_asks_aloud(
+    /// Keep whether Super Voice says aloud when assistant `id` needs the user.
+    /// The next announcement reads it.
+    pub async fn set_assistant_announces(
         &self,
         auth: &Auth,
         id: AssistantId,
         on: bool,
     ) -> AssistantList {
         if let Err(e) = self
-            .set_config_field(|c| c.assistants.set_asks_questions_aloud(id, on))
+            .set_config_field(|c| c.assistants.set_announces_when_needed(id, on))
             .await
         {
-            warn!("Ask aloud changed but config save failed: {e}");
+            warn!("Announcing changed but config save failed: {e}");
         }
         self.list_assistants(auth).await
     }
@@ -277,17 +277,5 @@ impl SuperSTTDaemon {
     #[must_use]
     pub fn assistant_key(&self, auth: &Auth, id: AssistantId) -> Option<String> {
         key_of(&auth.assistant_keys(), id).and_then(|key| auth.assistant_key_secret(&key.id))
-    }
-
-    /// Whether the assistant holding key `key_id` asks its questions aloud,
-    /// as the user chose for it. `None` for a key made by hand, which has no
-    /// such choice.
-    pub async fn key_asks_questions_aloud(&self, auth: &Auth, key_id: &str) -> Option<bool> {
-        let id = auth
-            .assistant_keys()
-            .into_iter()
-            .find(|key| key.id == key_id)
-            .and_then(|key| key.name.parse::<AssistantId>().ok())?;
-        Some(self.config.read().await.assistants.asks_questions_aloud(id))
     }
 }

@@ -131,35 +131,36 @@ impl ShortcutsConfig {
 /// for each is here.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssistantsConfig {
-    /// Whether each assistant asks the user its questions aloud without being
-    /// asked to talk, by its wire id, such as `claude-code`. One that is not
-    /// here does not. An id this daemon does not know is kept, for a newer
+    /// Whether Super Voice says aloud when each assistant needs the user, by
+    /// its wire id, such as `claude-code`. One that is not here does: only a
+    /// `false` is kept. An id this daemon does not know is kept, for a newer
     /// one that does, and an unparseable stored value degrades to none rather
     /// than failing the config load.
     #[serde(
         default,
         deserialize_with = "super_voice_shared::utils::serde_helpers::deserialize_or_default"
     )]
-    pub ask_questions_aloud: BTreeMap<String, bool>,
+    pub announce_when_needed: BTreeMap<String, bool>,
 }
 
 impl AssistantsConfig {
-    /// Whether `id` asks its questions aloud.
+    /// Whether Super Voice says aloud when `id` needs the user.
     #[must_use]
-    pub fn asks_questions_aloud(&self, id: AssistantId) -> bool {
-        self.ask_questions_aloud
+    pub fn announces_when_needed(&self, id: AssistantId) -> bool {
+        self.announce_when_needed
             .get(id.as_wire_str())
             .copied()
-            .unwrap_or(false)
+            .unwrap_or(true)
     }
 
-    /// Keep whether `id` asks its questions aloud. No is kept as nothing.
-    pub fn set_asks_questions_aloud(&mut self, id: AssistantId, on: bool) {
+    /// Keep whether Super Voice says aloud when `id` needs the user. Yes is
+    /// kept as nothing.
+    pub fn set_announces_when_needed(&mut self, id: AssistantId, on: bool) {
         if on {
-            self.ask_questions_aloud
-                .insert(id.as_wire_str().to_string(), true);
+            self.announce_when_needed.remove(id.as_wire_str());
         } else {
-            self.ask_questions_aloud.remove(id.as_wire_str());
+            self.announce_when_needed
+                .insert(id.as_wire_str().to_string(), false);
         }
     }
 }

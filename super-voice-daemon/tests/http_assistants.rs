@@ -320,37 +320,42 @@ async fn the_variable_names_where_the_plugin_comes_from() {
     );
 }
 
-/// Asking aloud is kept per assistant.
+/// Announcing is on for every assistant until the user turns it off, and
+/// kept per assistant.
 #[tokio::test]
-async fn each_assistant_asks_aloud_on_its_own() {
-    let (daemon, token, _home) = start("assistants-aloud", true).await;
-    let aloud = |list: &Value, id: &str| {
+async fn each_assistant_is_announced_on_its_own() {
+    let (daemon, token, _home) = start("assistants-announce", true).await;
+    let announced = |list: &Value, id: &str| {
         list["assistants"]
             .as_array()
             .expect("assistants")
             .iter()
             .find(|a| a["id"] == id)
-            .map(|a| a["ask_questions_aloud"].clone())
+            .map(|a| a["announce_when_needed"].clone())
     };
+
+    let (status, list) = call(&daemon, &token, Method::GET, "/assistants", None).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(announced(&list, "claude-code"), Some(json!(true)));
 
     let (status, list) = call(
         &daemon,
         &token,
         Method::PATCH,
-        "/assistants/codex",
-        Some(&json!({ "ask_questions_aloud": true })),
+        "/assistants/claude-code",
+        Some(&json!({ "announce_when_needed": false })),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{list}");
-    assert_eq!(aloud(&list, "codex"), Some(json!(true)));
-    assert_eq!(aloud(&list, "claude-code"), Some(json!(false)));
+    assert_eq!(announced(&list, "claude-code"), Some(json!(false)));
+    assert_eq!(announced(&list, "codex"), Some(json!(true)));
 
     let (status, body) = call(
         &daemon,
         &token,
         Method::PATCH,
         "/assistants/codex",
-        Some(&json!({ "ask_questions_aloud": "yes" })),
+        Some(&json!({ "announce_when_needed": "yes" })),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -360,7 +365,7 @@ async fn each_assistant_asks_aloud_on_its_own() {
         &token,
         Method::PATCH,
         "/assistants/robot",
-        Some(&json!({ "ask_questions_aloud": true })),
+        Some(&json!({ "announce_when_needed": true })),
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");

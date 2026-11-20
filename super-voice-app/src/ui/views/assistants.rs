@@ -72,8 +72,9 @@ fn row_for<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<'a, Me
     }
 }
 
-/// A connected assistant's row. Whether it asks its questions aloud sits
-/// under what it does, so the switch is plainly this assistant's.
+/// A connected assistant's row. For Claude Code, the only one Super Voice
+/// announces, whether it does sits under what it does, so the switch is
+/// plainly this assistant's.
 fn connected_row<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<'a, Message> {
     let id = assistant.id;
     let spacing = cosmic::theme::spacing();
@@ -86,18 +87,21 @@ fn connected_row<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<
             name = id.display_name()
         ));
     }
-    let ask_aloud = widget::toggler(assistant.ask_questions_aloud)
-        .label(crate::fl!("ask-questions-aloud"))
-        .spacing(spacing.space_xs)
-        .on_toggle(move |on| message(AssistantsMessage::SetAskQuestionsAloud(id, on)));
     // Laid out as `settings::item`'s own label, with the switch below it.
-    let label = column![
+    let mut label = column![
         text::body(id.display_name()).wrapping(Wrapping::Word),
         text::caption(description).wrapping(Wrapping::Word),
-        widget::container(ask_aloud).padding([spacing.space_xxs, 0, 0, 0]),
     ]
     .spacing(2)
     .width(Length::Fill);
+    // Only Claude Code's plugin announces when it needs the user.
+    if id == AssistantId::ClaudeCode {
+        let announce = widget::toggler(assistant.announce_when_needed)
+            .label(crate::fl!("announce-when-needed"))
+            .spacing(spacing.space_xs)
+            .on_toggle(move |on| message(AssistantsMessage::SetAnnounceWhenNeeded(id, on)));
+        label = label.push(widget::container(announce).padding([spacing.space_xxs, 0, 0, 0]));
+    }
     let disconnect = button::standard(crate::fl!("disconnect")).on_press_maybe(
         (!state.disconnecting.contains(&id)).then_some(message(AssistantsMessage::Disconnect(id))),
     );

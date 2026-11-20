@@ -71,9 +71,10 @@ wire_enum_strings!(AssistantState {
 pub struct Assistant {
     pub id: AssistantId,
     pub state: AssistantState,
-    /// Whether the assistant asks the user its questions out loud and hears
-    /// the answer, without being asked to talk.
-    pub ask_questions_aloud: bool,
+    /// Whether Super Voice says aloud when the assistant needs the user, like
+    /// Claude Code's own notices that it needs a permission or an answer.
+    /// Only Claude Code announces, through its plugin.
+    pub announce_when_needed: bool,
 }
 
 /// A key made by hand for another MCP client. The key itself is shown only
@@ -137,7 +138,7 @@ mod tests {
         let assistant = Assistant {
             id: AssistantId::ClaudeCode,
             state: AssistantState::NotFound,
-            ask_questions_aloud: false,
+            announce_when_needed: true,
         };
         let json = serde_json::to_value(&assistant).expect("serializes");
         assert_eq!(
@@ -145,7 +146,7 @@ mod tests {
             serde_json::json!({
                 "id": "claude-code",
                 "state": "not_found",
-                "ask_questions_aloud": false,
+                "announce_when_needed": true,
             })
         );
         let back: Assistant = serde_json::from_value(json).expect("deserializes");

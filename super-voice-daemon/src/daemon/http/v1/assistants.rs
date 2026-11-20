@@ -29,9 +29,8 @@ use utoipa_axum::routes;
 /// The body of `PATCH /assistants/{id}`.
 #[derive(Deserialize, ToSchema)]
 pub(crate) struct AssistantChange {
-    /// Whether the assistant asks the user its questions out loud and hears
-    /// the answer, without being asked to talk.
-    pub(crate) ask_questions_aloud: bool,
+    /// Whether Super Voice says aloud when the assistant needs the user.
+    pub(crate) announce_when_needed: bool,
 }
 
 /// The body of `POST /assistants/keys`.
@@ -101,7 +100,8 @@ The AI assistants Super Voice can connect to, `claude-code`, `codex`, `opencode`
 `gemini`, and where each stands on this computer: `not_found` when the daemon finds \
 neither its program nor its config, `found` when it is here and Super Voice is not in \
 its config, and `connected` when Super Voice is in its config with a key of its own. \
-`ask_questions_aloud` says whether the assistant asks the user its questions out loud.
+`announce_when_needed` says whether Super Voice says aloud when the assistant needs the \
+user. Only Claude Code announces, through its plugin.
 
 Also the keys made by hand for other MCP clients, without the keys themselves, and \
 `address`, where an MCP client reaches Super Voice.
@@ -203,18 +203,18 @@ pub(crate) async fn disconnect_assistant(
     patch,
     path = "/assistants/{id}",
     tag = "assistants",
-    summary = "Change whether an assistant asks aloud",
+    summary = "Change whether an assistant is announced",
     description = "\
-Sets whether the assistant asks the user its questions out loud and hears the answer, \
-without being asked to talk. Super Voice's MCP server tells the assistant when it starts \
-a session, so one already running is told from its next session. Answers the whole \
-list, as `GET /assistants` does.",
+Sets whether Super Voice says aloud when the assistant needs the user, like Claude \
+Code's own notices that it needs a permission or an answer. On until the user turns it \
+off. The next announcement reads it, in every session. Answers the whole list, as \
+`GET /assistants` does.",
     params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `gemini`.")),
     request_body = AssistantChange,
     security(("session_token" = ["settings"])),
     responses(
         (status = 200, description = "Changed. Every assistant.", body = AssistantList),
-        (status = 400, description = "The body is not `{\"ask_questions_aloud\": <bool>}` (`invalid_value`).", body = ErrorEnvelope),
+        (status = 400, description = "The body is not `{\"announce_when_needed\": <bool>}` (`invalid_value`).", body = ErrorEnvelope),
         (status = 401, description = "Token unknown, expired, or its binary changed.", body = ReasonEnvelope),
         (status = 403, description = "The token lacks the `settings` scope.", body = ErrorEnvelope),
         (status = 404, description = "No assistant has that id (`unknown_assistant`).", body = ErrorEnvelope),
@@ -231,7 +231,7 @@ pub(crate) async fn change_assistant(
     };
     answer(Ok(state
         .daemon
-        .set_assistant_asks_aloud(&state.auth, id, body.ask_questions_aloud)
+        .set_assistant_announces(&state.auth, id, body.announce_when_needed)
         .await))
 }
 

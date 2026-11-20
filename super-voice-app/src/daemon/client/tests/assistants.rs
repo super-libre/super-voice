@@ -7,18 +7,18 @@ use super_voice_shared::models::assistants::{AssistantId, AssistantState};
 use super::fake_daemon::{FakeDaemon, Reply};
 use crate::daemon::client::v1::assistants::{
     connect_assistant, create_key, disconnect_assistant, list_assistants, remove_key,
-    set_ask_questions_aloud,
+    set_announce_when_needed,
 };
 
 /// What the daemon answers the list's calls with: Claude Code in `claude`'s
 /// state, and one key made by hand.
-fn list(claude: &str, ask_aloud: bool) -> serde_json::Value {
+fn list(claude: &str, announced: bool) -> serde_json::Value {
     json!({
         "assistants": [
-            { "id": "claude-code", "state": claude, "ask_questions_aloud": ask_aloud },
-            { "id": "codex", "state": "found", "ask_questions_aloud": false },
-            { "id": "opencode", "state": "not_found", "ask_questions_aloud": false },
-            { "id": "gemini", "state": "not_found", "ask_questions_aloud": false },
+            { "id": "claude-code", "state": claude, "announce_when_needed": announced },
+            { "id": "codex", "state": "found", "announce_when_needed": true },
+            { "id": "opencode", "state": "not_found", "announce_when_needed": true },
+            { "id": "gemini", "state": "not_found", "announce_when_needed": true },
         ],
         "custom_keys": [
             { "id": "0f3c9a1e", "name": "My editor", "created_at": "2026-11-19T20:15:00Z" },
@@ -31,16 +31,16 @@ fn list(claude: &str, ask_aloud: bool) -> serde_json::Value {
 #[tokio::test]
 async fn each_call_reaches_its_route_and_reads_the_answer() {
     let daemon = FakeDaemon::start().await;
-    daemon.reply(Reply::json(&list("found", false)));
-    daemon.reply(Reply::json(&list("connected", false)));
+    daemon.reply(Reply::json(&list("found", true)));
     daemon.reply(Reply::json(&list("connected", true)));
+    daemon.reply(Reply::json(&list("connected", false)));
     daemon.reply(Reply::json(&json!({
         "id": "7a2b",
         "name": "Zed",
         "key": "sva_0123",
         "address": "http://127.0.0.1:7300/v1/mcp",
     })));
-    daemon.reply(Reply::json(&list("connected", true)));
+    daemon.reply(Reply::json(&list("connected", false)));
     daemon.reply(Reply::json(&list("found", false)));
 
     let listed = list_assistants().await.expect("listed");
@@ -55,10 +55,10 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
         .expect("connected");
     assert_eq!(connected.assistants[0].state, AssistantState::Connected);
 
-    let asked = set_ask_questions_aloud(AssistantId::ClaudeCode, true)
+    let quiet = set_announce_when_needed(AssistantId::ClaudeCode, false)
         .await
         .expect("set");
-    assert!(asked.assistants[0].ask_questions_aloud);
+    assert!(!quiet.assistants[0].announce_when_needed);
 
     let key = create_key("Zed".to_string()).await.expect("made");
     assert_eq!(key.name, "Zed");
@@ -88,7 +88,7 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
             (
                 "PATCH".to_string(),
                 "/assistants/claude-code".to_string(),
-                json!({ "ask_questions_aloud": true }),
+                json!({ "announce_when_needed": false }),
             ),
             (
                 "POST".to_string(),
