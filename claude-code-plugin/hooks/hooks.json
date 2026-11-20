@@ -1,5 +1,6 @@
 {
   "description": "Read Claude's replies aloud, say when it needs approval, and fall silent when you send the next prompt.",
+  "modules": ["./register.tsx"],
   "hooks": {
     "Stop": [
       {

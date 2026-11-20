@@ -4,6 +4,7 @@
   "author": { "name": "Jorge Menjivar" },
   "homepage": "https://github.com/jorge-menjivar/super-voice",
   "license": "GPL-3.0-only",
+  "types": "./types/index.d.ts",
   "userConfig": {
     "ask_questions_aloud": {
       "type": "boolean",

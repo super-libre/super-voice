@@ -11,6 +11,14 @@ machine. Nothing leaves it.
    your answer) and `synthesize` (saves speech to a WAV file).
 5. `/super-voice:talk` starts a spoken conversation: Claude listens, works,
    answers aloud and listens again until you say you are done.
+6. A row above the prompt, on the key `0` in an empty prompt:
+   1. `Talk` records you and puts your words in the prompt box. They are sent
+      after 5 seconds unless you edit them, and Enter sends them at once.
+   2. While Claude speaks, `Stop and talk` cuts it off and listens.
+   3. After Claude answers something you said, the microphone opens by itself.
+   4. What Claude's `listen` hears goes through the prompt box the same way.
+7. A 🔊 under each reply reads it again; press it again to stop. In a terminal
+   it takes a mouse click, in fullscreen mode (`/tui fullscreen`).
 
 To type a prompt by voice, use Super Voice's own shortcut (`voice record --write`):
 it types into the focused terminal like any other window.
@@ -19,8 +27,8 @@ it types into the focused terminal like any other window.
 
 1. Super Voice installed, with the daemon running and a model selected for each
    feature.
-2. `super-voice-mcp` and `voice` on your `PATH`. From a checkout,
-   `just install-mcp` installs the first.
+2. `super-voice-mcp` and `voice` on your `PATH`. Super Voice's installer puts
+   both there. From a checkout, `just install-daemon` does.
 3. `jq`, which the hooks use to read Claude's reply.
 
 The first time Claude uses a tool, Super Voice asks whether to let

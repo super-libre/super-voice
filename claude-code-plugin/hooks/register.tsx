@@ -1,0 +1,613 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The plugin's buttons, a Claude Code hooks module: one row above the prompt
+// and one key, 0. While Claude speaks, `0: Stop and talk`. Otherwise
+// `0: Talk`, which records the user and puts their words in the prompt box,
+// sent after a short countdown unless they edit them. After a reply to a
+// spoken prompt the microphone opens by itself, and what `listen` hears goes
+// through the box the same way. A 🔊 under each reply block reads it again.
+
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
+
+import type { SuperVoiceTalk } from '../types'
+
+const speaking = atom({ plugin: 'super-voice', key: 'isSpeaking' } as const, false)
+const claudeListening = atom(
+  { plugin: 'super-voice', key: 'isClaudeListening' } as const,
+  false,
+)
+const listensAfter = atom(
+  { plugin: 'super-voice', key: 'listensAfterReply' } as const,
+  false,
+)
+const claudeWorking = atom(
+  { plugin: 'super-voice', key: 'isClaudeWorking' } as const,
+  false,
+)
+const readingAgain = atom({ plugin: 'super-voice', key: 'readingAgain' } as const, '')
+const talk = atom(
+  { plugin: 'super-voice', key: 'talk' } as const,
+  { phase: 'idle' } as SuperVoiceTalk,
+)
+
+/** This plugin's name, as `prompt.change` and `prompt.submit` name a plugin. */
+const NAME = 'super-voice'
+/** How often to ask the daemon while speech may be playing. */
+const POLL_MS = 500
+/**
+ * How long to wait for speech to start after something asked for it. The
+ * Super Voice plugin's hooks run `voice speak` in the background, so speech
+ * starts a moment after the event that asked for it.
+ */
+const START_WAIT_MS = 10_000
+/** How long the user's words wait in the prompt box before they are sent. */
+const SEND_AFTER_MS = 5_000
+/** How often the countdown checks the box and redraws. */
+const COUNTDOWN_TICK_MS = 500
+/** The longest a recording can run: the daemon's own limit is ten minutes. */
+const RECORD_TIMEOUT_MS = 600_000
+/** The Super Voice tools that speak. `listen` asks its question aloud. */
+const LISTEN_TOOL = 'mcp__plugin_super-voice_voice__listen'
+const SPEAKING_TOOLS: ReadonlySet<string> = new Set([
+  'mcp__plugin_super-voice_voice__speak',
+  LISTEN_TOOL,
+])
+/** What `voice record --wait` prints when it heard nothing. */
+const NO_SPEECH = '(no speech detected)'
+/** What Claude reads beside a spoken prompt, so it answers for listening. */
+const VOICE_NOTE =
+  'The user said this aloud, through Super Voice. Your reply will be read aloud to them, ' +
+  'and the microphone opens after it so they can answer by voice: keep the reply short ' +
+  'and plain to listen to, end with any question you have, and do not call `listen` ' +
+  'to hear their answer.'
+
+// Watching for speech.
+let speechTimer: Timer | undefined
+let isChecking = false
+/** What the row last showed. Unknown after a reload, so the first check writes
+ * whatever it finds. */
+let shown: boolean | undefined
+/** Until when to keep asking while no speech has been seen. Zero once speech
+ * was seen, so the first silence after it ends the watch. */
+let waitUntil = 0
+/** Whether this watch has heard speech, so its end is speech that finished. */
+let sawSpeech = false
+
+// The Talk button.
+let phase: SuperVoiceTalk['phase'] = 'idle'
+let countdownTimer: Timer | undefined
+let sendAt = 0
+/** The prompt box as the fill left it. Anything else means the user is
+ * editing, which stops the countdown. */
+let filled: { text: string; cursor: number } | undefined
+/** Claude's `listen` call waiting on the user's answer, which they can check
+ * in the prompt box first: what to hand it once it is sent. */
+let pendingAnswer: ((text: string | undefined) => void) | undefined
+/** Whether Claude's `listen` call has the microphone. */
+let isClaudeListening = false
+/** Claude's running main turn, which sending the user's words stops first,
+ * as their Ctrl+Enter does: a plugin's prompt otherwise waits for it to end. */
+let runningTurnId: string | undefined
+
+// Listening after a spoken reply.
+/** Talk filled the box since the last prompt was sent. */
+let talkedSinceSubmit = false
+/** The prompt now being answered was spoken, so its reply should be too. */
+let listenAfterReply = false
+/** The reply being read answers a spoken prompt: when it has been read to the
+ * end, or the user stops it, open the microphone. Typing calls it off. */
+let armed = false
+
+
+type VoiceStatus = { isSpeaking: boolean; isRecording: boolean }
+
+/** What `voice status` says, or nothing when it fails. */
+async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined> {
+  try {
+    const { exitCode, stdout } = await $.process.run(['voice', 'status'], {
+      timeoutMs: 5000,
+    })
+    if (exitCode !== 0) {
+      return undefined
+    }
+    const [stt = '', tts = ''] = stdout.split('Text to speech')
+    return {
+      isSpeaking: /State:\s*speaking\s*$/m.test(tts),
+      isRecording: /State:\s*recording\s*$/m.test(stt),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/** Run a `voice` command for its effect. A failure is ignored. */
+async function voice($: EngineInterface, args: string[]) {
+  await $.process.run(['voice', ...args], { timeoutMs: 5000 }).catch(() => undefined)
+}
+
+async function setArmed($: EngineInterface, isArmed: boolean) {
+  if (armed !== isArmed) {
+    armed = isArmed
+    await update($, listensAfter, () => isArmed)
+  }
+}
+
+async function showSpeaking($: EngineInterface, isOn: boolean) {
+  if (shown !== isOn) {
+    shown = isOn
+    await update($, speaking, () => isOn)
+  }
+}
+
+async function checkSpeech($: EngineInterface) {
+  if (isChecking) {
+    return
+  }
+  isChecking = true
+  try {
+    const isOn = (await voiceStatus($))?.isSpeaking ?? false
+    await showSpeaking($, isOn)
+    if (isOn) {
+      waitUntil = 0
+      sawSpeech = true
+    } else if ((await $.clock.now()) >= waitUntil) {
+      speechTimer?.cancel()
+      speechTimer = undefined
+      const isReplyRead = sawSpeech && armed
+      sawSpeech = false
+      await setArmed($, false)
+      // Whatever a 🔊 was reading has ended, or never started.
+      await update($, readingAgain, () => '')
+      if (isReplyRead) {
+        void startTalk($)
+      }
+    }
+  } finally {
+    isChecking = false
+  }
+}
+
+/** Ask the daemon until the speech that was just asked for has played. */
+async function watchSpeech($: EngineInterface) {
+  waitUntil = (await $.clock.now()) + START_WAIT_MS
+  sawSpeech = false
+  speechTimer ??= $.clock.every(POLL_MS, () => void checkSpeech($))
+}
+
+async function stopSpeaking($: EngineInterface) {
+  await setArmed($, false)
+  await showSpeaking($, false)
+  await update($, readingAgain, () => '')
+  await voice($, ['speak', 'stop'])
+}
+
+/** The Stop and talk button: cutting Claude off is the user's turn to talk.
+ * A prompt spoken through the Dictate shortcut is typed into the box, so the
+ * mod can't tell spoken from typed; saying nothing ends it after a moment.
+ * Cutting off a question of Claude's `listen` needs nothing more: it records
+ * once the question stops. */
+async function pressStopSpeaking($: EngineInterface) {
+  // The stop comes first, whatever else is going on.
+  await stopSpeaking($)
+  if (!isClaudeListening && phase === 'idle') {
+    await startTalk($)
+  }
+}
+
+/** Read one of Claude's reply blocks aloud again, or stop it when it is the
+ * one being read: the button is a toggle. */
+async function readAgain($: EngineInterface, key: string, text: string) {
+  // Hearing a reply again is not a turn to answer.
+  await setArmed($, false)
+  if ((await read($, readingAgain)) === key) {
+    await stopSpeaking($)
+    return
+  }
+  await update($, readingAgain, () => key)
+  const spoken = await $.process
+    .run(['voice', 'speak'], { stdin: text, timeoutMs: 10_000 })
+    .catch(() => undefined)
+  if (spoken?.exitCode !== 0) {
+    await update($, readingAgain, () => '')
+    $.ui.toast('Could not read it aloud.')
+    return
+  }
+  await watchSpeech($)
+}
+
+async function setTalk($: EngineInterface, next: SuperVoiceTalk) {
+  phase = next.phase
+  await update($, talk, () => next)
+}
+
+/** Record the user, then put their words in the prompt box. Returns once the
+ * recording has started; the rest runs on. */
+async function startTalk($: EngineInterface) {
+  if (phase !== 'idle') {
+    return
+  }
+  if ((await voiceStatus($))?.isRecording) {
+    $.ui.toast('Super Voice is already recording.')
+    return
+  }
+  await setTalk($, { phase: 'recording' })
+  // Claude's voice would be recorded too.
+  await stopSpeaking($)
+  void recordAndFill($)
+}
+
+async function recordAndFill($: EngineInterface) {
+  let words = ''
+  try {
+    const { exitCode, stdout } = await $.process.run(
+      ['voice', 'record', '--wait', '--stop-mode', 'silence_and_manual'],
+      { timeoutMs: RECORD_TIMEOUT_MS },
+    )
+    if (exitCode === 0) {
+      words = stdout.trim()
+    } else {
+      $.ui.toast('Could not record.')
+    }
+  } catch {
+    $.ui.toast('Could not record.')
+  }
+  if (words === NO_SPEECH) {
+    $.ui.toast('No speech heard.')
+    words = ''
+  }
+  if (!words) {
+    await setTalk($, { phase: 'idle' })
+    return
+  }
+  await fillAndCount($, words)
+}
+
+/** Stop the recording of Claude's `listen` call: it answers with what it
+ * heard. */
+async function stopClaudesListening($: EngineInterface) {
+  await setTalk($, { phase: 'transcribing' })
+  await voice($, ['record', 'stop'])
+}
+
+/** Put what `listen` heard in the prompt box, and resolve with it once it is
+ * sent: by the countdown as it stands, or by the user's Enter as they edited
+ * it. Nothing when the turn is stopped first; the words stay in the box. */
+function reviewAnswer(
+  $: EngineInterface,
+  words: string,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  return new Promise(resolve => {
+    pendingAnswer = resolve
+    signal.addEventListener('abort', () => void finishAnswer($, undefined))
+    void fillAndCount($, words)
+  })
+}
+
+async function finishAnswer($: EngineInterface, text: string | undefined) {
+  const resolve = pendingAnswer
+  if (resolve === undefined) {
+    return
+  }
+  pendingAnswer = undefined
+  await stopCountdown($)
+  if (text !== undefined) {
+    await $.prompt.fill({ text: '' })
+  }
+  resolve(text)
+}
+
+async function stopListening($: EngineInterface) {
+  if (phase !== 'recording') {
+    // The row outlived its recording: nothing here is waiting on one.
+    await setTalk($, { phase: 'idle' })
+    return
+  }
+  // Shown before the stop, so a quick transcript is not drawn over by it.
+  await setTalk($, { phase: 'transcribing' })
+  // The recording ends and `recordAndFill` carries on with what was heard.
+  await voice($, ['record', 'stop'])
+}
+
+/** Put the words in the box after any draft, and send them unless the user
+ * starts editing first. */
+async function fillAndCount($: EngineInterface, words: string) {
+  const draft = (await $.prompt.read()).text.trimEnd()
+  const box = await $.prompt.fill({ text: draft ? `${draft} ${words}` : words })
+  if (!box.isFilled) {
+    if (pendingAnswer !== undefined) {
+      // No box to check it in: Claude gets the words as heard.
+      await finishAnswer($, words)
+      return
+    }
+    $.ui.toast('Could not fill the prompt box.')
+    await setTalk($, { phase: 'idle' })
+    return
+  }
+  if (pendingAnswer === undefined) {
+    talkedSinceSubmit = true
+  }
+  filled = { text: box.text, cursor: box.cursor }
+  sendAt = (await $.clock.now()) + SEND_AFTER_MS
+  await setTalk($, { phase: 'countdown', secondsLeft: Math.ceil(SEND_AFTER_MS / 1000) })
+  countdownTimer = $.clock.every(COUNTDOWN_TICK_MS, () => void tick($))
+}
+
+async function tick($: EngineInterface) {
+  if (phase !== 'countdown' || filled === undefined) {
+    return
+  }
+  // A click that moves the cursor fires no edit, so look at the box.
+  const box = await $.prompt.read()
+  if (box.text !== filled.text || box.cursor !== filled.cursor) {
+    await stopCountdown($)
+    return
+  }
+  const left = sendAt - (await $.clock.now())
+  if (left > 0) {
+    const secondsLeft = Math.ceil(left / 1000)
+    const shownTalk = await read($, talk)
+    if (shownTalk.phase !== 'countdown' || shownTalk.secondsLeft !== secondsLeft) {
+      await setTalk($, { phase: 'countdown', secondsLeft })
+    }
+    return
+  }
+  if (pendingAnswer !== undefined) {
+    await finishAnswer($, box.text)
+    return
+  }
+  await stopCountdown($)
+  await $.prompt.fill({ text: '' })
+  if (runningTurnId !== undefined) {
+    // Said while Claude works: it should hear it now, not when it is done.
+    await $.turn.abort({ turnId: runningTurnId }).catch(() => undefined)
+  }
+  // Set here too, in case this mod's own `prompt.submit` hook is not told of
+  // its own prompt.
+  listenAfterReply = true
+  talkedSinceSubmit = false
+  // The words are the user's own, so Claude reads them bare. Hooks and
+  // permission checks still see this mod as the sender.
+  await $.prompt.submit({ text: box.text, asUser: true }).catch(() => {
+    $.ui.toast('Could not send.')
+  })
+}
+
+async function stopCountdown($: EngineInterface) {
+  countdownTimer?.cancel()
+  countdownTimer = undefined
+  filled = undefined
+  // An answer the user is editing still waits for their Enter.
+  await setTalk($, pendingAnswer === undefined ? { phase: 'idle' } : { phase: 'editing' })
+}
+
+export const register: Register = on => {
+  // The session's state outlives a reload, but the recording, countdown and
+  // speech watch of the copy before do not. Start the rows over to match.
+  on('session.start', async ($, e, next) => {
+    await update($, talk, () => ({ phase: 'idle' }))
+    await update($, speaking, () => false)
+    await update($, claudeListening, () => false)
+    await update($, listensAfter, () => false)
+    await update($, claudeWorking, () => false)
+    await update($, readingAgain, () => '')
+    return next(e)
+  })
+
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      runningTurnId = e.turnId
+      await update($, claudeWorking, () => true)
+    }
+    return next(e)
+  })
+
+  // The Super Voice plugin's Stop hook reads the answer aloud.
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      runningTurnId = undefined
+      await update($, claudeWorking, () => false)
+      if (e.isAborted) {
+        // A spoken prompt that stopped this turn is still to be answered.
+        await setArmed($, false)
+      } else {
+        await setArmed($, listenAfterReply)
+        listenAfterReply = false
+        await watchSpeech($)
+      }
+    }
+    return next(e)
+  })
+
+  on('tool.call', async ($, e, next) => {
+    if (!SPEAKING_TOOLS.has(e.tool)) {
+      return next(e)
+    }
+    await watchSpeech($)
+    if (e.tool !== LISTEN_TOOL) {
+      return next(e)
+    }
+    // Claude has the microphone: no Talk button until it is done.
+    isClaudeListening = true
+    await update($, claudeListening, () => true)
+    try {
+      return await next(e)
+    } finally {
+      isClaudeListening = false
+      await update($, claudeListening, () => false)
+    }
+  })
+
+  // What `listen` heard goes through the prompt box, as Talk's words do:
+  // Claude gets it once it is sent, as the user left it.
+  on('tool.run', { tool: LISTEN_TOOL }, async ($, e, next) => {
+    const heard = await next(e)
+    if (phase === 'transcribing') {
+      await setTalk($, { phase: 'idle' })
+    }
+    if (heard.deny !== undefined || heard.isError) {
+      return heard
+    }
+    const words = (heard.text ?? '').trim()
+    if (!words || words === NO_SPEECH || phase !== 'idle') {
+      return heard
+    }
+    let answer: { text: string | undefined } | undefined
+    void reviewAnswer($, words, next.signal).then(text => {
+      answer = { text }
+    })
+    // A hook's own time is bounded, and waiting on a promise counts against
+    // it; time inside a `$` call does not. So wait for the user through short
+    // sleeps on the host.
+    while (answer === undefined) {
+      await $.process.run(['sleep', '0.25'], { timeoutMs: 5000 }).catch(() => undefined)
+    }
+    return answer.text === undefined ? heard : { result: answer.text }
+  })
+
+  // A key in the box, a cursor move included: the user is editing, or about
+  // to type instead of talk.
+  on('prompt.edit', async ($, e, next) => {
+    await setArmed($, false)
+    if (phase === 'countdown') {
+      await stopCountdown($)
+    }
+    return next(e)
+  })
+
+  // A recalled history entry, a clear, another plugin's fill.
+  on('prompt.change', async ($, e, next) => {
+    const isOwnFill = e.origin.kind === 'plugin' && e.origin.name === NAME
+    if (phase === 'countdown' && !isOwnFill) {
+      await stopCountdown($)
+    }
+    return next(e)
+  })
+
+  on('prompt.submit', async ($, e, next) => {
+    const isOwn = e.origin.kind === 'plugin' && e.origin.name === NAME
+    if (e.origin.kind === 'composer' && pendingAnswer !== undefined) {
+      // Enter on an answer to Claude's question: it goes to the waiting
+      // `listen` call, not into the queue as a prompt.
+      await finishAnswer($, e.text)
+      return { drop: "Sent as the answer to Claude's question." }
+    }
+    if (e.origin.kind === 'composer') {
+      // Enter before the countdown ended: the prompt is the user's, and still
+      // spoken, so the talk goes on after the reply. Sent while Claude works,
+      // it is delivered into that turn, whose reply answers it.
+      if (phase === 'countdown') {
+        await stopCountdown($)
+      }
+      const isSpoken = talkedSinceSubmit
+      listenAfterReply = isSpoken
+      talkedSinceSubmit = false
+      await setArmed($, false)
+      return next(isSpoken ? { ...e, context: [...(e.context ?? []), VOICE_NOTE] } : e)
+    }
+    if (isOwn) {
+      listenAfterReply = true
+      talkedSinceSubmit = false
+      return next({ ...e, context: [...(e.context ?? []), VOICE_NOTE] })
+    }
+    return next(e)
+  })
+
+  // A speaker under each block of Claude's replies reads that block aloud
+  // again. On the terminal it takes a click, in the fullscreen layout.
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    const row = await next(e)
+    const { text, isSummary } = e.props
+    if (isSummary || !text.trim()) {
+      return row
+    }
+    const { Box, Button } = $.ui.resolve(e)
+    // Blocks of one message share its id; their text tells them apart.
+    const key = `read-again-${e.requestId}-${text.length}`
+    const isReading = (await read($, readingAgain)) === key
+    return (
+      <Box flexDirection="column">
+        {row}
+        <Button
+          key={key}
+          label={isReading ? '\u{23F9}' : '\u{1F50A}'}
+          plain
+          dimColor={!isReading}
+          onPress={() => void readAgain($, key, text)}
+        />
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) {
+      return next(e)
+    }
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const state = await read($, talk)
+    if (state.phase === 'recording') {
+      return (
+        <Box>
+          <Text dimColor>Listening. </Text>
+          <Button
+            key="stop-listening"
+            label="Stop listening"
+            hotkey="0"
+            plain
+            onPress={() => void stopListening($)}
+          />
+        </Box>
+      )
+    }
+    if (state.phase === 'transcribing') {
+      return <Text dimColor>Transcribing.</Text>
+    }
+    if (state.phase === 'countdown') {
+      const stopsClaude = await read($, claudeWorking)
+      return (
+        <Text dimColor>
+          Sending in {state.secondsLeft} s{stopsClaude ? ', and stopping Claude' : ''}. Press
+          Enter to send now, or edit to stop.
+        </Text>
+      )
+    }
+    if (state.phase === 'editing') {
+      return <Text dimColor>Press Enter to answer Claude.</Text>
+    }
+    const isListening = await read($, claudeListening)
+    if (await read($, speaking)) {
+      return (
+        <Button
+          key="stop-speaking"
+          label="Stop and talk"
+          hotkey="0"
+          plain
+          onPress={() => void pressStopSpeaking($)}
+        />
+      )
+    }
+    if (isListening) {
+      return (
+        <Box>
+          <Text dimColor>Listening. </Text>
+          <Button
+            key="stop-claudes-listening"
+            label="Stop listening"
+            hotkey="0"
+            plain
+            onPress={() => void stopClaudesListening($)}
+          />
+        </Box>
+      )
+    }
+    return (
+      <Button
+        key="talk"
+        label="Talk"
+        hotkey="0"
+        plain
+        onPress={() => void startTalk($)}
+      />
+    )
+  })
+}
