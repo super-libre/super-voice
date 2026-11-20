@@ -4,13 +4,5 @@
   "author": { "name": "Jorge Menjivar" },
   "homepage": "https://github.com/jorge-menjivar/super-voice",
   "license": "GPL-3.0-only",
-  "types": "./types/index.d.ts",
-  "userConfig": {
-    "ask_questions_aloud": {
-      "type": "boolean",
-      "title": "Ask questions aloud",
-      "description": "Claude asks you its questions out loud and hears your answer, without you asking to talk.",
-      "default": false
-    }
-  }
+  "types": "./types/index.d.ts"
 }

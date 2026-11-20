@@ -7,8 +7,8 @@ machine. Nothing leaves it.
    "code block".
 2. Claude says when it needs your approval.
 3. Sending your next prompt stops whatever it is reading.
-4. Claude gets three tools: `speak`, `listen` (asks you something aloud and hears
-   your answer) and `synthesize` (saves speech to a WAV file).
+4. Claude gets two tools: `speak`, and `listen` (asks you something aloud and
+   hears your answer).
 5. `/super-voice:talk` starts a spoken conversation: Claude listens, works,
    answers aloud and listens again until you say you are done.
 6. A row above the prompt, on the key `0` in an empty prompt:
@@ -27,32 +27,31 @@ it types into the focused terminal like any other window.
 
 1. Super Voice installed, with the daemon running and a model selected for each
    feature.
-2. `super-voice-mcp` and `voice` on your `PATH`. Super Voice's installer puts
-   both there. From a checkout, `just install-daemon` does.
+2. `voice` on your `PATH`. Super Voice's installer puts it there. The hooks use
+   it, and so does the plugin to hand Claude Code its key.
 3. `jq`, which the hooks use to read Claude's reply.
 
-The first time Claude uses a tool, Super Voice asks whether to let
-`super-voice-mcp` in. The hooks use the `voice` command, which Super Voice lets
-in without asking.
+Claude Code reaches Super Voice at `http://127.0.0.1:7300/v1/mcp`, with a key
+only Claude Code has. Disconnecting Claude Code on the Assistants page takes it
+away.
 
 Claude Code also asks before each tool call. For `/super-voice:talk` to be
 hands-free, allow `listen` and `speak` without asking when it first does.
 
 ## Settings
 
-"Ask questions aloud" is off by default. When it is on, Claude asks you its
-questions out loud and hears your answer, without you asking to talk. Set it
-when you install the plugin, or later with
-`/plugin configure super-voice@super-voice`, then restart Claude Code.
+"Ask questions aloud" is a switch on Claude Code's row on the Assistants page.
+When it is on, Claude asks you its questions out loud and hears your answer,
+without you asking to talk.
 
 ## Install
 
-```
-/plugin marketplace add jorge-menjivar/super-voice
-/plugin install super-voice@super-voice
-```
+In the Super Voice app, open Assistants and press Connect next to Claude Code.
+Super Voice installs this plugin and gives Claude Code its key. Restart Claude
+Code to start using it.
 
-To try it from a checkout, for one session only:
+To try it from a checkout, for one session only, connect Claude Code in the app
+first so it has a key, then:
 
 ```
 claude --plugin-dir ./claude-code-plugin
