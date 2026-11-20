@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! `voice mcp`: Super Voice as a Model Context Protocol server, so an AI
-//! assistant such as Claude Code can talk to the user and hear them.
+//! The server: MCP's protocol, its tools, and the calls they make to the
+//! daemon.
 //!
 //! The transport is MCP's stdio one: a JSON-RPC message per line on stdin, and
 //! one per line on stdout. Stdout carries the protocol and nothing else;
@@ -13,9 +13,8 @@
 //! closes its connection, which the daemon takes as the user stopping the
 //! recording.
 //!
-//! The server is a client of the daemon like any other, with a token of its
-//! own. The consent dialog names the MCP client that started it, from
-//! `initialize`.
+//! The consent dialog names the MCP client that started the server, from
+//! `initialize`, beside this binary's path.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -462,7 +461,7 @@ mod tests {
         for scope in SCOPES {
             assert!(
                 is_known_scope(scope),
-                "`voice mcp` requests scope `{scope}` that is not in scopes::known_scopes"
+                "`super-voice-mcp` requests scope `{scope}` that is not in scopes::known_scopes"
             );
         }
     }

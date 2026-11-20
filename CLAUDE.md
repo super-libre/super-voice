@@ -16,5 +16,6 @@ Super Voice is a speech-to-text and text-to-speech service built in Rust with a 
 - **super-voice-app**: the settings app, for both features. Each feature's pages are tabs of its section: Speech to text, Text to speech.
 - **super-voice-shared**: the client library, for both features. Text to speech's own types are its `tts` module.
 - **super-voice-install**: the installer and self-updater.
+- **super-voice-mcp**: an MCP server, so AI assistants such as Claude Code can speak and listen. A client of its own, never one the daemon trusts without asking. The Claude Code plugin that runs it is `claude-code-plugin/`.
 
 The COSMIC applet lives in super-libre/super-cosmic-applet.

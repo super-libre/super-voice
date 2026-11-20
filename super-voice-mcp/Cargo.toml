@@ -1,0 +1,30 @@
+[package]
+    name = "super-voice-mcp"
+    version.workspace = true
+    authors.workspace = true
+    edition.workspace = true
+    description = "Super Voice's MCP server, for AI assistants such as Claude Code"
+    repository = "https://github.com/jorge-menjivar/super-voice"
+    license = "GPL-3.0-only"
+
+[[bin]]
+    name = "super-voice-mcp"
+    path = "src/main.rs"
+
+[dependencies]
+    anyhow.workspace = true
+    clap.workspace = true
+    serde_json.workspace = true
+    super-voice-shared = { path = "../super-voice-shared" }
+    tokio = {
+        workspace = true,
+        features = ["fs", "io-std", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"]
+    }
+
+[dev-dependencies]
+    # Spawns the daemon for the integration test, in a home of its own.
+    super-engine-test-daemon.workspace = true
+    tempfile = "3.27.0"
+
+[lints]
+    workspace = true

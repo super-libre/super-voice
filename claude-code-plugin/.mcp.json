@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "voice": {
-      "command": "voice",
-      "args": ["mcp"]
+      "command": "super-voice-mcp"
     }
   }
 }

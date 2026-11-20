@@ -4,8 +4,7 @@
 //!
 //! Each feature's commands are under its own subcommand — `voice record` for
 //! speech to text, `voice speak` for text to speech — and what the daemon has
-//! once is at the top: `ping`, `status`, `logout`. `voice mcp` serves both
-//! features to an AI assistant over the Model Context Protocol.
+//! once is at the top: `ping`, `status`, `logout`.
 //!
 //! Auth flow is delegated to `super_voice_shared::daemon::session`, the
 //! shared client-side session helper. Each client (CLI, settings app,
@@ -31,7 +30,6 @@ use super_voice_shared::validation::get_http_socket_path;
 
 #[cfg(target_os = "macos")]
 mod hotkey;
-mod mcp;
 #[cfg(target_os = "macos")]
 mod service;
 
@@ -127,7 +125,6 @@ async fn dispatch(matches: &ArgMatches, socket_path: PathBuf) -> Result<()> {
             .context("speak failed")
         }
         Some(("logout", _)) => cmd_logout(),
-        Some(("mcp", _)) => mcp::run(socket_path).await,
         _ => {
             println!("Run with --help for usage.");
             Ok(())
@@ -200,10 +197,7 @@ fn build_cli() -> Command {
         .subcommand(
             Command::new("logout")
                 .about("Forget the cached session token (forces re-consent next call)"),
-        )
-        .subcommand(Command::new("mcp").about(
-            "Serve speech to an AI assistant, such as Claude Code, over MCP on stdin and stdout",
-        )),
+        ),
     )
 }
 

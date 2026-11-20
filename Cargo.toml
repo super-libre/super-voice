@@ -7,6 +7,7 @@
     "super-voice-daemon",
     "super-voice-indexer",
     "super-voice-install",
+    "super-voice-mcp",
     "super-voice-registry-types",
     "super-voice-shared",
   ]
@@ -29,6 +30,7 @@
     "super-voice-consent",
     "super-voice-daemon",
     "super-voice-install",
+    "super-voice-mcp",
     "super-voice-registry-types",
     "super-voice-shared",
   ]

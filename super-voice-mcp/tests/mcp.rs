@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! End-to-end test for `voice mcp`: the CLI as an MCP server on stdin and
-//! stdout, driven the way an MCP client drives it.
+//! End-to-end test for `super-voice-mcp`: the server on stdin and stdout,
+//! driven the way an MCP client drives it.
 //!
-//! Hermetic like `cmd_speak.rs`: the daemon comes up with no backends, so the
-//! tools are refused before anything reaches an audio device. `listen` is left
-//! out because it would open the microphone. The server keeps its token in the
-//! test daemon's home, and the daemon auto-approves it.
+//! Hermetic like the CLI's `cmd_speak.rs`: the daemon comes up with no
+//! backends, so the tools are refused before anything reaches an audio
+//! device. `listen` is left out because it would open the microphone. The
+//! server keeps its token in the test daemon's home, and the daemon
+//! auto-approves it.
 //!
 //! ```bash
-//! cargo test -p super-voice-cli --test cmd_mcp -- --nocapture
+//! cargo test -p super-voice-mcp --test mcp -- --nocapture
 //! ```
 
 use std::io::{BufRead, BufReader, Write};
@@ -21,16 +22,16 @@ use serde_json::{Value, json};
 use super_engine_test_daemon::TestDaemon;
 use super_voice_shared::product::SUPER_VOICE;
 
-const CLI_BIN: &str = env!("CARGO_BIN_EXE_super-voice-cli");
+const MCP_BIN: &str = env!("CARGO_BIN_EXE_super-voice-mcp");
 /// Long enough for a debug daemon to answer, short enough that a server that
 /// never answers fails the test rather than hanging it.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// See `cmd_speak.rs`.
+/// See the CLI's `cmd_speak.rs`.
 fn locate_daemon_bin() -> PathBuf {
-    let dir = PathBuf::from(CLI_BIN)
+    let dir = PathBuf::from(MCP_BIN)
         .parent()
-        .expect("cli bin parent dir")
+        .expect("mcp bin parent dir")
         .to_path_buf();
     let candidate = dir.join("super-voice-daemon");
     assert!(
@@ -41,16 +42,16 @@ fn locate_daemon_bin() -> PathBuf {
     candidate
 }
 
-/// See `cmd_speak.rs`.
+/// See the CLI's `cmd_speak.rs`.
 fn spawn_daemon() -> TestDaemon {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("a runtime to wait on the daemon")
-        .block_on(TestDaemon::build(&SUPER_VOICE, locate_daemon_bin(), "cli-mcp").start())
+        .block_on(TestDaemon::build(&SUPER_VOICE, locate_daemon_bin(), "mcp").start())
 }
 
-/// `voice mcp` against `daemon`, with each line it writes on a channel.
+/// The server against `daemon`, with each line it writes on a channel.
 struct Server {
     child: Child,
     stdin: Option<ChildStdin>,
@@ -59,20 +60,16 @@ struct Server {
 
 impl Server {
     fn start(daemon: &TestDaemon) -> Self {
-        let mut child = Command::new(CLI_BIN)
+        let mut child = Command::new(MCP_BIN)
             .env("XDG_STATE_HOME", &daemon.home().state)
             .env("SUPER_VOICE_AUTO_APPROVE", "1")
             .env("SUPER_VOICE_MUTE_CUES", "1")
-            .args([
-                "--socket",
-                daemon.socket().to_str().expect("socket utf8"),
-                "mcp",
-            ])
+            .args(["--socket", daemon.socket().to_str().expect("socket utf8")])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .expect("spawn voice mcp");
+            .expect("spawn super-voice-mcp");
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().expect("stdout pipe");
         let (tx, lines) = channel();
@@ -173,7 +170,7 @@ fn mcp_serves_its_tools_and_reaches_the_daemon() {
         .recv_timeout(ANSWER_TIMEOUT)
         .expect("the last request is answered");
     assert_eq!(last, json!({ "jsonrpc": "2.0", "id": 5, "result": {} }));
-    let status = server.child.wait().expect("wait voice mcp");
+    let status = server.child.wait().expect("wait super-voice-mcp");
     assert!(
         status.success(),
         "exits cleanly when stdin closes: {status}"

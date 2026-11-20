@@ -19,11 +19,13 @@ it types into the focused terminal like any other window.
 
 1. Super Voice installed, with the daemon running and a model selected for each
    feature.
-2. `voice` on your `PATH`, from a version with `voice mcp`.
+2. `super-voice-mcp` and `voice` on your `PATH`. From a checkout,
+   `just install-mcp` installs the first.
 3. `jq`, which the hooks use to read Claude's reply.
 
-The first time Claude uses a tool, Super Voice asks whether to let it in. The
-hooks use the `voice` command's own permission.
+The first time Claude uses a tool, Super Voice asks whether to let
+`super-voice-mcp` in. The hooks use the `voice` command, which Super Voice lets
+in without asking.
 
 Claude Code also asks before each tool call. For `/super-voice:talk` to be
 hands-free, allow `listen` and `speak` without asking when it first does.
