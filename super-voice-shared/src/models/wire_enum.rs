@@ -4,6 +4,7 @@
 //! `super_engine_protocol::wire_enum_strings!`. These tests hold each enum to
 //! its table; the engine's own enums are tested there.
 
+use crate::models::assistants::{AssistantId, AssistantState};
 use crate::models::notification_method::NotificationMethod;
 use crate::models::protocol::PreviewSource;
 use crate::models::read_method::ReadMethod;
@@ -71,6 +72,8 @@ fn every_wire_enum_agrees_with_its_table() {
     assert_wire_forms_agree!(ShortcutId);
     assert_wire_forms_agree!(ShortcutMethod);
     assert_wire_forms_agree!(ShortcutState);
+    assert_wire_forms_agree!(AssistantId);
+    assert_wire_forms_agree!(AssistantState);
 }
 
 /// An unrecognized token is refused rather than silently defaulted, so a
@@ -136,4 +139,6 @@ fn every_wire_enum_publishes_exactly_its_tokens() {
     assert_schema_matches_table!(ShortcutId);
     assert_schema_matches_table!(ShortcutMethod);
     assert_schema_matches_table!(ShortcutState);
+    assert_schema_matches_table!(AssistantId);
+    assert_schema_matches_table!(AssistantState);
 }
