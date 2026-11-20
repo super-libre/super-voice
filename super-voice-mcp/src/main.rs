@@ -16,6 +16,19 @@ use anyhow::{Context, Result};
 use clap::{Arg, Command, value_parser};
 use super_voice_shared::validation::get_http_socket_path;
 
+/// Lets the assistant ask the user its questions aloud without being asked to
+/// talk. The Claude Code plugin sets it from its "Ask questions aloud" setting.
+const ASK_QUESTIONS_ALOUD: &str = "SUPER_VOICE_MCP_ASK_QUESTIONS_ALOUD";
+
+/// Whether a setting's value says yes. Anything else is no: an unset value, an
+/// empty one, or a placeholder a client left unfilled.
+fn is_yes(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "true" | "1" | "yes" | "on"
+    )
+}
+
 fn main() -> Result<()> {
     // Logs go to stderr. Stdout carries the protocol and nothing else.
     super_voice_shared::logging::init();
@@ -23,6 +36,9 @@ fn main() -> Result<()> {
     let matches = Command::new("super-voice-mcp")
         .version(env!("CARGO_PKG_VERSION"))
         .about("Serve Super Voice to an AI assistant, such as Claude Code, over MCP on stdin and stdout")
+        .after_help(format!(
+            "Set {ASK_QUESTIONS_ALOUD}=true to let the assistant ask its questions aloud."
+        ))
         .arg(
             Arg::new("socket")
                 .long("socket")
@@ -34,16 +50,36 @@ fn main() -> Result<()> {
         .get_one::<PathBuf>("socket")
         .cloned()
         .unwrap_or_else(get_http_socket_path);
+    let asks_questions_aloud = std::env::var(ASK_QUESTIONS_ALOUD).is_ok_and(|value| is_yes(&value));
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("could not start the async runtime")?
-        .block_on(server::run(socket_path))
+        .block_on(server::run(socket_path, asks_questions_aloud))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::is_yes;
+
+    #[test]
+    fn only_a_clear_yes_turns_a_setting_on() {
+        for yes in ["true", "TRUE", " 1 ", "yes", "on"] {
+            assert!(is_yes(yes), "{yes:?}");
+        }
+        for no in [
+            "",
+            "false",
+            "0",
+            "no",
+            "off",
+            "${user_config.ask_questions_aloud}",
+        ] {
+            assert!(!is_yes(no), "{no:?}");
+        }
+    }
+
     /// The reason this is a binary of its own: the daemon asks the user before
     /// letting it in. On the list of Super Voice's own clients, it would be let
     /// in without asking, as the CLI is.

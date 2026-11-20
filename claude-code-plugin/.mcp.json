@@ -1,7 +1,10 @@
 {
   "mcpServers": {
     "voice": {
-      "command": "super-voice-mcp"
+      "command": "super-voice-mcp",
+      "env": {
+        "SUPER_VOICE_MCP_ASK_QUESTIONS_ALOUD": "${user_config.ask_questions_aloud}"
+      }
     }
   }
 }

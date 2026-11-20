@@ -43,12 +43,29 @@ const UNNAMED_CLIENT: &str = "MCP client";
 /// newest, and decides whether it can work with that.
 const PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
-/// What the client tells its model about this server.
-const INSTRUCTIONS: &str = "Super Voice is the user's own speech service, running on their machine. \
-`speak` says text aloud, `listen` hears what the user says, and `synthesize` saves speech to a WAV file. \
-Use them when the user asks to talk by voice or to hear something; don't speak unasked. \
-To ask the user something aloud, give the question to `listen` instead of calling `speak` first: \
+/// What the client tells its model about this server, around what it says of
+/// when to speak.
+const ABOUT: &str = "Super Voice is the user's own speech service, running on their machine. \
+`speak` says text aloud, `listen` hears what the user says, and `synthesize` saves speech to a WAV file. ";
+const HOW_TO_ASK: &str = " To ask the user something aloud, give the question to `listen` instead of calling `speak` first: \
 `listen` waits for the question to end before it records. Keep spoken text short and plain.";
+/// When to speak, by default.
+const WHEN_ASKED: &str =
+    "Use them when the user asks to talk by voice or to hear something; don't speak unasked.";
+/// When to speak, once the user lets the model ask its questions aloud.
+const WHEN_ASKED_OR_ASKING: &str = "Use them when the user asks to talk by voice or to hear something. \
+The user also lets you ask them questions aloud: when you need an answer from them, ask it with `listen`. \
+Otherwise, don't speak unasked.";
+
+/// What the client tells its model about this server.
+fn instructions(asks_questions_aloud: bool) -> String {
+    let when = if asks_questions_aloud {
+        WHEN_ASKED_OR_ASKING
+    } else {
+        WHEN_ASKED
+    };
+    format!("{ABOUT}{when}{HOW_TO_ASK}")
+}
 
 /// How often `listen` checks whether its question is still playing.
 const POLL: Duration = Duration::from_millis(100);
@@ -58,10 +75,12 @@ const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 
 /// Serve MCP on stdin and stdout until the client closes stdin.
+/// `asks_questions_aloud` tells the model it may ask the user questions aloud
+/// without being asked to talk.
 ///
 /// # Errors
 /// Returns an error if stdin can't be read.
-pub async fn run(socket_path: PathBuf) -> Result<()> {
+pub async fn run(socket_path: PathBuf, asks_questions_aloud: bool) -> Result<()> {
     let (out, mut outbox) = unbounded_channel::<Value>();
     // One writer, so two answers finishing at once never interleave a line.
     let writer = tokio::spawn(async move {
@@ -74,7 +93,7 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
             }
         }
     });
-    let server = Arc::new(Server::new(socket_path));
+    let server = Arc::new(Server::new(socket_path, asks_questions_aloud));
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     while let Some(line) = lines.next_line().await? {
         server.receive(&line, &out);
@@ -92,6 +111,8 @@ pub async fn run(socket_path: PathBuf) -> Result<()> {
 
 struct Server {
     socket_path: PathBuf,
+    /// Whether the model may ask the user questions aloud unasked.
+    asks_questions_aloud: bool,
     /// Who the consent dialog says is asking.
     client_name: Mutex<String>,
     /// Tool calls in progress, by request id, for `notifications/cancelled`.
@@ -99,9 +120,10 @@ struct Server {
 }
 
 impl Server {
-    fn new(socket_path: PathBuf) -> Self {
+    fn new(socket_path: PathBuf, asks_questions_aloud: bool) -> Self {
         Self {
             socket_path,
+            asks_questions_aloud,
             client_name: Mutex::new(UNNAMED_CLIENT.to_string()),
             calls: Mutex::new(HashMap::new()),
         }
@@ -182,7 +204,7 @@ impl Server {
                 "title": "Super Voice",
                 "version": env!("CARGO_PKG_VERSION"),
             },
-            "instructions": INSTRUCTIONS,
+            "instructions": instructions(self.asks_questions_aloud),
         })
     }
 
@@ -467,7 +489,37 @@ mod tests {
     }
 
     fn server() -> Arc<Server> {
-        Arc::new(Server::new(PathBuf::from("/nonexistent/socket")))
+        Arc::new(Server::new(PathBuf::from("/nonexistent/socket"), false))
+    }
+
+    fn instructions_of(server: &Arc<Server>) -> String {
+        let answers = exchange(
+            server,
+            &[json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {} })],
+        );
+        answers[0]["result"]["instructions"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn the_model_asks_aloud_only_once_the_user_lets_it() {
+        let by_default = instructions_of(&server());
+        assert!(by_default.contains("don't speak unasked"), "{by_default}");
+        assert!(
+            !by_default.contains("ask them questions aloud"),
+            "{by_default}"
+        );
+
+        let let_ask = Arc::new(Server::new(PathBuf::from("/nonexistent/socket"), true));
+        let asking = instructions_of(&let_ask);
+        assert!(asking.contains("ask them questions aloud"), "{asking}");
+        // Both still say how to ask, and that the rest stays unasked.
+        for text in [&by_default, &asking] {
+            assert!(text.contains("give the question to `listen`"), "{text}");
+            assert!(text.contains("speak unasked"), "{text}");
+        }
     }
 
     /// Feed `lines` to a server and collect what it writes back.

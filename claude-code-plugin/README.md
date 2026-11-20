@@ -30,6 +30,13 @@ in without asking.
 Claude Code also asks before each tool call. For `/super-voice:talk` to be
 hands-free, allow `listen` and `speak` without asking when it first does.
 
+## Settings
+
+"Ask questions aloud" is off by default. When it is on, Claude asks you its
+questions out loud and hears your answer, without you asking to talk. Set it
+when you install the plugin, or later with
+`/plugin configure super-voice@super-voice`, then restart Claude Code.
+
 ## Install
 
 ```

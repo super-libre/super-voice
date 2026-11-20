@@ -3,5 +3,13 @@
   "description": "Talk to Claude Code and hear its answers, with Super Voice on your own machine.",
   "author": { "name": "Jorge Menjivar" },
   "homepage": "https://github.com/jorge-menjivar/super-voice",
-  "license": "GPL-3.0-only"
+  "license": "GPL-3.0-only",
+  "userConfig": {
+    "ask_questions_aloud": {
+      "type": "boolean",
+      "title": "Ask questions aloud",
+      "description": "Claude asks you its questions out loud and hears your answer, without you asking to talk.",
+      "default": false
+    }
+  }
 }
