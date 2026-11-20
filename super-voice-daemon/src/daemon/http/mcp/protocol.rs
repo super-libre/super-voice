@@ -11,6 +11,7 @@
 //! and not the model.
 
 use serde_json::{Value, json};
+use super_voice_shared::models::contexts::ExtraContext;
 
 /// Newest first. A client asking for one of these gets it; any other gets the
 /// newest, and decides whether it can work with that.
@@ -28,7 +29,8 @@ pub(crate) const INVALID_PARAMS: i64 = -32602;
 const ABOUT: &str = "Super Voice is the user's own speech service, running on their machine. \
 `speak` says text aloud, and `listen` hears what the user says. ";
 const HOW_TO_ASK: &str = " To ask the user something aloud, give the question to `listen` instead of calling `speak` first: \
-`listen` waits for the question to end before it records. Keep spoken text short and plain.";
+`listen` waits for the question to end before it records. Give `listen` a `context` with the names and terms \
+of your conversation the user may say. Keep spoken text short and plain.";
 /// When to speak: only after being spoken to.
 const WHEN_SPOKEN_TO: &str = "Use them only while the user is talking to you by voice. \
 Answer a prompt they typed in writing, even one that asks you to speak.";
@@ -74,6 +76,8 @@ pub(crate) enum Tool {
     },
     Listen {
         question: Option<String>,
+        /// What the conversation tells about what the user will say.
+        context: Option<ExtraContext>,
     },
     /// The plugin's: stop the session's own speech and recording.
     Stop,
@@ -210,7 +214,10 @@ impl Tool {
                             .to_string(),
                     ));
                 }
-                Ok(Self::Listen { question })
+                Ok(Self::Listen {
+                    question,
+                    context: listen_context(&args["context"])?,
+                })
             }
             "stop" if access.has_plugin => Ok(Self::Stop),
             "status" if access.has_plugin => Ok(Self::Status),
@@ -232,6 +239,44 @@ impl Tool {
             other => Err(CallError::UnknownTool(other.to_string())),
         }
     }
+}
+
+/// `listen`'s `context`. Lenient where `POST /stt/transcribe` is strict, so
+/// a model's call never fails on its context: a term that is not text is
+/// skipped, and what is past a context's limits is cut. Only a `context`
+/// that is not an object is refused, as a mistake the model can fix.
+fn listen_context(value: &Value) -> Result<Option<ExtraContext>, CallError> {
+    let fields = match value {
+        Value::Null => return Ok(None),
+        Value::Object(fields) => fields,
+        _ => {
+            return Err(CallError::Arguments(
+                "`context` is {\"prompt\": text, \"vocabulary\": [text]}".to_string(),
+            ));
+        }
+    };
+    let raw = ExtraContext {
+        prompt: fields
+            .get("prompt")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        vocabulary: fields
+            .get("vocabulary")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect(),
+    };
+    // Added to nothing, it is cut to the limits.
+    let fitted = raw.added_to(None);
+    let context = ExtraContext {
+        prompt: fitted.prompt,
+        vocabulary: fitted.vocabulary,
+    };
+    Ok((!context.is_empty()).then_some(context))
 }
 
 fn required_text(args: &Value, key: &str) -> Result<String, CallError> {
@@ -285,6 +330,26 @@ fn tools(access: Access) -> Vec<Value> {
                 }),
             );
         }
+        properties.insert(
+            "context".to_string(),
+            json!({
+                "type": "object",
+                "description": "What the user is likely to say, from your conversation with them. \
+                    Helps Super Voice hear names and terms it would otherwise get wrong.",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "One line on what the user is about to talk about.",
+                    },
+                    "vocabulary": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Names, files, commands and terms from the conversation \
+                            the user may say, spelled as they should be written. Up to 50.",
+                    },
+                },
+            }),
+        );
         tools.push(json!({
             "name": "listen",
             "title": "Listen",
@@ -582,10 +647,10 @@ mod tests {
             &json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
             listen_only,
         );
-        assert_eq!(
-            answer["result"]["tools"][0]["inputSchema"]["properties"],
-            json!({})
-        );
+        // It takes the conversation's context still, and no question.
+        let properties = &answer["result"]["tools"][0]["inputSchema"]["properties"];
+        assert!(properties.get("question").is_none(), "{properties}");
+        assert_eq!(properties["context"]["type"], "object", "{properties}");
         let refused = reply(
             &json!({
                 "jsonrpc": "2.0", "id": 2, "method": "tools/call",
@@ -604,7 +669,10 @@ mod tests {
             ),
             Handled::Call {
                 id: json!(3),
-                tool: Tool::Listen { question: None }
+                tool: Tool::Listen {
+                    question: None,
+                    context: None
+                }
             }
         );
     }
@@ -733,12 +801,16 @@ mod tests {
         );
         assert_eq!(
             call("listen", json!({})),
-            Ok(Tool::Listen { question: None })
+            Ok(Tool::Listen {
+                question: None,
+                context: None
+            })
         );
         assert_eq!(
             call("listen", json!({ "question": "Which one?" })),
             Ok(Tool::Listen {
-                question: Some("Which one?".to_string())
+                question: Some("Which one?".to_string()),
+                context: None
             })
         );
         assert_eq!(
@@ -747,10 +819,38 @@ mod tests {
                 "`question` must be a string".to_string()
             ))
         );
+        // A context is taken as it can be: a term that is not text is
+        // skipped, and one that adds nothing is none.
+        let heard = |context: Value| match call("listen", json!({ "context": context })) {
+            Ok(Tool::Listen { context, .. }) => Ok(context),
+            other => Err(other),
+        };
+        assert_eq!(
+            heard(json!({ "prompt": " The release. ", "vocabulary": ["agy", 3, " "] })),
+            Ok(Some(ExtraContext {
+                prompt: "The release.".to_string(),
+                vocabulary: vec!["agy".to_string()],
+            }))
+        );
+        assert_eq!(heard(json!({ "prompt": 3 })), Ok(None));
+        // Past a context's limits, it is cut rather than refused.
+        let long = "a".repeat(super_voice_shared::models::contexts::MAX_PROMPT_CHARS + 10);
+        let cut = heard(json!({ "prompt": long })).expect("a context");
+        assert_eq!(
+            cut.map(|c| c.prompt.chars().count()),
+            Some(super_voice_shared::models::contexts::MAX_PROMPT_CHARS)
+        );
+        assert!(matches!(
+            call("listen", json!({ "context": "agy" })),
+            Err(CallError::Arguments(_))
+        ));
         // A client may leave `arguments` out of a call with none required.
         assert_eq!(
             Tool::parse(&json!({ "name": "listen" }), both()),
-            Ok(Tool::Listen { question: None })
+            Ok(Tool::Listen {
+                question: None,
+                context: None
+            })
         );
     }
 

@@ -26,11 +26,16 @@ use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
-/// The body of `PATCH /assistants/{id}`.
+/// The body of `PATCH /assistants/{id}`: either switch, or both.
 #[derive(Deserialize, ToSchema)]
 pub(crate) struct AssistantChange {
     /// Whether Super Voice says aloud when the assistant needs the user.
-    pub(crate) announce_when_needed: bool,
+    #[serde(default)]
+    pub(crate) announce_when_needed: Option<bool>,
+    /// Whether the assistant's `listen` calls are heard with the context they
+    /// bring from the conversation.
+    #[serde(default)]
+    pub(crate) conversation_context: Option<bool>,
 }
 
 /// The body of `POST /assistants/keys`.
@@ -101,7 +106,9 @@ The AI assistants Super Voice can connect to, `claude-code`, `codex`, `opencode`
 neither its program nor its config, `found` when it is here and Super Voice is not in \
 its config, and `connected` when Super Voice is in its config with a key of its own. \
 `announce_when_needed` says whether Super Voice says aloud when the assistant needs the \
-user. Only Claude Code announces, through its plugin. `sessions` are its open sessions on \
+user. Only Claude Code announces, through its plugin. `conversation_context` says whether \
+its `listen` calls are heard with the context they bring from the conversation, on top of \
+the user's own. `sessions` are its open sessions on \
 the MCP server, oldest first: one conversation each, with its folder when the assistant \
 says, and whether speech it started is playing or it is recording.
 
@@ -205,18 +212,20 @@ pub(crate) async fn disconnect_assistant(
     patch,
     path = "/assistants/{id}",
     tag = "assistants",
-    summary = "Change whether an assistant is announced",
+    summary = "Change an assistant's switches",
     description = "\
-Sets whether Super Voice says aloud when the assistant needs the user, like Claude \
-Code's own notices that it needs a permission or an answer. On until the user turns it \
-off. The next announcement reads it, in every session. Answers the whole list, as \
+Sets either of the assistant's switches, or both. `announce_when_needed`: whether Super \
+Voice says aloud when the assistant needs the user, like Claude Code's own notices that \
+it needs a permission or an answer. `conversation_context`: whether its `listen` calls \
+are heard with the context they bring from the conversation. Each is on until the user \
+turns it off, and the next call reads it, in every session. Answers the whole list, as \
 `GET /assistants` does.",
     params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `antigravity`.")),
     request_body = AssistantChange,
     security(("session_token" = ["settings"])),
     responses(
         (status = 200, description = "Changed. Every assistant.", body = AssistantList),
-        (status = 400, description = "The body is not `{\"announce_when_needed\": <bool>}` (`invalid_value`).", body = ErrorEnvelope),
+        (status = 400, description = "The body names neither switch, or one is not a boolean (`invalid_value`).", body = ErrorEnvelope),
         (status = 401, description = "Token unknown, expired, or its binary changed.", body = ReasonEnvelope),
         (status = 403, description = "The token lacks the `settings` scope.", body = ErrorEnvelope),
         (status = 404, description = "No assistant has that id (`unknown_assistant`).", body = ErrorEnvelope),
@@ -231,9 +240,20 @@ pub(crate) async fn change_assistant(
     let Ok(id) = id.parse::<AssistantId>() else {
         return unknown_assistant();
     };
+    if body.announce_when_needed.is_none() && body.conversation_context.is_none() {
+        return refusal(
+            ErrorCode::InvalidValue,
+            "name `announce_when_needed`, `conversation_context`, or both",
+        );
+    }
     answer(Ok(state
         .daemon
-        .set_assistant_announces(&state.auth, id, body.announce_when_needed)
+        .change_assistant(
+            &state.auth,
+            id,
+            body.announce_when_needed,
+            body.conversation_context,
+        )
         .await))
 }
 

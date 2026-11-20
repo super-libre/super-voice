@@ -141,9 +141,39 @@ pub struct AssistantsConfig {
         deserialize_with = "super_voice_shared::utils::serde_helpers::deserialize_or_default"
     )]
     pub announce_when_needed: BTreeMap<String, bool>,
+    /// Whether each assistant's `listen` calls are heard with the context
+    /// they bring from the conversation, by its wire id. Kept as
+    /// [`announce_when_needed`](Self::announce_when_needed) is: only a
+    /// `false`.
+    #[serde(
+        default,
+        deserialize_with = "super_voice_shared::utils::serde_helpers::deserialize_or_default"
+    )]
+    pub conversation_context: BTreeMap<String, bool>,
 }
 
 impl AssistantsConfig {
+    /// Whether `id`'s `listen` calls are heard with the context they bring
+    /// from the conversation.
+    #[must_use]
+    pub fn uses_conversation_context(&self, id: AssistantId) -> bool {
+        self.conversation_context
+            .get(id.as_wire_str())
+            .copied()
+            .unwrap_or(true)
+    }
+
+    /// Keep whether `id`'s `listen` calls are heard with the context they
+    /// bring. Yes is kept as nothing.
+    pub fn set_uses_conversation_context(&mut self, id: AssistantId, on: bool) {
+        if on {
+            self.conversation_context.remove(id.as_wire_str());
+        } else {
+            self.conversation_context
+                .insert(id.as_wire_str().to_string(), false);
+        }
+    }
+
     /// Whether Super Voice says aloud when `id` needs the user.
     #[must_use]
     pub fn announces_when_needed(&self, id: AssistantId) -> bool {

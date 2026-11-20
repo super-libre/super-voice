@@ -87,7 +87,7 @@ Authorization: Bearer …64hex…
 {
   "assistants": [
     {
-      "id": "claude-code", "state": "connected", "announce_when_needed": false,
+      "id": "claude-code", "state": "connected", "announce_when_needed": false, "conversation_context": true,
       "sessions": [
         {
           "id": "4f1c…", "folder": "/home/me/super-voice", "agents": 0,
@@ -96,9 +96,9 @@ Authorization: Bearer …64hex…
         }
       ]
     },
-    { "id": "codex",       "state": "found",     "announce_when_needed": true, "sessions": [] },
-    { "id": "opencode",    "state": "not_found", "announce_when_needed": true, "sessions": [] },
-    { "id": "antigravity", "state": "not_found", "announce_when_needed": true, "sessions": [] }
+    { "id": "codex",       "state": "found",     "announce_when_needed": true, "conversation_context": false, "sessions": [] },
+    { "id": "opencode",    "state": "not_found", "announce_when_needed": true, "conversation_context": true, "sessions": [] },
+    { "id": "antigravity", "state": "not_found", "announce_when_needed": true, "conversation_context": true, "sessions": [] }
   ],
   "custom_keys": [
     { "id": "0f3c9a1e", "name": "My editor", "created_at": "2026-11-19T20:15:00Z", "sessions": [] }
@@ -110,6 +110,11 @@ Authorization: Bearer …64hex…
 `address` is where an MCP client reaches Super Voice: `/v1/mcp` on the daemon's
 TCP listener, on the port its config names. The listener has to be on, which it
 is unless the config turns it off.
+
+`conversation_context` says whether the assistant's `listen` calls are heard
+with the context they bring from the conversation, on top of the user's own;
+see [the MCP server](../../mcp.md#context-from-the-conversation). On until the
+user turns it off.
 
 `sessions` are the assistant's, or the key's, open sessions, oldest first: one
 conversation each, as [the MCP server tells them apart](../../mcp.md#sessions).
@@ -177,20 +182,25 @@ behind does nothing without it.
 
 ## `PATCH /assistants/{id}`
 
-Set whether Super Voice says aloud when the assistant needs the user, like
-Claude Code's own notices that it needs a permission or an answer. On for every
-assistant until the user turns it off. Only Claude Code announces, through its
-plugin. Kept in the daemon's config. Answers the whole list.
+Change the assistant's two switches, either or both. Each is on for every
+assistant until the user turns it off, and kept in the daemon's config.
+Answers the whole list.
+
+1. `announce_when_needed`: whether Super Voice says aloud when the assistant
+   needs the user, like Claude Code's own notices that it needs a permission
+   or an answer. Only Claude Code announces, through its plugin.
+2. `conversation_context`: whether its `listen` calls are heard with the
+   context they bring from the conversation.
 
 ```json
-{ "announce_when_needed": false }
+{ "announce_when_needed": false, "conversation_context": true }
 ```
 
 **Errors:**
 
 | HTTP | `error_code`    | Meaning                                         |
 |------|-----------------|-------------------------------------------------|
-| 400  | `invalid_value` | The body is not `{"announce_when_needed": <bool>}` |
+| 400  | `invalid_value` | The body names neither switch, or one is not a boolean |
 | 404  | `not_found`     | No assistant has that id (`unknown_assistant`)  |
 
 ## `POST /assistants/keys`

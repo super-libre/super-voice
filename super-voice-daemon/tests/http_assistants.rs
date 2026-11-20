@@ -372,6 +372,69 @@ async fn each_assistant_is_announced_on_its_own() {
     assert_eq!(body["message"], "unknown_assistant");
 }
 
+/// Hearing an assistant with its conversation's context is on until the user
+/// turns it off, per assistant, and a change names at least one switch.
+#[tokio::test]
+async fn each_assistant_uses_its_conversation_on_its_own() {
+    let (daemon, token, _home) = start("assistants-context", true).await;
+    let switches = |list: &Value, id: &str| {
+        list["assistants"]
+            .as_array()
+            .expect("assistants")
+            .iter()
+            .find(|a| a["id"] == id)
+            .map(|a| {
+                (
+                    a["announce_when_needed"].clone(),
+                    a["conversation_context"].clone(),
+                )
+            })
+    };
+
+    let (status, list) = call(&daemon, &token, Method::GET, "/assistants", None).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(switches(&list, "codex"), Some((json!(true), json!(true))));
+
+    let (status, list) = call(
+        &daemon,
+        &token,
+        Method::PATCH,
+        "/assistants/codex",
+        Some(&json!({ "conversation_context": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    // The other switch, and the other assistants, are left as they were.
+    assert_eq!(switches(&list, "codex"), Some((json!(true), json!(false))));
+    assert_eq!(
+        switches(&list, "opencode"),
+        Some((json!(true), json!(true)))
+    );
+
+    let (status, list) = call(
+        &daemon,
+        &token,
+        Method::PATCH,
+        "/assistants/codex",
+        Some(&json!({ "announce_when_needed": false, "conversation_context": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(switches(&list, "codex"), Some((json!(false), json!(true))));
+
+    for body in [json!({}), json!({ "conversation_context": "no" })] {
+        let (status, answer) = call(
+            &daemon,
+            &token,
+            Method::PATCH,
+            "/assistants/codex",
+            Some(&body),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}: {answer}");
+    }
+}
+
 /// A key made by hand is shown once, listed by its name, and revoked; an
 /// assistant's name is not one to give it.
 #[tokio::test]

@@ -127,18 +127,22 @@ pub(crate) async fn post(
                 connection: connection.map(str::to_string),
             };
             state.daemon.assistants.sessions.touch(&who);
-            // A key made by hand, and the user's own client, have no switch.
-            let announces = match (&tool, assistant) {
-                (Tool::Announce { .. }, Some(id)) => state
-                    .daemon
-                    .config
-                    .read()
-                    .await
-                    .assistants
-                    .announces_when_needed(id),
-                _ => true,
+            // A key made by hand, and the user's own client, have no switches.
+            let (announces, uses_context) = match assistant {
+                Some(id) => {
+                    let config = state.daemon.config.read().await;
+                    (
+                        config.assistants.announces_when_needed(id),
+                        config.assistants.uses_conversation_context(id),
+                    )
+                }
+                None => (true, true),
             };
-            let for_tool = tools::Caller { who, announces };
+            let for_tool = tools::Caller {
+                who,
+                announces,
+                uses_context,
+            };
             stream_call(Arc::clone(&state.daemon), caller, for_tool, id, tool)
         }
     }

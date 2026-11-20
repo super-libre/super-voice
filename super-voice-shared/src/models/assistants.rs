@@ -81,9 +81,18 @@ pub struct Assistant {
     /// Claude Code's own notices that it needs a permission or an answer.
     /// Only Claude Code announces, through its plugin.
     pub announce_when_needed: bool,
+    /// Whether its `listen` calls are heard with the context they bring from
+    /// the conversation, on top of the user's own.
+    #[serde(default = "on")]
+    pub conversation_context: bool,
     /// Its open sessions, oldest first.
     #[serde(default)]
     pub sessions: Vec<AssistantSession>,
+}
+
+/// A switch that is on until the user turns it off.
+const fn on() -> bool {
+    true
 }
 
 /// An open session of an assistant: one conversation, like one Claude Code
@@ -181,6 +190,7 @@ mod tests {
             id: AssistantId::ClaudeCode,
             state: AssistantState::NotFound,
             announce_when_needed: true,
+            conversation_context: false,
             sessions: Vec::new(),
         };
         let json = serde_json::to_value(&assistant).expect("serializes");
@@ -190,10 +200,17 @@ mod tests {
                 "id": "claude-code",
                 "state": "not_found",
                 "announce_when_needed": true,
+                "conversation_context": false,
                 "sessions": [],
             })
         );
         let back: Assistant = serde_json::from_value(json).expect("deserializes");
         assert_eq!(back, assistant);
+        // A daemon from before the switch uses the conversation.
+        let older: Assistant = serde_json::from_value(serde_json::json!({
+            "id": "codex", "state": "found", "announce_when_needed": true,
+        }))
+        .expect("deserializes");
+        assert!(older.conversation_context);
     }
 }

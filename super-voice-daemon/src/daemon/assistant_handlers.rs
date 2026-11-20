@@ -107,6 +107,7 @@ impl SuperSTTDaemon {
                 id,
                 state,
                 announce_when_needed: config.assistants.announces_when_needed(id),
+                conversation_context: config.assistants.uses_conversation_context(id),
                 sessions: sessions_of(key_of(&keys, id)),
             })
             .collect();
@@ -246,19 +247,29 @@ impl SuperSTTDaemon {
         }
     }
 
-    /// Keep whether Super Voice says aloud when assistant `id` needs the user.
-    /// The next announcement reads it.
-    pub async fn set_assistant_announces(
+    /// Keep assistant `id`'s switches: whether Super Voice says aloud when it
+    /// needs the user, and whether its `listen` calls are heard with the
+    /// context they bring. `None` leaves one as it is. The next call reads
+    /// them.
+    pub async fn change_assistant(
         &self,
         auth: &Auth,
         id: AssistantId,
-        on: bool,
+        announces: Option<bool>,
+        uses_context: Option<bool>,
     ) -> AssistantList {
-        if let Err(e) = self
-            .set_config_field(|c| c.assistants.set_announces_when_needed(id, on))
-            .await
-        {
-            warn!("Announcing changed but config save failed: {e}");
+        let saved = self
+            .set_config_field(|c| {
+                if let Some(on) = announces {
+                    c.assistants.set_announces_when_needed(id, on);
+                }
+                if let Some(on) = uses_context {
+                    c.assistants.set_uses_conversation_context(id, on);
+                }
+            })
+            .await;
+        if let Err(e) = saved {
+            warn!("{} changed but config save failed: {e}", id.display_name());
         }
         self.list_assistants(auth).await
     }

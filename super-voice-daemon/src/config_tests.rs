@@ -792,6 +792,17 @@ fn assistants_are_announced_until_turned_off() {
         .set_announces_when_needed(ClaudeCode, true);
     assert!(config.assistants.announce_when_needed.is_empty());
 
+    // The conversation's context is used until turned off, kept the same way.
+    assert!(config.assistants.uses_conversation_context(Codex));
+    config
+        .assistants
+        .set_uses_conversation_context(Codex, false);
+    let back = round_trip(&config);
+    assert!(!back.assistants.uses_conversation_context(Codex));
+    assert!(back.assistants.uses_conversation_context(ClaudeCode));
+    config.assistants.set_uses_conversation_context(Codex, true);
+    assert!(config.assistants.conversation_context.is_empty());
+
     let newer = from_ron(
         r#"(
     audio: (theme: "classic", volume: 100),

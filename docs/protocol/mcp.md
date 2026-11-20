@@ -52,7 +52,7 @@ Each assistant is rate-limited by its key, apart from every other client.
 | Tool     | What it does                                                                                       | Scope it takes |
 |----------|----------------------------------------------------------------------------------------------------|----------------|
 | `speak`  | Says `text` aloud, in the voice the user chose. Returns once the speech is queued and playing.    | `speak`        |
-| `listen` | Records the user until they stop talking, and returns what they said. With a `question`, asks it aloud first, and starts recording once it has finished playing. | `transcribe`, and `speak` for a question |
+| `listen` | Records the user until they stop talking, and returns what they said. With a `question`, asks it aloud first, and starts recording once it has finished playing. With a `context`, hears them with it. | `transcribe`, and `speak` for a question |
 
 `tools/list` lists only the tools the caller's key or token may use, and a tool
 call names only one of those: any other is the JSON-RPC error `-32602`. A key
@@ -62,6 +62,23 @@ the daemon makes has both scopes.
 stops talking, and the user's own shortcut stops it early. It never toggles a
 recording someone else started: when one is running, the call answers with an
 error. It types nothing.
+
+### Context from the conversation
+
+`listen` takes an optional `context`, `{"prompt": text, "vocabulary": [text]}`:
+what the conversation tells about what the user is about to say, a one-line
+topic and the names, files and terms they may use. The daemon adds it to the
+user's own context for that take, as it adds
+[a request's own context](endpoints/v1/context.md#a-dictations-own-context),
+and the `question`, when there is one, goes at the front of its prompt as "The
+user is answering: …". Where `POST /stt/transcribe` refuses a context past the
+limits, `listen` cuts it to fit: a model's call never fails on its context.
+
+The user decides per assistant, with **Use the conversation as context** on the
+Assistants page (`conversation_context` on
+[`PATCH /assistants/{id}`](endpoints/v1/assistants.md)). It is on until they
+turn it off. Off, a `listen` is heard with the user's context alone, as if it
+brought none. A key made by hand has no switch: its client chose to send it.
 
 A tool that cannot do its work answers with a result whose `isError` is `true`
 and whose text says why, so the model can tell the user: no model loaded, a

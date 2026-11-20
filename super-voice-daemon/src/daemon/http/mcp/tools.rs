@@ -25,6 +25,7 @@ use crate::daemon::types::SuperSTTDaemon;
 use crate::output::typer::Typer;
 use std::sync::Arc;
 use std::time::Duration;
+use super_voice_shared::models::contexts::ExtraContext;
 use super_voice_shared::models::protocol::{DaemonResponse, ErrorCode};
 use super_voice_shared::models::recording_stop_mode::RecordingStopMode;
 use super_voice_shared::tts::models::protocol::{
@@ -37,11 +38,13 @@ use tokio_util::sync::CancellationToken;
 /// besides when speech starts or stops.
 const TICK: Duration = Duration::from_millis(100);
 
-/// Who a call is for: its session, and whether the user lets its assistant
-/// announce.
+/// Who a call is for: its session, whether the user lets its assistant
+/// announce, and whether its `listen` calls are heard with the context they
+/// bring.
 pub(crate) struct Caller {
     pub(crate) who: Who,
     pub(crate) announces: bool,
+    pub(crate) uses_context: bool,
 }
 
 /// What `tool` comes to: its text, or the error the model sees. `None` when
@@ -55,7 +58,10 @@ pub(crate) async fn run(
     let who = &caller.who;
     match tool {
         Tool::Speak { text } => speak(daemon, who, text, cancel).await,
-        Tool::Listen { question } => listen(daemon, who, question, cancel).await,
+        Tool::Listen { question, context } => {
+            let extra = take_context(question.as_deref(), context, caller.uses_context);
+            listen(daemon, who, question, extra, cancel).await
+        }
         Tool::Stop => Some(Ok(stop(daemon, who).await)),
         Tool::Status => Some(Ok(status(daemon, who))),
         Tool::Announce { text } if caller.announces => speak(daemon, who, text, cancel).await,
@@ -173,10 +179,36 @@ enum Asked {
     Cancelled,
 }
 
+/// What a `listen` take is heard with besides the user's own context: the
+/// conversation's, with the question it answers at the front of its prompt.
+/// Nothing when the user turned the conversation's context off for the
+/// assistant.
+fn take_context(
+    question: Option<&str>,
+    context: Option<ExtraContext>,
+    uses_context: bool,
+) -> Option<ExtraContext> {
+    if !uses_context {
+        return None;
+    }
+    let mut context = context.unwrap_or_default();
+    if let Some(question) = question.map(str::trim).filter(|q| !q.is_empty()) {
+        let answering = format!("The user is answering: {question}");
+        let prompt = context.prompt.trim();
+        context.prompt = if prompt.is_empty() {
+            answering
+        } else {
+            format!("{answering}\n{prompt}")
+        };
+    }
+    (!context.is_empty()).then_some(context)
+}
+
 async fn listen(
     daemon: &Arc<SuperSTTDaemon>,
     who: &Who,
     question: Option<String>,
+    extra: Option<ExtraContext>,
     cancel: &CancellationToken,
 ) -> Option<Result<String, String>> {
     if let Some(question) = question {
@@ -202,7 +234,7 @@ async fn listen(
             stop_mode: RecordingStopMode::SilenceAndManual,
             preview_typing: false,
             cue_theme: daemon.get_audio_theme(),
-            context: None,
+            context: extra,
         },
         None,
     );
@@ -328,7 +360,30 @@ mod tests {
                 connection: None,
             },
             announces: true,
+            uses_context: true,
         }
+    }
+
+    /// A take is heard with the conversation's context and the question it
+    /// answers, unless the user turned the conversation's context off.
+    #[test]
+    fn a_take_is_heard_with_its_conversation() {
+        let context = || {
+            Some(ExtraContext {
+                prompt: "About the release.".to_string(),
+                vocabulary: vec!["agy".to_string()],
+            })
+        };
+        let heard = take_context(Some("Which one? "), context(), true).expect("a context");
+        assert_eq!(
+            heard.prompt,
+            "The user is answering: Which one?\nAbout the release."
+        );
+        assert_eq!(heard.vocabulary, ["agy"]);
+        let asked = take_context(Some("Which one?"), None, true).expect("the question");
+        assert_eq!(asked.prompt, "The user is answering: Which one?");
+        assert_eq!(take_context(None, None, true), None);
+        assert_eq!(take_context(Some("Which one?"), context(), false), None);
     }
 
     #[tokio::test]
@@ -336,7 +391,10 @@ mod tests {
         let daemon = Arc::new(test_daemon().await);
         let outcome = run(
             &daemon,
-            Tool::Listen { question: None },
+            Tool::Listen {
+                question: None,
+                context: None,
+            },
             &caller(),
             &CancellationToken::new(),
         )
@@ -370,7 +428,16 @@ mod tests {
         let daemon = Arc::new(test_daemon().await);
         let cancel = CancellationToken::new();
         cancel.cancel();
-        let outcome = run(&daemon, Tool::Listen { question: None }, &caller(), &cancel).await;
+        let outcome = run(
+            &daemon,
+            Tool::Listen {
+                question: None,
+                context: None,
+            },
+            &caller(),
+            &cancel,
+        )
+        .await;
         assert_eq!(outcome, None);
         assert!(!daemon.recording.is_busy());
     }
