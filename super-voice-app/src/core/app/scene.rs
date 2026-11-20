@@ -157,6 +157,13 @@ const SCENES: &[(&str, Scene)] = &[
         },
     ),
     (
+        "assistants",
+        Scene {
+            stt: None,
+            ..Scene::page(Page::Assistants, Stt::Running)
+        },
+    ),
+    (
         "text-to-speech-behavior",
         Scene {
             stt: None,

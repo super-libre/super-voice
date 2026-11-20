@@ -64,6 +64,8 @@ pub enum Page {
     TextToSpeechBehavior,
     /// Super Voice's keyboard shortcuts, and adding each one that is missing.
     Shortcuts,
+    /// The AI assistants Super Voice connects to, and keys for others.
+    Assistants,
 }
 
 /// An entry in the nav rail: a page of its own, or a feature whose pages are
@@ -75,6 +77,7 @@ pub enum Section {
     SpeechToText,
     TextToSpeech,
     Shortcuts,
+    Assistants,
     Customization,
     Updates,
 }
@@ -87,6 +90,7 @@ impl Section {
             Self::SpeechToText => crate::fl!("speech-to-text"),
             Self::TextToSpeech => crate::fl!("text-to-speech"),
             Self::Shortcuts => crate::fl!("shortcuts"),
+            Self::Assistants => crate::fl!("assistants"),
             Self::Models => crate::fl!("models"),
             Self::Library => crate::fl!("library"),
             Self::Customization => crate::fl!("settings"),
@@ -104,6 +108,7 @@ impl Section {
             Self::SpeechToText => &[Page::Notes, Page::Contexts, Page::SpeechToTextBehavior],
             Self::TextToSpeech => &[Page::Clips, Page::Voices, Page::TextToSpeechBehavior],
             Self::Shortcuts => &[Page::Shortcuts],
+            Self::Assistants => &[Page::Assistants],
             Self::Customization => &[Page::Customization],
             Self::Updates => &[Page::Updates],
         }
@@ -118,6 +123,7 @@ impl Section {
             Page::Notes | Page::Contexts | Page::SpeechToTextBehavior => Self::SpeechToText,
             Page::Clips | Page::Voices | Page::TextToSpeechBehavior => Self::TextToSpeech,
             Page::Shortcuts => Self::Shortcuts,
+            Page::Assistants => Self::Assistants,
             Page::Customization => Self::Customization,
             Page::Updates => Self::Updates,
         }
@@ -137,6 +143,7 @@ impl Page {
             Self::Voices => crate::fl!("voices"),
             Self::SpeechToTextBehavior | Self::TextToSpeechBehavior => crate::fl!("behavior"),
             Self::Shortcuts => crate::fl!("shortcuts"),
+            Self::Assistants => crate::fl!("assistants"),
             Self::Customization => crate::fl!("settings"),
             Self::Updates => crate::fl!("updates"),
         }
@@ -210,6 +217,9 @@ pub enum ErrorScope {
     ReadAloud,
     /// The Shortcuts page: a shortcut that could not be added.
     Shortcuts,
+    /// The Assistants page: a failed list fetch, connect, disconnect, or key.
+    /// Shown in the page's dialog while one is open.
+    Assistants,
     /// The Contexts page: a failed list fetch, activate, or delete. A failed
     /// *save* is not here — it belongs in the editor that caused it, beside the
     /// field the user has to fix.
@@ -279,6 +289,7 @@ mod section_tests {
             Section::SpeechToText,
             Section::TextToSpeech,
             Section::Shortcuts,
+            Section::Assistants,
             Section::Customization,
             Section::Updates,
         ];
@@ -292,6 +303,6 @@ mod section_tests {
         }
         // The same pages everywhere: text to speech's Behavior tab leaves out
         // reading aloud where the session has none, rather than a tab going.
-        assert_eq!(seen.len(), 11, "every page is in a section");
+        assert_eq!(seen.len(), 12, "every page is in a section");
     }
 }

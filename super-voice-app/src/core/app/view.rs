@@ -176,6 +176,20 @@ impl AppModel {
         }
     }
 
+    /// The Assistants page's open dialog: Connect, or a key for another
+    /// assistant. Scoped to the page, as the sheets are to theirs.
+    pub(super) fn assistants_dialog(&self) -> Option<Element<'_, Message>> {
+        let on_assistants_page =
+            self.daemon_status == DaemonStatus::Connected && self.active_page() == Page::Assistants;
+        if !on_assistants_page {
+            return None;
+        }
+        views::assistants::dialog(
+            &self.assistants,
+            self.action_error_for(crate::state::ErrorScope::Assistants),
+        )
+    }
+
     /// The context editor drawer, or nothing when it does not apply.
     ///
     /// Two conditions, and both are load-bearing. The page, because the sheet
@@ -264,6 +278,10 @@ impl AppModel {
             Page::Shortcuts => views::shortcuts::page(
                 &self.shortcuts,
                 self.action_error_for(crate::state::ErrorScope::Shortcuts),
+            ),
+            Page::Assistants => views::assistants::page(
+                &self.assistants,
+                self.action_error_for(crate::state::ErrorScope::Assistants),
             ),
             Page::Voices => views::voices::page(self),
             Page::TextToSpeechBehavior => views::behavior::text_to_speech(self),

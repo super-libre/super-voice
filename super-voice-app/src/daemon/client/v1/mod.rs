@@ -14,6 +14,7 @@
 #[macro_use]
 mod macros;
 
+pub(crate) mod assistants;
 pub(crate) mod backends;
 pub(crate) mod contexts;
 pub(crate) mod gpu_info;

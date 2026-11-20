@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 pub mod about;
+pub mod assistants;
 pub mod behavior;
 pub mod clips;
 pub mod common;

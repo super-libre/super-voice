@@ -2,6 +2,7 @@
 
 //! Application state and domain models.
 
+pub mod assistants;
 pub mod clips;
 pub mod contexts;
 pub mod device_offers;
