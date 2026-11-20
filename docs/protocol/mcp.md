@@ -56,7 +56,14 @@ Each assistant is rate-limited by its key, apart from every other client.
 
 `tools/list` lists only the tools the caller's key or token may use, and a tool
 call names only one of those: any other is the JSON-RPC error `-32602`. A key
-the daemon makes has both scopes, so it gets both tools.
+the daemon makes has both scopes.
+
+An assistant gets `listen` only once the user turns on **Ask questions aloud**
+for it (`PATCH /assistants/{id}`). Until then it has `speak` alone, and a call
+to `listen`, from a list it got before the switch went off, answers with a
+tool error that says so. The switch is read on every message, so turning it off
+holds at once. A key made by hand has no such switch and gets both tools, as a
+session token does.
 
 `listen` records with the stop mode "silence or manual": it ends when the user
 stops talking, and the user's own shortcut stops it early. It never toggles a
@@ -71,12 +78,17 @@ recording in the way, and so on. Silence is not an error: `listen` answers
 ## Instructions
 
 `initialize` answers with instructions for the model: what the tools do, to give
-a question to `listen` rather than call `speak` first, and when to speak. By
-default that is only when the user asks to talk. When the user turns on **Ask
-questions aloud** for the assistant (`PATCH /assistants/{id}`), the model is
-told it may also ask the user its questions aloud, with `listen`. A key made by
-hand, and a session token, never are. An assistant is told this when it starts
-a session, so a change reaches one already running from its next session.
+a question to `listen` rather than call `speak` first, and when to speak.
+
+1. An assistant with **Ask questions aloud** on is told it may ask the user its
+   questions aloud, with `listen`, and otherwise to speak only when asked.
+2. An assistant with it off is told to speak only when asked, that it can't
+   hear the user, and where the user can turn the switch on.
+3. A key made by hand, and a session token, are told to speak and listen only
+   when the user asks to talk.
+
+An assistant is told this when it starts a session, so the instructions of one
+already running change from its next session. What it may call changes at once.
 
 ## Transport
 

@@ -7,10 +7,11 @@ machine. Nothing leaves it.
    "code block".
 2. Claude says when it needs your approval.
 3. Sending your next prompt stops whatever it is reading.
-4. Claude gets two tools: `speak`, and `listen` (asks you something aloud and
-   hears your answer).
+4. Claude gets `speak`, and, once you let it ask questions aloud, `listen`
+   (asks you something aloud and hears your answer).
 5. `/super-voice:talk` starts a spoken conversation: Claude listens, works,
-   answers aloud and listens again until you say you are done.
+   answers aloud and listens again until you say you are done. It needs "Ask
+   questions aloud" on.
 6. A row above the prompt, on the key `0` in an empty prompt:
    1. `Talk` records you and puts your words in the prompt box. They are sent
       after 5 seconds unless you edit them, and Enter sends them at once.
@@ -41,8 +42,10 @@ hands-free, allow `listen` and `speak` without asking when it first does.
 ## Settings
 
 "Ask questions aloud" is a switch on Claude Code's row on the Assistants page.
-When it is on, Claude asks you its questions out loud and hears your answer,
-without you asking to talk.
+When it is on, Claude can hear you: it asks you its questions out loud and hears
+your answer, without you asking to talk. When it is off, Claude can't use your
+microphone at all. Talk, listening after a spoken reply, and replies read aloud
+work either way, since they don't go through Claude.
 
 ## Install
 

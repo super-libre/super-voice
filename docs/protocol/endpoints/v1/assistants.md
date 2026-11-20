@@ -159,11 +159,12 @@ behind does nothing without it.
 
 ## `PATCH /assistants/{id}`
 
-Set whether the assistant asks the user its questions out loud and hears the
-answer, without being asked to talk. Super Voice's MCP server tells the
-assistant in the instructions it starts each session with, so one already
-running is told from its next session. Kept in the daemon's config. Answers the
-whole list.
+Set whether the assistant may ask the user its questions out loud and hear the
+answer. On, Super Voice's MCP server gives it `listen` and tells it to ask its
+questions aloud, without being asked to talk. Off, it has `speak` alone and
+can't hear the user: a call to `listen` is refused at once, and its
+instructions change from its next session. Kept in the daemon's config. Answers
+the whole list.
 
 ```json
 { "ask_questions_aloud": true }

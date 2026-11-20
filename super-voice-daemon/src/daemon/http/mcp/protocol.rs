@@ -6,7 +6,8 @@
 //! Only what a server of tools needs is here: `initialize`, `ping`,
 //! `tools/list`, `tools/call` and `notifications/cancelled`. The tools are
 //! `speak` and `listen`, and a caller is offered only the ones its key or
-//! token may use.
+//! token may use. An assistant gets `listen` only once the user lets it ask
+//! its questions aloud.
 
 use serde_json::{Value, json};
 
@@ -34,17 +35,29 @@ const WHEN_ASKED: &str =
 const WHEN_ASKED_OR_ASKING: &str = "Use them when the user asks to talk by voice or to hear something. \
 The user also lets you ask them questions aloud: when you need an answer from them, ask it with `listen`. \
 Otherwise, don't speak unasked.";
+/// What the client tells its model about this server, for a caller that may
+/// speak and not listen.
+const ABOUT_SPEAKING: &str = "Super Voice is the user's own speech service, running on their machine. \
+`speak` says text aloud. Use it when the user asks to hear something; don't speak unasked. \
+Keep spoken text short and plain.";
+/// Why an assistant the user has not let ask its questions aloud cannot hear
+/// them, and where they can change that.
+const LISTENING_OFF: &str = "The user has not let you ask them questions aloud, so you can't hear them. \
+They can turn on \"Ask questions aloud\" for you on Super Voice's Assistants page.";
 
-/// What the client tells its model about this server. `asks_questions_aloud`
-/// lets the model ask the user its questions aloud without being asked to
-/// talk.
-pub(crate) fn instructions(asks_questions_aloud: bool) -> String {
-    let when = if asks_questions_aloud {
-        WHEN_ASKED_OR_ASKING
-    } else {
-        WHEN_ASKED
-    };
-    format!("{ABOUT}{when}{HOW_TO_ASK}")
+/// What the client tells its model about this server, for a caller with
+/// `access`.
+pub(crate) fn instructions(access: Access) -> String {
+    match access.listening {
+        Listening::Asking => format!("{ABOUT}{WHEN_ASKED_OR_ASKING}{HOW_TO_ASK}"),
+        Listening::WhenAsked => format!("{ABOUT}{WHEN_ASKED}{HOW_TO_ASK}"),
+        Listening::Off => {
+            format!(
+                "{ABOUT_SPEAKING} {LISTENING_OFF} If they ask you to talk by voice, tell them so."
+            )
+        }
+        Listening::Never => ABOUT_SPEAKING.to_string(),
+    }
 }
 
 /// What the caller may do, from its key's or token's scopes, and what the
@@ -53,10 +66,32 @@ pub(crate) fn instructions(asks_questions_aloud: bool) -> String {
 pub(crate) struct Access {
     /// It holds `speak`.
     pub(crate) may_speak: bool,
-    /// It holds `transcribe`.
-    pub(crate) may_listen: bool,
-    /// The user lets it ask its questions aloud.
-    pub(crate) asks_questions_aloud: bool,
+    /// Whether it may listen.
+    pub(crate) listening: Listening,
+}
+
+/// Whether a caller may listen to the user, and so ask them questions aloud.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Listening {
+    /// Its key or token does not hold `transcribe`.
+    #[default]
+    Never,
+    /// An assistant the user has not let ask its questions aloud: it may not
+    /// listen until they turn that on.
+    Off,
+    /// A caller with no such choice, like the user's own client or a key they
+    /// made by hand: it may listen when asked to.
+    WhenAsked,
+    /// An assistant the user lets ask its questions aloud: it may listen, and
+    /// ask its own questions aloud.
+    Asking,
+}
+
+impl Listening {
+    /// Whether `listen` is offered.
+    fn may_listen(self) -> bool {
+        matches!(self, Self::WhenAsked | Self::Asking)
+    }
 }
 
 /// What one message comes to.
@@ -167,7 +202,7 @@ fn initialize(params: &Value, access: Access) -> Value {
             "title": "Super Voice",
             "version": env!("CARGO_PKG_VERSION"),
         },
-        "instructions": instructions(access.asks_questions_aloud),
+        "instructions": instructions(access),
     })
 }
 
@@ -178,7 +213,12 @@ impl Tool {
             "speak" if access.may_speak => Ok(Self::Speak {
                 text: required_text(args, "text")?,
             }),
-            "listen" if access.may_listen => {
+            // Offered before the user turned asking aloud off: the model is
+            // told why it can't hear them.
+            "listen" if access.listening == Listening::Off => {
+                Err(CallError::Arguments(LISTENING_OFF.to_string()))
+            }
+            "listen" if access.listening.may_listen() => {
                 let question = optional_text(args, "question")?;
                 if question.is_some() && !access.may_speak {
                     return Err(CallError::Arguments(
@@ -228,7 +268,7 @@ fn tools(access: Access) -> Vec<Value> {
             },
         }));
     }
-    if access.may_listen {
+    if access.listening.may_listen() {
         let description = if access.may_speak {
             "Record the user from the microphone until they stop talking, and return what they said. \
              Give a question to ask it aloud first; the recording starts when the question ends."
@@ -284,8 +324,7 @@ mod tests {
     fn both() -> Access {
         Access {
             may_speak: true,
-            may_listen: true,
-            asks_questions_aloud: false,
+            listening: Listening::WhenAsked,
         }
     }
 
@@ -296,9 +335,9 @@ mod tests {
         }
     }
 
-    fn instructions_for(asks_questions_aloud: bool) -> String {
+    fn instructions_for(listening: Listening) -> String {
         let access = Access {
-            asks_questions_aloud,
+            listening,
             ..both()
         };
         let answer = reply(
@@ -313,14 +352,14 @@ mod tests {
 
     #[test]
     fn the_model_asks_aloud_only_once_the_user_lets_it() {
-        let by_default = instructions_for(false);
+        let by_default = instructions_for(Listening::WhenAsked);
         assert!(by_default.contains("don't speak unasked"), "{by_default}");
         assert!(
             !by_default.contains("ask them questions aloud"),
             "{by_default}"
         );
 
-        let asking = instructions_for(true);
+        let asking = instructions_for(Listening::Asking);
         assert!(asking.contains("ask them questions aloud"), "{asking}");
         // Both still say how to ask, and that the rest stays unasked.
         for text in [&by_default, &asking] {
@@ -328,6 +367,44 @@ mod tests {
             assert!(text.contains("speak unasked"), "{text}");
             assert!(!text.contains("synthesize"), "{text}");
         }
+    }
+
+    /// An assistant the user has not let ask its questions aloud can't
+    /// listen: no `listen`, a call to it from an older list is refused with
+    /// why, and its instructions say where the user can turn it on.
+    #[test]
+    fn an_assistant_listens_only_once_the_user_lets_it_ask_aloud() {
+        let off = Access {
+            listening: Listening::Off,
+            ..both()
+        };
+        let listed = reply(
+            &json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+            off,
+        );
+        let names: Vec<&str> = listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["speak"]);
+
+        let refused = reply(
+            &json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": { "name": "listen", "arguments": { "question": "Which one?" } },
+            }),
+            off,
+        );
+        assert_eq!(refused["result"]["isError"], true, "{refused}");
+        let why = refused["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(why.contains("Ask questions aloud"), "{why}");
+
+        let told = instructions_for(Listening::Off);
+        assert!(!told.contains("`listen`"), "{told}");
+        assert!(told.contains("Ask questions aloud"), "{told}");
+        assert!(told.contains("don't speak unasked"), "{told}");
     }
 
     #[test]
@@ -383,7 +460,7 @@ mod tests {
         };
         assert_eq!(names(both()), ["speak", "listen"]);
         let speak_only = Access {
-            may_listen: false,
+            listening: Listening::Never,
             ..both()
         };
         assert_eq!(names(speak_only), ["speak"]);
@@ -518,7 +595,7 @@ mod tests {
         }
         // One the caller may not use is not offered, so it is unknown too.
         let speak_only = Access {
-            may_listen: false,
+            listening: Listening::Never,
             ..both()
         };
         let answer = reply(

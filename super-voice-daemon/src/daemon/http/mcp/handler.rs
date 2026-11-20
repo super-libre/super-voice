@@ -16,7 +16,7 @@
 //! body that is not JSON is answered as MCP says, not as the rest of the
 //! daemon answers one.
 
-use super::protocol::{self, Access, Handled, Tool};
+use super::protocol::{self, Access, Handled, Listening, Tool};
 use super::tools;
 use crate::assistants::calls::Caller;
 use crate::daemon::http::state::AppState;
@@ -69,18 +69,27 @@ pub(crate) async fn post(
         Err(refusal) => return json(StatusCode::BAD_REQUEST, &refusal),
     };
     let caller = caller_of(&session);
-    let access = Access {
-        may_speak: session.meta.scopes.iter().any(|s| s == "speak"),
-        may_listen: session.meta.scopes.iter().any(|s| s == "transcribe"),
-        asks_questions_aloud: match &caller {
-            Caller::Key(key) => {
-                state
-                    .daemon
-                    .key_asks_questions_aloud(&state.auth, key)
-                    .await
-            }
-            Caller::Session(_) => false,
+    let holds = |scope: &str| session.meta.scopes.iter().any(|s| s == scope);
+    // Read on every message, so turning asking aloud off holds at once, even
+    // for a client that listed the tools before.
+    let listening = match &caller {
+        _ if !holds("transcribe") => Listening::Never,
+        Caller::Key(key) => match state
+            .daemon
+            .key_asks_questions_aloud(&state.auth, key)
+            .await
+        {
+            Some(true) => Listening::Asking,
+            Some(false) => Listening::Off,
+            // A key made by hand has no such choice: the user gave it to its
+            // client to speak and listen.
+            None => Listening::WhenAsked,
         },
+        Caller::Session(_) => Listening::WhenAsked,
+    };
+    let access = Access {
+        may_speak: holds("speak"),
+        listening,
     };
     match protocol::handle(&message, access) {
         Handled::Reply(reply) => json(StatusCode::OK, &reply),

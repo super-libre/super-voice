@@ -7,6 +7,8 @@ description: Talk with the user by voice through Super Voice, asking and answeri
 
 The user wants to talk instead of type. Keep going in this one turn until they end it.
 
+If you have no `listen` tool, the user hasn't let you ask questions aloud, so you can't hear them. Say in writing that they can turn on "Ask questions aloud" for Claude Code on Super Voice's Assistants page, and end the turn.
+
 1. Hear the first request: call `listen` with the question "What would you like to do?"
 2. Do the work as you would for a typed request.
 3. Answer by calling `listen` again, with your answer as its `question`. This says the answer and then hears the reply, so the conversation goes on.

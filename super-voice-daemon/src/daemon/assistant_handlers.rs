@@ -279,17 +279,15 @@ impl SuperSTTDaemon {
         key_of(&auth.assistant_keys(), id).and_then(|key| auth.assistant_key_secret(&key.id))
     }
 
-    /// Whether the assistant holding key `key_id` asks its questions aloud.
-    /// A key made by hand does not.
-    pub async fn key_asks_questions_aloud(&self, auth: &Auth, key_id: &str) -> bool {
-        let Some(id) = auth
+    /// Whether the assistant holding key `key_id` asks its questions aloud,
+    /// as the user chose for it. `None` for a key made by hand, which has no
+    /// such choice.
+    pub async fn key_asks_questions_aloud(&self, auth: &Auth, key_id: &str) -> Option<bool> {
+        let id = auth
             .assistant_keys()
             .into_iter()
             .find(|key| key.id == key_id)
-            .and_then(|key| key.name.parse::<AssistantId>().ok())
-        else {
-            return false;
-        };
-        self.config.read().await.assistants.asks_questions_aloud(id)
+            .and_then(|key| key.name.parse::<AssistantId>().ok())?;
+        Some(self.config.read().await.assistants.asks_questions_aloud(id))
     }
 }
