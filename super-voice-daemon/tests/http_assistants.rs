@@ -233,7 +233,7 @@ async fn claude_code_gets_the_plugin_installed() {
     assert_eq!(
         ran.lines().collect::<Vec<_>>(),
         [
-            "plugin marketplace add jorge-menjivar/super-voice --scope user",
+            "plugin marketplace add super-libre/super-voice --scope user",
             "plugin install super-voice@super-voice --scope user",
         ]
     );

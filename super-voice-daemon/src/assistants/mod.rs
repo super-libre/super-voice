@@ -36,7 +36,7 @@ pub const MCP_PATH: &str = "/v1/mcp";
 pub const KEY_SCOPES: [&str; 2] = ["speak", "transcribe"];
 
 /// The marketplace Claude Code installs Super Voice's plugin from.
-pub const CLAUDE_MARKETPLACE: &str = "jorge-menjivar/super-voice";
+pub const CLAUDE_MARKETPLACE: &str = "super-libre/super-voice";
 
 /// Super Voice's plugin, as Claude Code names it: the plugin, at the
 /// marketplace.

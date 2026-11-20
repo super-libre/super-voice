@@ -108,7 +108,7 @@ Voice into its config. For Claude Code, the daemon runs, with the `claude` it
 found:
 
 ```sh
-claude plugin marketplace add jorge-menjivar/super-voice --scope user
+claude plugin marketplace add super-libre/super-voice --scope user
 claude plugin install super-voice@super-voice --scope user
 ```
 
