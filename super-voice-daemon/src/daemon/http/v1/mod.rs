@@ -198,6 +198,11 @@ fn assemble(groups: ScopeGroups) -> OpenApiRouter<AppState> {
 /// and inside it what axum itself refuses is put in the house envelope
 /// ([`envelope_rejection`](crate::daemon::http::rejection::envelope_rejection)),
 /// the router's bodiless `404` and `405` included.
+///
+/// `/v1/mcp` is merged after the origin gate, so the gate does not reach it:
+/// an AI assistant sends no `Origin`, and the gate would refuse it. It has a
+/// gate of its own instead, and answers in JSON-RPC rather than the house
+/// envelope. See [`crate::daemon::http::mcp`].
 pub(crate) fn router(state: AppState) -> Router {
     let (router, _spec) = assemble(guarded(scope_groups(), &state)).split_for_parts();
     let tts = crate::tts::daemon::http::v1::router(crate::tts::daemon::http::state::AppState::new(
@@ -205,6 +210,7 @@ pub(crate) fn router(state: AppState) -> Router {
         state.auth.clone(),
     ));
     let auth = state.auth.clone();
+    let mcp = crate::daemon::http::mcp::router(state.clone());
     router
         .with_state(state)
         .merge(tts)
@@ -212,6 +218,15 @@ pub(crate) fn router(state: AppState) -> Router {
             crate::daemon::http::rejection::envelope_rejections,
         ))
         .layer(middleware::from_fn_with_state(auth, require_allowed_origin))
+        .merge(mcp)
+}
+
+/// The paths the daemon serves outside the `OpenAPI` document, with the
+/// methods each answers on: `/v1/mcp`, which is JSON-RPC rather than a
+/// path per operation.
+#[cfg(test)]
+pub(super) fn undocumented_surface() -> Vec<(&'static str, &'static str)> {
+    crate::daemon::http::mcp::SURFACE.to_vec()
 }
 
 /// The generated document for the same surface. The guards are omitted because

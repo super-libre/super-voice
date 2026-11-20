@@ -13,12 +13,18 @@
 //! reviewer can read.
 //!
 //! Adding an endpoint is meant to fail this test. Add its path to the list.
+//!
+//! The daemon serves one path the document does not describe: `/v1/mcp`, MCP's
+//! endpoint, which is JSON-RPC, with the operation in the body rather than the
+//! path. It has a list of its own, [`UNDOCUMENTED_SURFACE`], held to the same
+//! rule.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
-/// Every path the daemon serves, with the methods it answers on.
+/// Every path the daemon serves in the `OpenAPI` document, with the methods it
+/// answers on. [`UNDOCUMENTED_SURFACE`] is the rest.
 ///
 /// Sorted, and deliberately spelled out rather than derived: this is the list a
 /// reviewer reads to see what the URL surface became.
@@ -124,6 +130,10 @@ const URL_SURFACE: &[(&str, &str)] = &[
     ("/v1/update/check", "post"),
 ];
 
+/// Every path the daemon serves outside the `OpenAPI` document, with the
+/// methods it answers on: `/v1/mcp`, whose contract is `docs/protocol/mcp.md`.
+const UNDOCUMENTED_SURFACE: &[(&str, &str)] = &[("/v1/mcp", "post")];
+
 /// The generated document, as a consumer receives it.
 fn document() -> Value {
     serde_json::to_value(super::openapi_document()).expect("the document serializes")
@@ -192,6 +202,31 @@ fn the_url_surface_is_exactly_this() {
         changed.is_empty(),
         "methods changed:\n  {}",
         changed.join("\n  ")
+    );
+}
+
+/// The paths served outside the document are exactly these, and none of them
+/// is in the document as well.
+///
+/// The router registers them by hand, where `routes!` cannot see them, so
+/// nothing else would notice one added, renamed or dropped.
+#[test]
+fn the_paths_outside_the_document_are_exactly_these() {
+    let listed: BTreeMap<&str, &str> = UNDOCUMENTED_SURFACE.iter().copied().collect();
+    let registered: BTreeMap<&str, &str> = super::v1::undocumented_surface().into_iter().collect();
+    assert_eq!(
+        listed, registered,
+        "the paths served outside the document moved"
+    );
+
+    let documented = served();
+    let both: Vec<&&str> = listed
+        .keys()
+        .filter(|path| documented.contains_key(**path))
+        .collect();
+    assert!(
+        both.is_empty(),
+        "in the document and outside it at once: {both:?}"
     );
 }
 
