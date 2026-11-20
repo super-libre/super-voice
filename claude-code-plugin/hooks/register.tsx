@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The plugin's voice, a Claude Code hooks module. Claude speaks only after
-// being spoken to: a reply to a spoken prompt is read aloud and the microphone
-// opens after it, and Super Voice's tools are refused in a turn the user
-// typed. One row above the prompt and one key, 0: `Talk` records the user and
+// The plugin's voice, a Claude Code hooks module. It works through Claude
+// Code's own connection to Super Voice's MCP server, and names this session
+// on every call, so what it speaks and records is this session's own.
+// Claude speaks only after being spoken to: a reply to a spoken prompt is
+// read aloud and the microphone opens after it, and Super Voice's tools are
+// refused in a turn the user typed. One row above the prompt and one key, 0: `Talk` records the user and
 // puts their words in the prompt box, sent after a short countdown unless they
 // edit them; while speech plays, 0 stops it, and opens the microphone only in
 // a spoken conversation. What `listen` hears goes through the box the same
@@ -45,8 +47,14 @@ const START_WAIT_MS = 10_000
 const SEND_AFTER_MS = 5_000
 /** How often the countdown checks the box and redraws. */
 const COUNTDOWN_TICK_MS = 500
-/** The longest a recording can run: the daemon's own limit is ten minutes. */
-const RECORD_TIMEOUT_MS = 600_000
+/** Super Voice's MCP server, as Claude Code names this plugin's. */
+const SERVER = 'plugin:super-voice:voice'
+/** How often an open session checks in, so Super Voice keeps listing it. */
+const HEARTBEAT_MS = 60_000
+/** The tools this plugin calls itself, kept from the model. */
+const PLUGIN_TOOLS: ReadonlySet<string> = new Set(
+  ['stop', 'status', 'announce', 'session'].map(tool => `mcp__plugin_super-voice_voice__${tool}`),
+)
 /** The Super Voice tools that speak. `listen` asks its question aloud. */
 const LISTEN_TOOL = 'mcp__plugin_super-voice_voice__listen'
 const SPEAKING_TOOLS: ReadonlySet<string> = new Set([
@@ -105,30 +113,72 @@ let listenAfterReply = false
 let armed = false
 
 
-type VoiceStatus = { isSpeaking: boolean; isRecording: boolean }
+// This session, as Super Voice's tools are told it.
+/** The folder the session works in; empty when it could not be read. */
+let folder: string | undefined
+/** The session id Super Voice was last told started. */
+let openedId: string | undefined
+let heartbeat: Timer | undefined
 
-/** What `voice status` says, or nothing when it fails. */
-async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined> {
+/** This session as Super Voice's tools take it: `id` when given, else the
+ * session's own. */
+async function sessionOf($: EngineInterface, id?: string) {
+  if (folder === undefined) {
+    const pwd = await $.process.run(['pwd'], { timeoutMs: 2000 }).catch(() => undefined)
+    folder = pwd?.exitCode === 0 ? pwd.stdout.trim() : ''
+  }
+  return { id: id ?? (await $.session.id()), ...(folder ? { folder } : {}) }
+}
+
+type Answer = { text: string; isError: boolean }
+
+/** Call one of Super Voice's tools for this session, or for session `id`,
+ * through Claude Code's own connection. Nothing when the call fails. */
+async function call(
+  $: EngineInterface,
+  tool: string,
+  args: Record<string, unknown> = {},
+  id?: string,
+): Promise<Answer | undefined> {
   try {
-    const { exitCode, stdout } = await $.process.run(['voice', 'status'], {
-      timeoutMs: 5000,
-    })
-    if (exitCode !== 0) {
-      return undefined
-    }
-    const [stt = '', tts = ''] = stdout.split('Text to speech')
-    return {
-      isSpeaking: /State:\s*speaking\s*$/m.test(tts),
-      isRecording: /State:\s*recording\s*$/m.test(stt),
-    }
+    const result = await $.mcp.call(SERVER, tool, { ...args, session: await sessionOf($, id) })
+    const text = result.content.map(block => (block.type === 'text' ? block.text : '')).join('')
+    return { text, isError: result.isError }
   } catch {
     return undefined
   }
 }
 
-/** Run a `voice` command for its effect. A failure is ignored. */
-async function voice($: EngineInterface, args: string[]) {
-  await $.process.run(['voice', ...args], { timeoutMs: 5000 }).catch(() => undefined)
+type VoiceStatus = { isSpeaking: boolean; isListening: boolean }
+
+/** Whether this session's own speech plays, and whether it records; nothing
+ * when Super Voice can't say. */
+async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined> {
+  const answer = await call($, 'status')
+  if (answer === undefined || answer.isError) {
+    return undefined
+  }
+  try {
+    const status = JSON.parse(answer.text) as { speaking?: unknown; listening?: unknown }
+    return { isSpeaking: status.speaking === true, isListening: status.listening === true }
+  } catch {
+    return undefined
+  }
+}
+
+/** Tell Super Voice this session is open, and check in while it is. A new
+ * session id, as after `/clear`, ends the one before. */
+async function checkIn($: EngineInterface) {
+  const id = await $.session.id()
+  if (openedId === id) {
+    await call($, 'status')
+    return
+  }
+  if (openedId !== undefined) {
+    await call($, 'session', { event: 'end' }, openedId)
+  }
+  openedId = id
+  await call($, 'session', { event: 'start' })
 }
 
 async function setArmed($: EngineInterface, isArmed: boolean) {
@@ -184,7 +234,7 @@ async function stopSpeaking($: EngineInterface) {
   await setArmed($, false)
   await showSpeaking($, false)
   await update($, readingAgain, () => '')
-  await voice($, ['speak', 'stop'])
+  await call($, 'stop')
 }
 
 /** 0 while speech plays: it always stops. Cutting off Claude's reply to a
@@ -201,27 +251,15 @@ async function pressStopSpeaking($: EngineInterface) {
   }
 }
 
-/** 0 as Talk. Speech this session did not start, like another session's,
- * does not show on its row; the key stops that speech, and records nothing. */
-async function pressTalk($: EngineInterface) {
-  if ((await voiceStatus($))?.isSpeaking) {
-    await stopSpeaking($)
-    return
-  }
-  await startTalk($)
-}
-
 /** Read Claude's reply to a spoken prompt aloud, and open the microphone once
  * it has been read. */
 async function readReply($: EngineInterface, answer: string) {
   if (!answer.trim()) {
     return
   }
-  const spoken = await $.process
-    .run(['voice', 'speak'], { stdin: answer, timeoutMs: 10_000 })
-    .catch(() => undefined)
-  if (spoken?.exitCode !== 0) {
-    $.ui.toast('Could not read the reply aloud.')
+  const spoken = await call($, 'speak', { text: answer })
+  if (spoken === undefined || spoken.isError) {
+    $.ui.toast(spoken?.text || 'Could not read the reply aloud.')
     return
   }
   await setArmed($, true)
@@ -238,12 +276,10 @@ async function readAgain($: EngineInterface, key: string, text: string) {
     return
   }
   await update($, readingAgain, () => key)
-  const spoken = await $.process
-    .run(['voice', 'speak'], { stdin: text, timeoutMs: 10_000 })
-    .catch(() => undefined)
-  if (spoken?.exitCode !== 0) {
+  const spoken = await call($, 'speak', { text })
+  if (spoken === undefined || spoken.isError) {
     await update($, readingAgain, () => '')
-    $.ui.toast('Could not read it aloud.')
+    $.ui.toast(spoken?.text || 'Could not read it aloud.')
     return
   }
   await watchSpeech($)
@@ -260,7 +296,7 @@ async function startTalk($: EngineInterface) {
   if (phase !== 'idle') {
     return
   }
-  if ((await voiceStatus($))?.isRecording) {
+  if ((await voiceStatus($))?.isListening) {
     $.ui.toast('Super Voice is already recording.')
     return
   }
@@ -272,18 +308,14 @@ async function startTalk($: EngineInterface) {
 
 async function recordAndFill($: EngineInterface) {
   let words = ''
-  try {
-    const { exitCode, stdout } = await $.process.run(
-      ['voice', 'record', '--wait', '--stop-mode', 'silence_and_manual'],
-      { timeoutMs: RECORD_TIMEOUT_MS },
-    )
-    if (exitCode === 0) {
-      words = stdout.trim()
-    } else {
-      $.ui.toast('Could not record.')
-    }
-  } catch {
+  // `listen` without a question: it records until the user stops talking.
+  const heard = await call($, 'listen')
+  if (heard === undefined) {
     $.ui.toast('Could not record.')
+  } else if (heard.isError) {
+    $.ui.toast(heard.text || 'Could not record.')
+  } else {
+    words = heard.text.trim()
   }
   if (words === NO_SPEECH) {
     $.ui.toast('No speech heard.')
@@ -300,7 +332,7 @@ async function recordAndFill($: EngineInterface) {
  * heard. */
 async function stopClaudesListening($: EngineInterface) {
   await setTalk($, { phase: 'transcribing' })
-  await voice($, ['record', 'stop'])
+  await call($, 'stop')
 }
 
 /** Put what `listen` heard in the prompt box, and resolve with it once it is
@@ -340,7 +372,7 @@ async function stopListening($: EngineInterface) {
   // Shown before the stop, so a quick transcript is not drawn over by it.
   await setTalk($, { phase: 'transcribing' })
   // The recording ends and `recordAndFill` carries on with what was heard.
-  await voice($, ['record', 'stop'])
+  await call($, 'stop')
 }
 
 /** Put the words in the box after any draft, and send them unless the user
@@ -425,8 +457,26 @@ export const register: Register = on => {
     await update($, listensAfter, () => false)
     await update($, claudeWorking, () => false)
     await update($, readingAgain, () => '')
+    // A reload starts the session's check-ins over too.
+    openedId = undefined
+    heartbeat?.cancel()
+    heartbeat = $.clock.every(HEARTBEAT_MS, () => void checkIn($))
+    void checkIn($)
     return next(e)
   })
+
+  on('session.end', async ($, e, next) => {
+    heartbeat?.cancel()
+    heartbeat = undefined
+    await call($, 'session', { event: 'end' }, e.sessionId)
+    openedId = undefined
+    return next(e)
+  })
+
+  // The tools this plugin calls itself are not the model's.
+  on('tool.offer', async ($, e, next) =>
+    PLUGIN_TOOLS.has(e.tool) ? { isOffered: false } : next(e),
+  )
 
   on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
@@ -461,15 +511,17 @@ export const register: Register = on => {
     if (!listenAfterReply) {
       return { deny: NOT_SPOKEN_TO }
     }
+    // Named as this session, as the plugin's own calls are.
+    const named = { ...e, session: await sessionOf($) }
     await watchSpeech($)
     if (e.tool !== LISTEN_TOOL) {
-      return next(e)
+      return next(named)
     }
     // Claude has the microphone: no Talk button until it is done.
     isClaudeListening = true
     await update($, claudeListening, () => true)
     try {
-      return await next(e)
+      return await next(named)
     } finally {
       isClaudeListening = false
       await update($, claudeListening, () => false)
@@ -532,6 +584,10 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    // A new prompt silences what this session was reading.
+    if (await read($, speaking)) {
+      void stopSpeaking($)
+    }
     const isOwn = e.origin.kind === 'plugin' && e.origin.name === NAME
     if (e.origin.kind === 'composer' && pendingAnswer !== undefined) {
       // Enter on an answer to Claude's question: it goes to the waiting
@@ -654,7 +710,7 @@ export const register: Register = on => {
         label="Talk"
         hotkey="0"
         plain
-        onPress={() => void pressTalk($)}
+        onPress={() => void startTalk($)}
       />
     )
   })

@@ -1,5 +1,5 @@
 {
-  "description": "Say when Claude Code needs you, and fall silent when you send the next prompt. The module reads replies to spoken prompts aloud.",
+  "description": "Say when Claude Code needs your permission, unless announcing is off for Claude Code on Super Voice's Assistants page. The module does the rest of the plugin's talking.",
   "modules": ["./register.tsx"],
   "hooks": {
     "Notification": [
@@ -7,20 +7,10 @@
         "matcher": "permission_prompt",
         "hooks": [
           {
-            "type": "command",
-            "command": "jq -r '.message // empty' | voice speak >/dev/null 2>&1 || true",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "voice speak stop >/dev/null 2>&1 || true",
-            "async": true
+            "type": "mcp_tool",
+            "server": "plugin:super-voice:voice",
+            "tool": "announce",
+            "input": { "text": "${message}" }
           }
         ]
       }

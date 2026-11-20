@@ -35,14 +35,14 @@ terminal like any other window. A prompt typed that way counts as typed.
 
 1. Super Voice installed, with the daemon running and a model selected for each
    feature.
-2. `voice` on your `PATH`. Super Voice's installer puts it there. The plugin
-   uses it to talk, to say when Claude needs you, and to hand Claude Code its
-   key.
-3. `jq`, which the hooks use to read Claude Code's notices.
+2. `voice` on your `PATH`. Super Voice's installer puts it there. Claude Code
+   runs it to get its key.
 
 Claude Code reaches Super Voice at `http://127.0.0.1:7300/v1/mcp`, with a key
-only Claude Code has. Disconnecting Claude Code on the Assistants page takes it
-away.
+only Claude Code has. The plugin talks through that same connection, and names
+the session on every call, so Super Voice lists each open Claude Code session
+on the Assistants page, and `0` in one session never stops another's speech.
+Disconnecting Claude Code on the Assistants page takes the key away.
 
 ## Settings
 
