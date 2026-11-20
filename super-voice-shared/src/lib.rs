@@ -2,6 +2,7 @@
 //! What Super Voice's daemon and clients share: the session, scopes, paths,
 //! status and protocol types, and speech to text's own. Text to speech's own
 //! are in [`tts`].
+pub mod assistant_configs;
 pub mod consent;
 pub mod cosmic_shortcuts;
 pub mod daemon;
