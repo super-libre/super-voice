@@ -121,7 +121,7 @@ jobs:
             libdbus-1-dev \
             pkg-config
 
-      # Build all six binaries in one cargo invocation so the shared
+      # Build all five binaries in one cargo invocation so the shared
       # dependency graph compiles once, then assemble the tarball.
       - name: Build binaries
         run: |
@@ -129,7 +129,6 @@ jobs:
             --bin super-voice-daemon \
             --bin super-voice-cli \
             --bin super-voice-consent \
-            --bin super-voice-mcp \
             --bin super-voice-app \
             --bin super-voice-install
 
@@ -142,8 +141,6 @@ jobs:
           cp target/${{ matrix.target }}/release/super-voice-daemon dist/
           cp target/${{ matrix.target }}/release/super-voice-cli dist/
           cp target/${{ matrix.target }}/release/super-voice-consent dist/
-          # The MCP server, for AI assistants such as Claude Code.
-          cp target/${{ matrix.target }}/release/super-voice-mcp dist/
           cp target/${{ matrix.target }}/release/super-voice-app dist/
 
           # Include systemd service files

@@ -7267,19 +7267,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "super-voice-mcp"
-version = "0.3.0-beta.7"
-dependencies = [
- "anyhow",
- "clap",
- "serde_json",
- "super-engine-test-daemon",
- "super-voice-shared",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "super-voice-registry-types"
 version = "0.3.0-beta.7"
 dependencies = [

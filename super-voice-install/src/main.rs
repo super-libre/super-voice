@@ -14,9 +14,8 @@ static INSTALLER: Installer = Installer {
     user_agent: Voice::USER_AGENT,
     wrapper_usage: "Used by keyboard shortcuts (e.g. Super+Space → \"voice record --write\").",
     after_install: Some(shortcut::after_install),
-    // The MCP server, for AI assistants such as Claude Code. A client of its
-    // own: the daemon asks the user before letting it in.
-    extra_binaries: &["super-voice-mcp"],
+    // The daemon serves AI assistants itself, at /v1/mcp.
+    extra_binaries: &[],
     apps: &["super-voice-app"],
     retired: RETIRED,
 };

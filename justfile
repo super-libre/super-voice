@@ -3,7 +3,6 @@ daemon_bin_name := 'super-voice-daemon'
 # systemd unit name (matches super-voice-daemon/systemd/super-voice.service)
 service_name := 'super-voice'
 cli_name := 'super-voice-cli'
-mcp_name := 'super-voice-mcp'
 consent_name := 'super-voice-consent'
 wrapper_name := 'voice'
 
@@ -42,12 +41,10 @@ icon_theme_dir := install_prefix / 'share' / 'icons' / 'hicolor'
 app_src := 'target' / 'release' / app_name
 daemon_src := 'target' / 'release' / daemon_bin_name
 cli_src := 'target' / 'release' / cli_name
-mcp_src := 'target' / 'release' / mcp_name
 consent_src := 'target' / 'release' / consent_name
 app_dst := bin_dir / app_name
 daemon_dst := bin_dir / daemon_bin_name
 cli_dst := bin_dir / cli_name
-mcp_dst := bin_dir / mcp_name
 consent_dst := bin_dir / consent_name
 wrapper_dst := bin_dir / wrapper_name
 
@@ -74,7 +71,7 @@ service_dst := systemd_unit_dir / service_file
 # Named as a list rather than reached with `--workspace --exclude` so the
 # macOS gates say what they cover, and so a new portable crate has to be added
 # deliberately rather than silently skipped.
-macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-mcp -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app'
+macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app'
 
 # macOS ships as one app bundle, `Super Voice.app`: the settings app is its
 # executable, and the daemon and the CLI sit beside it in Contents/MacOS. The
@@ -585,7 +582,6 @@ codesign-macos bin identifier:
 app_select := if os() == "macos" { "-p " + app_name + " --bin " + app_name } else { "--bin " + app_name }
 daemon_select := if os() == "macos" { "-p " + daemon_bin_name + " --bin " + daemon_bin_name } else { "--bin " + daemon_bin_name }
 cli_select := if os() == "macos" { "-p " + cli_name + " --bin " + cli_name } else { "--bin " + cli_name }
-mcp_select := if os() == "macos" { "-p " + mcp_name + " --bin " + mcp_name } else { "--bin " + mcp_name }
 
 # Run the app for testing purposes
 run-app *args:
@@ -776,13 +772,6 @@ build-cli *args:
     set -euo pipefail
     cargo build --release {{ cli_select }} {{ args }}
     just codesign-macos target/release/{{ cli_name }} {{ macos_sign_prefix }}-cli
-
-# Build only the MCP server
-build-mcp *args:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cargo build --release {{ mcp_select }} {{ args }}
-    just codesign-macos target/release/{{ mcp_name }} {{ macos_sign_prefix }}-mcp
 
 # Build only the installer/self-updater
 build-install:
@@ -1236,12 +1225,6 @@ install-daemon:
         exit 1
     fi
 
-    # The MCP server goes with the daemon, as the release installer puts it.
-    if ! just install-mcp; then
-        echo "❌ MCP server installation failed"
-        exit 1
-    fi
-
     # Create user directories
     echo "Creating user directories..."
     mkdir -p {{ run_dir }}
@@ -1434,7 +1417,6 @@ uninstall-daemon:
     sudo rm -f {{ consent_dst }}
 
     sudo rm -f {{ wrapper_dst }}
-    sudo rm -f {{ mcp_dst }}
 
     # Remove directories (but preserve logs)
     rm -rf {{ run_dir }}
@@ -1549,25 +1531,6 @@ uninstall-cli:
     # instead of reporting as uninstalled.
     sudo rm -f {{ wrapper_dst }}
     echo "✓ Super Voice CLI uninstalled"
-
-# Install the MCP server, for AI assistants such as Claude Code.
-# `install-daemon` runs it, as the release installer puts it beside the daemon.
-# It must not be on the daemon's list of its own clients: those are let in
-# without asking.
-install-mcp:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    sudo -v
-    echo "Building the MCP server..."
-    just build-mcp
-    sudo mkdir -p {{ bin_dir }}
-    sudo install -m755 {{ mcp_src }} {{ mcp_dst }}
-    echo "✓ Super Voice MCP server installed: {{ mcp_dst }}"
-
-# Uninstall the MCP server
-uninstall-mcp:
-    sudo rm -f {{ mcp_dst }}
-    @echo "✓ Super Voice MCP server uninstalled"
 
 # Uninstall daemon, app, applet, CLI, and consent helper
 uninstall:
