@@ -270,12 +270,15 @@ pub fn write_entry(id: AssistantId, url: &str, key: &str) -> Result<(), Error> {
                 assistant_configs::codex_with_super_voice(text, url, &helper)
             })
         }
-        AssistantId::OpenCode => assistant_configs::update(&config_file(id)?, |text| {
+        // The key is in the file itself, so only its owner may read it.
+        AssistantId::OpenCode => assistant_configs::update_holding_key(&config_file(id)?, |text| {
             assistant_configs::opencode_with_super_voice(text, url, key)
         }),
-        AssistantId::Antigravity => assistant_configs::update(&config_file(id)?, |text| {
-            assistant_configs::antigravity_with_super_voice(text, url, key)
-        }),
+        AssistantId::Antigravity => {
+            assistant_configs::update_holding_key(&config_file(id)?, |text| {
+                assistant_configs::antigravity_with_super_voice(text, url, key)
+            })
+        }
     };
     match changed {
         Ok(true) => info!("Wrote Super Voice into {}'s config", id.display_name()),

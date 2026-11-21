@@ -702,12 +702,48 @@ pub fn update(
     if updated == text {
         return Ok(false);
     }
-    write_atomically(path, &updated)?;
+    write_atomically(path, &updated, false)?;
     Ok(true)
 }
 
-/// Write `text` to `path` through a temporary file in the same directory.
-fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
+/// [`update`], for a file `transform` writes a key into, such as
+/// [`antigravity_with_super_voice`]: afterwards only its owner can read it,
+/// even when others could before. A file left as it was is narrowed too,
+/// since it may hold the key from an earlier write.
+///
+/// # Errors
+///
+/// When `transform` fails, or the file cannot be read, written or narrowed.
+pub fn update_holding_key(
+    path: &Path,
+    transform: impl FnOnce(&str) -> Result<String, Error>,
+) -> Result<bool, Error> {
+    let text = read(path)?;
+    let updated = transform(&text)?;
+    if updated != text {
+        write_atomically(path, &updated, true)?;
+        return Ok(true);
+    }
+    #[cfg(unix)]
+    if let Ok(metadata) = std::fs::metadata(path) {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = metadata.permissions().mode() & 0o7777;
+        if mode != owner_only(mode) {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(owner_only(mode)))?;
+        }
+    }
+    Ok(false)
+}
+
+/// `mode` with the group's and others' permissions taken away.
+#[cfg(unix)]
+const fn owner_only(mode: u32) -> u32 {
+    mode & 0o700
+}
+
+/// Write `text` to `path` through a temporary file in the same directory,
+/// readable by its owner alone when `private`.
+fn write_atomically(path: &Path, text: &str, private: bool) -> std::io::Result<()> {
     /// Tells apart this process's temporary files.
     static NEXT: AtomicU32 = AtomicU32::new(0);
 
@@ -731,7 +767,7 @@ fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
-    let written = write_then_rename(&temp, &path, text);
+    let written = write_then_rename(&temp, &path, text, private);
     if written.is_err() {
         let _ = std::fs::remove_file(&temp);
     }
@@ -739,17 +775,21 @@ fn write_atomically(path: &Path, text: &str) -> std::io::Result<()> {
 }
 
 /// Write `text` to `temp`, a new file, with `path`'s permissions, or the
-/// owner's alone when there is no `path` yet; then put it in `path`'s place.
-fn write_then_rename(temp: &Path, path: &Path, text: &str) -> std::io::Result<()> {
+/// owner's alone when there is no `path` yet or it is `private`; then put it
+/// in `path`'s place.
+fn write_then_rename(temp: &Path, path: &Path, text: &str, private: bool) -> std::io::Result<()> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
     let mode = {
         use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
         let mode = std::fs::metadata(path).map_or(0o600, |m| m.permissions().mode() & 0o7777);
+        let mode = if private { owner_only(mode) } else { mode };
         options.mode(mode);
         mode
     };
+    #[cfg(not(unix))]
+    let _ = private;
     let mut file = options.open(temp)?;
     // The mode it was made with is narrowed by the umask. It gets it exactly.
     #[cfg(unix)]
@@ -1383,6 +1423,31 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
         assert!(update(&path, codex_without_super_voice).unwrap());
         assert_eq!(read(&path).unwrap(), CODEX_CONFIG);
         assert_eq!(mode(&path), 0o644);
+    }
+
+    /// A file a key is written into is readable by its owner alone after,
+    /// even one others could read before, and even when it already had the
+    /// entry. Taking the entry out leaves it so.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_holding_a_key_is_the_owners_alone() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp_config.json");
+        std::fs::write(&path, "").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let connect = |text: &str| antigravity_with_super_voice(text, URL, "k1");
+        assert!(update_holding_key(&path, connect).unwrap());
+        assert_eq!(mode(&path), 0o600);
+
+        // Written earlier with the old permissions, and unchanged now.
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o664)).unwrap();
+        assert!(!update_holding_key(&path, connect).unwrap());
+        assert_eq!(mode(&path), 0o600);
+
+        assert!(update(&path, antigravity_without_super_voice).unwrap());
+        assert_eq!(mode(&path), 0o600);
     }
 
     /// A change that changes nothing writes nothing, and makes no file.
