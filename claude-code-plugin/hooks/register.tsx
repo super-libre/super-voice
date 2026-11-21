@@ -48,10 +48,15 @@ const START_WAIT_MS = 10_000
 const SEND_AFTER_MS = 5_000
 /** How often the countdown checks the box and redraws. */
 const COUNTDOWN_TICK_MS = 500
-/** Super Voice's MCP server, as Claude Code names this plugin's. */
-const SERVER = 'plugin:super-voice:voice'
+/** Super Voice's MCP server, by its key in this plugin's `.mcp.json`. */
+const SERVER_KEY = 'voice'
 /** How often an open session checks in, so Super Voice keeps listing it. */
 const HEARTBEAT_MS = 60_000
+/** How long to wait between tries to say a session started, while Claude
+ * Code may still be connecting to Super Voice. */
+const OPEN_RETRY_MS = 5_000
+/** How many times to try before leaving it to the heartbeat. */
+const OPEN_TRIES = 12
 /** The tools this plugin calls itself, kept from the model. */
 const PLUGIN_TOOLS: ReadonlySet<string> = new Set(
   ['stop', 'status', 'announce', 'session'].map(tool => `mcp__plugin_super-voice_voice__${tool}`),
@@ -125,12 +130,14 @@ let folder: string | undefined
 let openedId: string | undefined
 let heartbeat: Timer | undefined
 
+/** Super Voice's MCP server as Claude Code names it, once connected. */
+let server = 'plugin:super-voice:voice'
+
 /** This session as Super Voice's tools take it: `id` when given, else the
  * session's own. */
 async function sessionOf($: EngineInterface, id?: string) {
   if (folder === undefined) {
-    const pwd = await $.process.run(['pwd'], { timeoutMs: 2000 }).catch(() => undefined)
-    folder = pwd?.exitCode === 0 ? pwd.stdout.trim() : ''
+    folder = await $.session.cwd().catch(() => '')
   }
   return { id: id ?? (await $.session.id()), ...(folder ? { folder } : {}) }
 }
@@ -146,7 +153,7 @@ async function call(
   id?: string,
 ): Promise<Answer | undefined> {
   try {
-    const result = await $.mcp.call(SERVER, tool, { ...args, session: await sessionOf($, id) })
+    const result = await $.mcp.call(server, tool, { ...args, session: await sessionOf($, id) })
     const text = result.content.map(block => (block.type === 'text' ? block.text : '')).join('')
     return { text, isError: result.isError }
   } catch {
@@ -179,14 +186,35 @@ async function checkIn($: EngineInterface) {
     await call($, 'status')
     return
   }
+  // Claude Code may still be connecting to Super Voice as the session starts.
+  const voice = await $.mcp.connect(SERVER_KEY).catch(() => undefined)
+  if (!voice?.isConnected) {
+    return
+  }
+  server = voice.server
   if (openedId !== undefined) {
     await call($, 'session', { event: 'end' }, openedId)
     // A new conversation, as after `/clear`: the old one's terms are not its.
     lastPrompt = ''
     lastReply = ''
   }
-  openedId = id
-  await call($, 'session', { event: 'start' })
+  const started = await call($, 'session', { event: 'start' })
+  // Not yet: the next check-in tries again.
+  if (started !== undefined && !started.isError) {
+    openedId = id
+  }
+}
+
+/** Say the session started as soon as Super Voice can be reached, trying a
+ * few times while Claude Code connects; the heartbeat goes on after. */
+async function openSession($: EngineInterface) {
+  for (let tries = 0; tries < OPEN_TRIES; tries++) {
+    await checkIn($)
+    if (openedId === (await $.session.id())) {
+      return
+    }
+    await $.clock.sleep(OPEN_RETRY_MS)
+  }
 }
 
 async function setArmed($: EngineInterface, isArmed: boolean) {
@@ -471,7 +499,7 @@ export const register: Register = on => {
     openedId = undefined
     heartbeat?.cancel()
     heartbeat = $.clock.every(HEARTBEAT_MS, () => void checkIn($))
-    void checkIn($)
+    void openSession($)
     return next(e)
   })
 
