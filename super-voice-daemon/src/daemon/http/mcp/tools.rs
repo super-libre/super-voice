@@ -122,8 +122,12 @@ pub(crate) async fn run(
             .to_string(),
         ))),
         Tool::Turn(TurnEvent::Prompt { text, spoken }) => {
-            let spoken =
-                spoken.unwrap_or_else(|| sessions.was_dictated(&text, std::time::Instant::now()));
+            // The same prompt said again keeps its turn: its dictation is
+            // used up by now.
+            let again = sessions.prompted(who, &text);
+            let spoken = spoken
+                .or(again)
+                .unwrap_or_else(|| sessions.was_dictated(&text, std::time::Instant::now()));
             sessions.set_spoken(who, spoken);
             Some(Ok(prompt_answer(caller.hook, spoken)))
         }
@@ -649,6 +653,12 @@ mod tests {
             .unwrap();
         assert!(spoken.contains(r#""spoken":true"#), "{spoken}");
         assert_eq!(daemon.assistants.sessions.spoken(&caller().who), Some(true));
+        // Said again before each model call, it stays spoken.
+        let again = run(&daemon, prompt("open the notes.", None), &caller(), &cancel)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(again.contains(r#""spoken":true"#), "{again}");
     }
 
     /// A Codex hook reads the answer as its own output: the context beside a

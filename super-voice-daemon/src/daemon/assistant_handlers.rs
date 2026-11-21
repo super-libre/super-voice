@@ -196,6 +196,9 @@ impl SuperSTTDaemon {
                     .await
                     .unwrap_or_else(|e| Err(Error::Plugin(e.to_string())))
             }
+            (AssistantId::Antigravity, Some(agy)) => {
+                assistants::install_antigravity_plugin(&agy).await
+            }
             _ => Ok(()),
         }
     }
@@ -230,6 +233,9 @@ impl SuperSTTDaemon {
                 tokio::task::spawn_blocking(assistants::uninstall_opencode_plugin)
                     .await
                     .unwrap_or_else(|e| Err(Error::Plugin(e.to_string())))
+            }
+            (AssistantId::Antigravity, Some(agy)) => {
+                assistants::uninstall_antigravity_plugin(agy).await
             }
             _ => Ok(()),
         };

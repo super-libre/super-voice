@@ -80,6 +80,22 @@ const OPENCODE_PLUGIN_FILES: [(&str, &str); 5] = [
     ),
 ];
 
+/// Super Voice's plugin for the Antigravity CLI, by each file's name in its
+/// folder. `{voice}` in its hooks becomes the `voice` command's path.
+const ANTIGRAVITY_PLUGIN_FILES: [(&str, &str); 2] = [
+    (
+        "plugin.json",
+        include_str!("../../../antigravity-plugin/plugin.json"),
+    ),
+    (
+        "hooks.json",
+        include_str!("../../../antigravity-plugin/hooks.json"),
+    ),
+];
+
+/// Super Voice's plugin, as the Antigravity CLI names it.
+const ANTIGRAVITY_PLUGIN: &str = "super-voice";
+
 /// Super Voice's plugin for Codex, as a marketplace of one, by each file's
 /// place in it. The daemon writes it to [`codex_marketplace_dir`] and
 /// installs the plugin from there.
@@ -468,6 +484,79 @@ pub fn uninstall_opencode_plugin() -> Result<(), Error> {
     }
 }
 
+/// Where Super Voice writes its plugin for the Antigravity CLI, which `agy
+/// plugin install` copies from.
+fn antigravity_plugin_dir() -> PathBuf {
+    super_voice_shared::paths::data_dir()
+        .join("assistants")
+        .join("antigravity")
+        .join(ANTIGRAVITY_PLUGIN)
+}
+
+/// Install Super Voice's plugin in the Antigravity CLI, with `agy`, the
+/// program found: write it ([`antigravity_plugin_dir`]), its hooks running
+/// this daemon's `voice`, and install it, which replaces an older copy.
+///
+/// # Errors
+///
+/// [`Error::Plugin`] when the files cannot be written, or the command fails
+/// or runs too long.
+pub async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
+    let dir = antigravity_plugin_dir();
+    let voice = assistant_configs::shell_quote(&hook_program());
+    let files: Vec<(&'static str, String)> = ANTIGRAVITY_PLUGIN_FILES
+        .iter()
+        .map(|(name, text)| (*name, text.replace("{voice}", &voice)))
+        .collect();
+    let written = dir.clone();
+    tokio::task::spawn_blocking(move || {
+        let files: Vec<(&str, &str)> = files
+            .iter()
+            .map(|(name, text)| (*name, text.as_str()))
+            .collect();
+        write_plugin_files(&written, &files)
+    })
+    .await
+    .map_err(|e| Error::Plugin(e.to_string()))?
+    .map_err(|e| Error::Plugin(format!("could not write the Antigravity CLI's plugin: {e}")))?;
+    let source = dir.to_string_lossy();
+    run_plugin_command(agy, &["plugin", "install", &source], &[]).await
+}
+
+/// The `voice` an assistant's hook runs: the one beside the daemon, under
+/// either name, since a build tree names it as its crate does, or the one on
+/// `PATH`.
+fn hook_program() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            let dir = exe.parent()?.to_path_buf();
+            ["voice", "super-voice-cli"]
+                .into_iter()
+                .map(|name| dir.join(name))
+                .find(|voice| voice.is_file())
+        })
+        .map_or_else(|| "voice".to_string(), |voice| voice.display().to_string())
+}
+
+/// Uninstall Super Voice's plugin from the Antigravity CLI, and delete the
+/// copy it was installed from. Not installed is fine.
+///
+/// # Errors
+///
+/// [`Error::Plugin`] when the command fails or runs too long.
+pub async fn uninstall_antigravity_plugin(agy: &Path) -> Result<(), Error> {
+    run_plugin_command(
+        agy,
+        &["plugin", "uninstall", ANTIGRAVITY_PLUGIN],
+        &["not installed", "not found"],
+    )
+    .await?;
+    let dir = antigravity_plugin_dir();
+    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+    Ok(())
+}
+
 /// Where Super Voice keeps its plugin for Codex, as a marketplace.
 fn codex_marketplace_dir() -> PathBuf {
     super_voice_shared::paths::data_dir()
@@ -706,6 +795,33 @@ mod tests {
         }
         assert!(OPENCODE_PLUGIN_FILES[0].1.contains("Plugin.define"));
         assert!(OPENCODE_PLUGIN_FILES[1].1.contains("session.composer.top"));
+    }
+
+    /// The Antigravity CLI's plugin runs `voice assistant-hook` for each of
+    /// its hooks, the command filled in when it is written.
+    #[test]
+    fn antigravity_hooks_run_voice() {
+        let hooks: serde_json::Value = serde_json::from_str(ANTIGRAVITY_PLUGIN_FILES[1].1).unwrap();
+        let group = &hooks["super-voice"];
+        let commands = [
+            &group["SessionStart"][0]["command"],
+            &group["PreInvocation"][0]["command"],
+            &group["PreToolUse"][0]["hooks"][0]["command"],
+            &group["Stop"][0]["command"],
+        ];
+        for (command, event) in
+            commands
+                .iter()
+                .zip(["session-start", "pre-invocation", "pre-tool-use", "stop"])
+        {
+            assert_eq!(
+                command.as_str(),
+                Some(format!("{{voice}} assistant-hook antigravity {event}").as_str())
+            );
+        }
+        let manifest: serde_json::Value =
+            serde_json::from_str(ANTIGRAVITY_PLUGIN_FILES[0].1).unwrap();
+        assert_eq!(manifest["name"], ANTIGRAVITY_PLUGIN);
     }
 
     #[test]

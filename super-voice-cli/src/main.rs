@@ -5,7 +5,8 @@
 //! Each feature's commands are under its own subcommand — `voice record` for
 //! speech to text, `voice speak` for text to speech — and what the daemon has
 //! once is at the top: `ping`, `status`, `logout`. `assistant-header` is
-//! for AI assistants, which run it for the key Super Voice made them.
+//! for AI assistants, which run it for the key Super Voice made them, and
+//! `assistant-hook` for an assistant's hooks that can only run a command.
 //!
 //! Auth flow is delegated to `super_voice_shared::daemon::session`, the
 //! shared client-side session helper. Each client (CLI, settings app,
@@ -31,6 +32,7 @@ use super_voice_shared::models::assistants::AssistantId;
 use super_voice_shared::models::contexts::ExtraContext;
 use super_voice_shared::validation::get_http_socket_path;
 
+mod assistant_hook;
 #[cfg(target_os = "macos")]
 mod hotkey;
 #[cfg(target_os = "macos")]
@@ -148,6 +150,17 @@ async fn dispatch(matches: &ArgMatches, socket_path: PathBuf) -> Result<()> {
                 .context("an assistant is required")?;
             cmd_assistant_header(socket_path, assistant).await
         }
+        Some(("assistant-hook", sub)) => {
+            let assistant = sub
+                .get_one::<String>("assistant")
+                .and_then(|id| id.parse::<AssistantId>().ok())
+                .context("an assistant is required")?;
+            let event = sub
+                .get_one::<String>("event")
+                .context("an event is required")?;
+            assistant_hook::run(socket_path, assistant, event).await;
+            Ok(())
+        }
         _ => {
             println!("Run with --help for usage.");
             Ok(())
@@ -256,7 +269,8 @@ fn build_cli() -> Command {
                             AssistantId::WIRE_VARIANTS.iter().copied(),
                         )),
                 ),
-        ),
+        )
+        .subcommand(assistant_hook::command()),
     )
 }
 
@@ -552,13 +566,32 @@ async fn cmd_speak_stop(
     Ok(())
 }
 
-/// `voice assistant-header <assistant>`: print
-/// `{"Authorization":"Bearer <key>"}`, with the key the daemon made the
-/// assistant, and nothing else on stdout, since the assistant reads it as
-/// JSON. When there is no key to print, say why on stderr and exit with 1.
-async fn cmd_assistant_header(socket_path: PathBuf, assistant: AssistantId) -> Result<()> {
+/// The key the daemon made `assistant`, and where it reaches Super Voice's
+/// MCP server with it.
+///
+/// # Errors
+///
+/// What the daemon answered instead, such as `not_connected`.
+pub(crate) async fn assistant_access(
+    socket_path: PathBuf,
+    assistant: AssistantId,
+) -> Result<(String, String), String> {
+    let body = assistant_key_body(socket_path, assistant)
+        .await
+        .map_err(|e| e.to_string())?;
+    match (body["key"].as_str(), body["address"].as_str()) {
+        (Some(key), Some(address)) => Ok((key.to_string(), address.to_string())),
+        _ => Err("Super Voice sent no key".to_string()),
+    }
+}
+
+/// `GET /assistants/{assistant}/key`, as the daemon answers it.
+async fn assistant_key_body(
+    socket_path: PathBuf,
+    assistant: AssistantId,
+) -> super_voice_shared::daemon::http_client::HttpResult<serde_json::Value> {
     let path = format!("/assistants/{assistant}/key");
-    let answer = session::with_token(
+    session::with_token(
         socket_path.clone(),
         APP_ID,
         APP_NAME,
@@ -572,7 +605,15 @@ async fn cmd_assistant_header(socket_path: PathBuf, assistant: AssistantId) -> R
             }
         },
     )
-    .await;
+    .await
+}
+
+/// `voice assistant-header <assistant>`: print
+/// `{"Authorization":"Bearer <key>"}`, with the key the daemon made the
+/// assistant, and nothing else on stdout, since the assistant reads it as
+/// JSON. When there is no key to print, say why on stderr and exit with 1.
+async fn cmd_assistant_header(socket_path: PathBuf, assistant: AssistantId) -> Result<()> {
+    let answer = assistant_key_body(socket_path, assistant).await;
     let key = answer.as_ref().ok().and_then(|body| body["key"].as_str());
     if let Some(key) = key {
         println!("{}", authorization_header(key));

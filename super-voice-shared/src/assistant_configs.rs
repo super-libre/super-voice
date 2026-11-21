@@ -108,7 +108,8 @@ pub fn codex_headers_helper(voice: &str) -> String {
 
 /// `word` as `sh` reads it back: as it is when it is plain, in single quotes
 /// otherwise.
-fn shell_quote(word: &str) -> String {
+#[must_use]
+pub fn shell_quote(word: &str) -> String {
     let plain = !word.is_empty()
         && word
             .chars()
@@ -524,6 +525,10 @@ mod jsonc {
 const ANTIGRAVITY_STALE_KEYS: [&str; 7] =
     ["url", "httpUrl", "type", "command", "args", "cwd", "env"];
 
+/// The tools Super Voice's plugin for the Antigravity CLI calls itself,
+/// kept from its model with `disabledTools`.
+const ANTIGRAVITY_PLUGIN_TOOLS: [&str; 5] = ["stop", "status", "announce", "session", "turn"];
+
 /// How long a tool call may run: `listen` waits for the user, often longer
 /// than the default 3 minutes.
 const ANTIGRAVITY_TIMEOUT_SECONDS: u64 = 600;
@@ -556,6 +561,11 @@ pub fn antigravity_with_super_voice(text: &str, url: &str, key: &str) -> Result<
     entry.insert(
         "timeoutSeconds".to_string(),
         ANTIGRAVITY_TIMEOUT_SECONDS.into(),
+    );
+    // The tools Super Voice's plugin calls itself, never the model.
+    entry.insert(
+        "disabledTools".to_string(),
+        ANTIGRAVITY_PLUGIN_TOOLS.into_iter().collect(),
     );
     json_text(root, text)
 }
@@ -1289,7 +1299,14 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
       "headers": {
         "Authorization": "Bearer k1"
       },
-      "timeoutSeconds": 600
+      "timeoutSeconds": 600,
+      "disabledTools": [
+        "stop",
+        "status",
+        "announce",
+        "session",
+        "turn"
+      ]
     }
   }
 }
@@ -1308,7 +1325,7 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
         let text = antigravity_with_super_voice(ANTIGRAVITY_CONFIG, URL, "k1").unwrap();
         assert_eq!(
             text,
-            "{\n\t\"theme\": \"GitHub\",\n\t\"mcpServers\": {\n\t\t\"docs\": {\n\t\t\t\"command\": \"docs-mcp\"\n\t\t},\n\t\t\"super-voice\": {\n\t\t\t\"serverUrl\": \"http://127.0.0.1:7300/v1/mcp\",\n\t\t\t\"headers\": {\n\t\t\t\t\"Authorization\": \"Bearer k1\"\n\t\t\t},\n\t\t\t\"timeoutSeconds\": 600\n\t\t}\n\t},\n\t\"selectedAuthType\": \"oauth-personal\"\n}\n"
+            "{\n\t\"theme\": \"GitHub\",\n\t\"mcpServers\": {\n\t\t\"docs\": {\n\t\t\t\"command\": \"docs-mcp\"\n\t\t},\n\t\t\"super-voice\": {\n\t\t\t\"serverUrl\": \"http://127.0.0.1:7300/v1/mcp\",\n\t\t\t\"headers\": {\n\t\t\t\t\"Authorization\": \"Bearer k1\"\n\t\t\t},\n\t\t\t\"timeoutSeconds\": 600,\n\t\t\t\"disabledTools\": [\n\t\t\t\t\"stop\",\n\t\t\t\t\"status\",\n\t\t\t\t\"announce\",\n\t\t\t\t\"session\",\n\t\t\t\t\"turn\"\n\t\t\t]\n\t\t}\n\t},\n\t\"selectedAuthType\": \"oauth-personal\"\n}\n"
         );
         assert_eq!(
             antigravity_without_super_voice(&text).unwrap(),
@@ -1343,7 +1360,14 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
         "Authorization": "Bearer k2"
       },
       "serverUrl": "http://127.0.0.1:7300/v1/mcp",
-      "timeoutSeconds": 600
+      "timeoutSeconds": 600,
+      "disabledTools": [
+        "stop",
+        "status",
+        "announce",
+        "session",
+        "turn"
+      ]
     }
   }
 }

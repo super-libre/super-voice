@@ -81,6 +81,8 @@ struct Entry {
     recordings: usize,
     /// Whether the turn under way was spoken, once its plugin has said.
     spoken: Option<bool>,
+    /// The prompt that started it, as its plugin last said.
+    prompt: Option<String>,
 }
 
 impl Entry {
@@ -270,6 +272,22 @@ impl Sessions {
         self.with(who, |entry| entry.spoken = Some(spoken));
     }
 
+    /// `who`'s plugin says the user sent `prompt`. What its turn was, when
+    /// it is the prompt the turn under way started with, as a hook that runs
+    /// before each model call says again; `None` for a new turn, whose
+    /// prompt it keeps.
+    pub fn prompted(&self, who: &Who, prompt: &str) -> Option<bool> {
+        let mut said = None;
+        self.with(who, |entry| {
+            if entry.prompt.as_deref() == Some(prompt) {
+                said = entry.spoken;
+            } else {
+                entry.prompt = Some(prompt.to_string());
+            }
+        });
+        said
+    }
+
     /// Whether `who`'s turn under way was spoken, once its plugin has said.
     #[must_use]
     pub fn spoken(&self, who: &Who) -> Option<bool> {
@@ -323,6 +341,7 @@ impl Sessions {
                 utterance: None,
                 recordings: 0,
                 spoken: None,
+                prompt: None,
             });
             entries.len() - 1
         };

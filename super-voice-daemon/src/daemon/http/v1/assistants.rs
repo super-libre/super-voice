@@ -53,6 +53,10 @@ pub(crate) struct AssistantKeyValue {
     /// The key. The assistant sends it as `Authorization: Bearer <key>`.
     #[schema(example = "sva_0f3c9a1e")]
     pub(crate) key: String,
+    /// Where the assistant reaches Super Voice's MCP server with it, as
+    /// `GET /assistants` gives it.
+    #[schema(example = "http://127.0.0.1:7300/v1/mcp")]
+    pub(crate) address: String,
 }
 
 /// A coded refusal.
@@ -352,7 +356,11 @@ pub(crate) async fn assistant_key(
         return unknown_assistant();
     };
     match state.daemon.assistant_key(&state.auth, id) {
-        Some(key) => axum::Json(AssistantKeyValue { key }).into_response(),
+        Some(key) => axum::Json(AssistantKeyValue {
+            key,
+            address: state.daemon.mcp_address().await,
+        })
+        .into_response(),
         None => refusal(ErrorCode::NotFound, "not_connected"),
     }
 }

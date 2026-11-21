@@ -16,8 +16,8 @@ one.
 |---------------|-------------|-----------------------------------------------------------------------------------------|----------------------------------------------|
 | `claude-code` | Claude Code | The daemon installs Super Voice's plugin, with `claude plugin install`.                 | The plugin runs `voice assistant-header claude-code`. |
 | `codex`       | Codex       | An entry in `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`, and Super Voice's plugin, from a marketplace the daemon writes to `~/.local/share/super-voice/assistants/codex`, with `codex plugin add`. Codex runs the plugin's hooks once the user trusts them in `/hooks`. | Codex runs `voice assistant-header codex`.   |
-| `opencode`    | OpenCode    | An entry in its global `opencode.json`, under `$XDG_CONFIG_HOME/opencode`, or `~/.config/opencode`. | Written into the entry.             |
-| `antigravity` | Antigravity CLI (`agy`) | An entry in `~/.gemini/config/mcp_config.json`, which the Antigravity App and IDE read too. | Written into the entry.  |
+| `opencode`    | OpenCode    | An entry in its global `opencode.json`, under `$XDG_CONFIG_HOME/opencode`, or `~/.config/opencode`, and Super Voice's plugin, written to `plugins/super-voice` beside it, which OpenCode loads by itself. | Written into the entry, which the plugin reads too. |
+| `antigravity` | Antigravity CLI (`agy`) | An entry in `~/.gemini/config/mcp_config.json`, which the Antigravity App and IDE read too, and Super Voice's plugin, written to `~/.local/share/super-voice/assistants/antigravity` and installed with `agy plugin install`. Its hooks run `voice assistant-hook antigravity <event>`. | Written into the entry. The hooks get it from `voice`. |
 
 The entry is named `super-voice` in every file, and everything else in the file
 is kept. `OpenCode`'s file is edited in place, so its comments and trailing
@@ -252,15 +252,17 @@ revokes it. Answers the whole list.
 
 ## `GET /assistants/{id}/key`
 
-The key the daemon made for the assistant when it was connected. It is what
+The key the daemon made for the assistant when it was connected, and the
+address it reaches the MCP server at with it. The key is what
 `voice assistant-header <id>` prints, as
 `{"Authorization":"Bearer <key>"}`, for an assistant that gets its key by
-running that command.
+running that command. `voice assistant-hook` calls the MCP server with both,
+for an assistant whose hooks can only run a command.
 
 **Response (200):**
 
 ```json
-{ "key": "sva_…64hex…" }
+{ "key": "sva_…64hex…", "address": "http://127.0.0.1:7300/v1/mcp" }
 ```
 
 **Errors:**
