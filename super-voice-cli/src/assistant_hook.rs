@@ -123,7 +123,8 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
 /// The answer to a tool call: `speak` and `listen` named as this
 /// conversation's, so Super Voice holds them to its turn. agy calls an MCP
 /// tool as `call_mcp_tool`, with each argument JSON in a string, or as
-/// `mcp_<server>_<tool>`.
+/// `mcp_<server>_<tool>`. What a hook overwrites is given as values, not as
+/// JSON in strings: agy passes a string on as it is.
 fn named_call(tool_call: &Value, session: &Value) -> Value {
     let args = &tool_call["args"];
     let decoded = |value: &Value| -> Value {
@@ -145,7 +146,7 @@ fn named_call(tool_call: &Value, session: &Value) -> Value {
             arguments["session"] = session.clone();
             json!({
                 "decision": "allow",
-                "overwrite": { "Arguments": arguments.to_string() },
+                "overwrite": { "Arguments": arguments },
             })
         }
         Some(name)
@@ -198,9 +199,10 @@ mod tests {
         });
         let answer = named_call(&lazy, &session);
         assert_eq!(answer["decision"], "allow");
-        let arguments: Value =
-            serde_json::from_str(answer["overwrite"]["Arguments"].as_str().unwrap()).unwrap();
-        assert_eq!(arguments, json!({ "text": "four", "session": session }));
+        assert_eq!(
+            answer["overwrite"]["Arguments"],
+            json!({ "text": "four", "session": session })
+        );
 
         let eager = json!({ "name": "mcp_super-voice_listen", "args": {} });
         assert_eq!(
