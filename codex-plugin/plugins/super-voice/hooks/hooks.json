@@ -1,0 +1,71 @@
+{
+  "description": "Super Voice: list the conversation, tell a dictated prompt from a typed one, read a dictated prompt's answer aloud, and say aloud when Codex needs your permission.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "super-voice",
+            "tool": "session",
+            "input": {
+              "event": "seen",
+              "hook": "codex",
+              "session": { "id": "${session_id}", "folder": "${cwd}" }
+            }
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "super-voice",
+            "tool": "turn",
+            "input": {
+              "event": "prompt",
+              "text": "${prompt}",
+              "hook": "codex",
+              "session": { "id": "${session_id}", "folder": "${cwd}" }
+            }
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "super-voice",
+            "tool": "turn",
+            "input": {
+              "event": "reply",
+              "text": "${last_assistant_message}",
+              "hook": "codex",
+              "session": { "id": "${session_id}", "folder": "${cwd}" }
+            }
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "super-voice",
+            "tool": "announce",
+            "input": {
+              "text": "Codex needs your permission.",
+              "hook": "codex",
+              "session": { "id": "${session_id}", "folder": "${cwd}" }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

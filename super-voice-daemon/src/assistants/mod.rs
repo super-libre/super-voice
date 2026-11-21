@@ -52,9 +52,34 @@ pub const CLAUDE_MARKETPLACE_VAR: &str = "CLAUDE_MARKETPLACE";
 /// marketplace.
 pub const CLAUDE_PLUGIN: &str = "super-voice@super-voice";
 
-/// How long a `claude plugin` command may run. Adding the marketplace clones
-/// it from GitHub.
-const CLAUDE_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long an assistant's plugin command may run. Adding Claude Code's
+/// marketplace clones it from GitHub.
+const PLUGIN_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Super Voice's plugin for Codex, as Codex names it: the plugin, at the
+/// marketplace.
+pub const CODEX_PLUGIN: &str = "super-voice@super-voice";
+
+/// The marketplace Codex installs Super Voice's plugin from.
+const CODEX_MARKETPLACE: &str = "super-voice";
+
+/// Super Voice's plugin for Codex, as a marketplace of one, by each file's
+/// place in it. The daemon writes it to [`codex_marketplace_dir`] and
+/// installs the plugin from there.
+const CODEX_MARKETPLACE_FILES: [(&str, &str); 3] = [
+    (
+        ".agents/plugins/marketplace.json",
+        include_str!("../../../codex-plugin/.agents/plugins/marketplace.json"),
+    ),
+    (
+        "plugins/super-voice/.codex-plugin/plugin.json",
+        include_str!("../../../codex-plugin/plugins/super-voice/.codex-plugin/plugin.json"),
+    ),
+    (
+        "plugins/super-voice/hooks/hooks.json",
+        include_str!("../../../codex-plugin/plugins/super-voice/hooks/hooks.json"),
+    ),
+];
 
 /// Why an assistant could not be connected or disconnected, or a key made or
 /// revoked.
@@ -70,7 +95,7 @@ pub enum Error {
     NameReserved,
     /// The assistant's config could not be changed.
     Config(String),
-    /// A `claude plugin` command failed.
+    /// An assistant's plugin could not be installed or uninstalled.
     Plugin(String),
     /// The secrets file could not be written.
     Key(String),
@@ -341,7 +366,7 @@ pub async fn install_claude_plugin(claude: &Path) -> Result<(), Error> {
     if marketplace != CLAUDE_MARKETPLACE {
         info!("Installing Claude Code's plugin from {marketplace}, as {var} says");
     }
-    run_claude(
+    run_plugin_command(
         claude,
         &[
             "plugin",
@@ -354,7 +379,7 @@ pub async fn install_claude_plugin(claude: &Path) -> Result<(), Error> {
         &["already"],
     )
     .await?;
-    run_claude(
+    run_plugin_command(
         claude,
         &["plugin", "install", CLAUDE_PLUGIN, "--scope", "user"],
         &["already"],
@@ -369,7 +394,7 @@ pub async fn install_claude_plugin(claude: &Path) -> Result<(), Error> {
 ///
 /// [`Error::Plugin`] when the command fails or runs too long.
 pub async fn uninstall_claude_plugin(claude: &Path) -> Result<(), Error> {
-    run_claude(
+    run_plugin_command(
         claude,
         &["plugin", "uninstall", CLAUDE_PLUGIN, "--scope", "user"],
         &["not installed", "not found"],
@@ -377,28 +402,125 @@ pub async fn uninstall_claude_plugin(claude: &Path) -> Result<(), Error> {
     .await
 }
 
-/// Run `claude` with `args`. A command that fails saying one of `fine` (in
-/// any case) has nothing left to do, and counts as done.
-async fn run_claude(claude: &Path, args: &[&str], fine: &[&str]) -> Result<(), Error> {
-    let shown = format!("claude {}", args.join(" "));
+/// Where Super Voice keeps its plugin for Codex, as a marketplace.
+fn codex_marketplace_dir() -> PathBuf {
+    super_voice_shared::paths::data_dir()
+        .join("assistants")
+        .join("codex")
+}
+
+/// Write `files`, each by its place under `dir`, into `dir`. A plugin
+/// manifest's `version` becomes Super Voice's own, so an assistant that keeps
+/// a plugin per version takes this release's.
+fn write_plugin_files(dir: &Path, files: &[(&str, &str)]) -> std::io::Result<()> {
+    for (place, text) in files {
+        let path = dir.join(place);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let text = if place.ends_with("plugin.json") {
+            with_version(text, env!("CARGO_PKG_VERSION"))
+        } else {
+            (*text).to_string()
+        };
+        std::fs::write(&path, text)?;
+    }
+    Ok(())
+}
+
+/// A plugin manifest, `text`, with `version`.
+fn with_version(text: &str, version: &str) -> String {
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(mut manifest) => {
+            manifest["version"] = version.into();
+            serde_json::to_string_pretty(&manifest).map_or_else(|_| text.to_string(), |t| t + "\n")
+        }
+        Err(_) => text.to_string(),
+    }
+}
+
+/// Install Super Voice's plugin in Codex, with `codex`, the program found:
+/// write its marketplace ([`codex_marketplace_dir`]), add it, and install the
+/// plugin from it. Codex runs the plugin's hooks once the user trusts them,
+/// in its `/hooks`.
+///
+/// # Errors
+///
+/// [`Error::Plugin`] when the files cannot be written, or a command fails or
+/// runs too long.
+pub async fn install_codex_plugin(codex: &Path) -> Result<(), Error> {
+    let dir = codex_marketplace_dir();
+    let written = dir.clone();
+    tokio::task::spawn_blocking(move || write_plugin_files(&written, &CODEX_MARKETPLACE_FILES))
+        .await
+        .map_err(|e| Error::Plugin(e.to_string()))?
+        .map_err(|e| Error::Plugin(format!("could not write Codex's plugin: {e}")))?;
+    let source = dir.to_string_lossy();
+    run_plugin_command(
+        codex,
+        &["plugin", "marketplace", "add", &source],
+        &["already"],
+    )
+    .await?;
+    // A plugin already there may be an older release's: it is put in again.
+    run_plugin_command(
+        codex,
+        &["plugin", "remove", CODEX_PLUGIN],
+        &["not installed", "not found", "no plugin"],
+    )
+    .await?;
+    run_plugin_command(codex, &["plugin", "add", CODEX_PLUGIN], &["already"]).await
+}
+
+/// Uninstall Super Voice's plugin from Codex, take its marketplace out, and
+/// delete the marketplace's files. Not installed is fine.
+///
+/// # Errors
+///
+/// [`Error::Plugin`] when a command fails or runs too long.
+pub async fn uninstall_codex_plugin(codex: &Path) -> Result<(), Error> {
+    run_plugin_command(
+        codex,
+        &["plugin", "remove", CODEX_PLUGIN],
+        &["not installed", "not found", "no plugin"],
+    )
+    .await?;
+    run_plugin_command(
+        codex,
+        &["plugin", "marketplace", "remove", CODEX_MARKETPLACE],
+        &["not found", "no marketplace", "not configured"],
+    )
+    .await?;
+    let dir = codex_marketplace_dir();
+    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+    Ok(())
+}
+
+/// Run an assistant's `program` with `args`. A command that fails saying one
+/// of `fine` (in any case) has nothing left to do, and counts as done.
+async fn run_plugin_command(program: &Path, args: &[&str], fine: &[&str]) -> Result<(), Error> {
+    let name = program
+        .file_name()
+        .map_or_else(|| program.to_string_lossy(), |name| name.to_string_lossy());
+    let shown = format!("{name} {}", args.join(" "));
     info!("Running {shown}");
-    let mut command = tokio::process::Command::new(claude);
+    let mut command = tokio::process::Command::new(program);
     command
         .args(args)
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
     // A program installed with npm runs `node` through `env`, and a service's
     // `PATH` may not reach it.
-    if let Some(path) = child_path(claude) {
+    if let Some(path) = child_path(program) {
         command.env("PATH", path);
     }
-    let output = match tokio::time::timeout(CLAUDE_TIMEOUT, command.output()).await {
+    let output = match tokio::time::timeout(PLUGIN_COMMAND_TIMEOUT, command.output()).await {
         Ok(Ok(output)) => output,
         Ok(Err(e)) => return Err(Error::Plugin(format!("could not run {shown}: {e}"))),
         Err(_) => {
             return Err(Error::Plugin(format!(
                 "{shown} ran for more than {} seconds",
-                CLAUDE_TIMEOUT.as_secs()
+                PLUGIN_COMMAND_TIMEOUT.as_secs()
             )));
         }
     };
@@ -458,6 +580,42 @@ mod tests {
             .map(|id| program_name(*id))
             .collect();
         assert_eq!(names, ["claude", "codex", "opencode", "agy"]);
+    }
+
+    /// A plugin's files are written with Super Voice's own version in its
+    /// manifest, so an assistant that keeps one per version takes the new
+    /// release's.
+    #[test]
+    fn plugin_files_carry_this_release() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plugin_files(dir.path(), &CODEX_MARKETPLACE_FILES).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                dir.path()
+                    .join("plugins/super-voice/.codex-plugin/plugin.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(manifest["hooks"], "./hooks/hooks.json");
+        let hooks: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("plugins/super-voice/hooks/hooks.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        for event in [
+            "SessionStart",
+            "UserPromptSubmit",
+            "Stop",
+            "PermissionRequest",
+        ] {
+            let hook = &hooks["hooks"][event][0]["hooks"][0];
+            assert_eq!(hook["type"], "mcp_tool", "{event}");
+            assert_eq!(hook["server"], "super-voice", "{event}");
+            assert_eq!(hook["input"]["hook"], "codex", "{event}");
+        }
+        assert_eq!(with_version("not json", "1.0.0"), "not json");
     }
 
     #[test]

@@ -171,21 +171,28 @@ impl SuperSTTDaemon {
         Ok(self.list_assistants(auth).await)
     }
 
-    /// Put Super Voice in the config of `id`, with `secret`.
+    /// Put Super Voice in the config of `id`, with `secret`, and its plugin
+    /// in the assistant. Claude Code's plugin is its entry. Another's is
+    /// installed with its program, so one found only by its config gets the
+    /// entry alone.
     async fn write_assistant_entry(&self, id: AssistantId, secret: &str) -> Result<(), Error> {
+        let program = tokio::task::spawn_blocking(move || assistants::find_program(id))
+            .await
+            .ok()
+            .flatten();
         if id == AssistantId::ClaudeCode {
-            let claude = tokio::task::spawn_blocking(move || assistants::find_program(id))
-                .await
-                .ok()
-                .flatten()
-                .ok_or(Error::NotFound)?;
+            let claude = program.ok_or(Error::NotFound)?;
             return assistants::install_claude_plugin(&claude).await;
         }
         let url = self.mcp_address().await;
         let secret = secret.to_string();
         tokio::task::spawn_blocking(move || assistants::write_entry(id, &url, &secret))
             .await
-            .unwrap_or_else(|e| Err(Error::Config(e.to_string())))
+            .unwrap_or_else(|e| Err(Error::Config(e.to_string())))?;
+        match (id, program) {
+            (AssistantId::Codex, Some(codex)) => assistants::install_codex_plugin(&codex).await,
+            _ => Ok(()),
+        }
     }
 
     /// Disconnect assistant `id`: take Super Voice out of its config, revoke
@@ -204,20 +211,25 @@ impl SuperSTTDaemon {
         id: AssistantId,
     ) -> Result<AssistantList, Error> {
         let _changing = self.assistants.changing().await;
-        let removed = if id == AssistantId::ClaudeCode {
-            let claude = tokio::task::spawn_blocking(move || assistants::find_program(id))
-                .await
-                .ok()
-                .flatten();
-            match claude {
-                Some(claude) => assistants::uninstall_claude_plugin(&claude).await,
-                // Without Claude Code there is nothing to uninstall it from.
-                None => Ok(()),
+        let program = tokio::task::spawn_blocking(move || assistants::find_program(id))
+            .await
+            .ok()
+            .flatten();
+        // Without the assistant's program there is no plugin to uninstall.
+        let plugin = match (id, &program) {
+            (AssistantId::ClaudeCode, Some(claude)) => {
+                assistants::uninstall_claude_plugin(claude).await
             }
+            (AssistantId::Codex, Some(codex)) => assistants::uninstall_codex_plugin(codex).await,
+            _ => Ok(()),
+        };
+        let removed = if id == AssistantId::ClaudeCode {
+            plugin
         } else {
-            tokio::task::spawn_blocking(move || assistants::remove_entry(id))
+            let entry = tokio::task::spawn_blocking(move || assistants::remove_entry(id))
                 .await
-                .unwrap_or_else(|e| Err(Error::Config(e.to_string())))
+                .unwrap_or_else(|e| Err(Error::Config(e.to_string())));
+            plugin.and(entry)
         };
         let keys: Vec<String> = auth
             .assistant_keys()

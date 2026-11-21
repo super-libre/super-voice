@@ -15,13 +15,18 @@ one.
 | `id`          | Assistant   | How Super Voice gets in                                                                 | How it gets its key                          |
 |---------------|-------------|-----------------------------------------------------------------------------------------|----------------------------------------------|
 | `claude-code` | Claude Code | The daemon installs Super Voice's plugin, with `claude plugin install`.                 | The plugin runs `voice assistant-header claude-code`. |
-| `codex`       | Codex       | An entry in `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`.                       | Codex runs `voice assistant-header codex`.   |
+| `codex`       | Codex       | An entry in `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`, and Super Voice's plugin, from a marketplace the daemon writes to `~/.local/share/super-voice/assistants/codex`, with `codex plugin add`. Codex runs the plugin's hooks once the user trusts them in `/hooks`. | Codex runs `voice assistant-header codex`.   |
 | `opencode`    | OpenCode    | An entry in its global `opencode.json`, under `$XDG_CONFIG_HOME/opencode`, or `~/.config/opencode`. | Written into the entry.             |
 | `antigravity` | Antigravity CLI (`agy`) | An entry in `~/.gemini/config/mcp_config.json`, which the Antigravity App and IDE read too. | Written into the entry.  |
 
 The entry is named `super-voice` in every file, and everything else in the file
-is kept. A JSON file with comments or trailing commas is refused rather than
-rewritten, since rewriting it would lose them.
+is kept. `OpenCode`'s file is edited in place, so its comments and trailing
+commas stay. Any other JSON file with them is refused rather than rewritten,
+since rewriting it would lose them.
+
+Each plugin's manifest carries Super Voice's own version, so an assistant that
+keeps a plugin per version takes a new release's. Disconnecting uninstalls the
+plugin too.
 
 Each assistant's `state`:
 
