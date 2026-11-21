@@ -63,6 +63,23 @@ pub const CODEX_PLUGIN: &str = "super-voice@super-voice";
 /// The marketplace Codex installs Super Voice's plugin from.
 const CODEX_MARKETPLACE: &str = "super-voice";
 
+/// Super Voice's plugin for `OpenCode`, by each file's name in its folder:
+/// the server part, which holds the connection to Super Voice, and the TUI
+/// part, Talk.
+const OPENCODE_PLUGIN_FILES: [(&str, &str); 5] = [
+    (
+        "server.ts",
+        include_str!("../../../opencode-plugin/server.ts"),
+    ),
+    ("tui.tsx", include_str!("../../../opencode-plugin/tui.tsx")),
+    ("rpc.ts", include_str!("../../../opencode-plugin/rpc.ts")),
+    ("mcp.ts", include_str!("../../../opencode-plugin/mcp.ts")),
+    (
+        "terms.ts",
+        include_str!("../../../opencode-plugin/terms.ts"),
+    ),
+];
+
 /// Super Voice's plugin for Codex, as a marketplace of one, by each file's
 /// place in it. The daemon writes it to [`codex_marketplace_dir`] and
 /// installs the plugin from there.
@@ -402,6 +419,55 @@ pub async fn uninstall_claude_plugin(claude: &Path) -> Result<(), Error> {
     .await
 }
 
+/// Where `OpenCode` finds Super Voice's plugin: `plugins/super-voice` in its
+/// global config folder, which it loads plugins from by itself.
+fn opencode_plugin_dir() -> Option<PathBuf> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|config| !config.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
+    Some(config.join("opencode").join("plugins").join("super-voice"))
+}
+
+/// Install Super Voice's plugin in `OpenCode`: write its files to its
+/// plugin folder ([`opencode_plugin_dir`]), which `OpenCode` loads, and
+/// reloads when they change. The plugin reaches Super Voice with the address
+/// and key in `OpenCode`'s own entry.
+///
+/// # Errors
+///
+/// [`Error::Plugin`] when the files cannot be written.
+pub fn install_opencode_plugin() -> Result<(), Error> {
+    let dir = opencode_plugin_dir()
+        .ok_or_else(|| Error::Plugin("no home folder for OpenCode's plugin".to_string()))?;
+    write_plugin_files(&dir, &OPENCODE_PLUGIN_FILES)
+        .map_err(|e| Error::Plugin(format!("could not write OpenCode's plugin: {e}")))?;
+    info!("Wrote Super Voice's plugin into {}", dir.display());
+    Ok(())
+}
+
+/// Delete Super Voice's plugin from `OpenCode`'s plugin folder. Not there is
+/// fine.
+///
+/// # Errors
+///
+/// [`Error::Plugin`] when the folder is there and cannot be deleted.
+pub fn uninstall_opencode_plugin() -> Result<(), Error> {
+    let Some(dir) = opencode_plugin_dir() else {
+        return Ok(());
+    };
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => {
+            info!("Deleted Super Voice's plugin from {}", dir.display());
+            Ok(())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(Error::Plugin(format!(
+            "could not delete OpenCode's plugin: {e}"
+        ))),
+    }
+}
+
 /// Where Super Voice keeps its plugin for Codex, as a marketplace.
 fn codex_marketplace_dir() -> PathBuf {
     super_voice_shared::paths::data_dir()
@@ -616,6 +682,30 @@ mod tests {
             assert_eq!(hook["input"]["hook"], "codex", "{event}");
         }
         assert_eq!(with_version("not json", "1.0.0"), "not json");
+    }
+
+    /// OpenCode's plugin has its server and TUI parts, and every file they
+    /// import.
+    #[test]
+    fn opencode_plugin_has_every_part() {
+        let names: Vec<&str> = OPENCODE_PLUGIN_FILES
+            .iter()
+            .map(|(name, _)| *name)
+            .collect();
+        for (name, text) in OPENCODE_PLUGIN_FILES {
+            assert!(!text.is_empty(), "{name}");
+            for import in ["./mcp", "./rpc", "./terms"] {
+                if text.contains(&format!("from '{import}'")) {
+                    let file = import.trim_start_matches("./");
+                    assert!(
+                        names.iter().any(|name| name.starts_with(file)),
+                        "{name} imports {import}"
+                    );
+                }
+            }
+        }
+        assert!(OPENCODE_PLUGIN_FILES[0].1.contains("Plugin.define"));
+        assert!(OPENCODE_PLUGIN_FILES[1].1.contains("session.composer.top"));
     }
 
     #[test]

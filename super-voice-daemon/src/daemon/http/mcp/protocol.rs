@@ -93,6 +93,9 @@ pub(crate) enum Tool {
         question: Option<String>,
         /// What the conversation tells about what the user will say.
         context: Option<ExtraContext>,
+        /// The user asked for it, with their plugin's Talk: a typed turn
+        /// does not refuse it.
+        talk: bool,
     },
     /// The plugin's: stop the session's own speech and recording.
     Stop,
@@ -272,6 +275,7 @@ impl Tool {
                 Ok(Self::Listen {
                     question,
                     context: listen_context(&args["context"])?,
+                    talk: args["talk"].as_bool().unwrap_or(false),
                 })
             }
             "stop" if access.plugin != Plugin::None => Ok(Self::Stop),
@@ -773,7 +777,8 @@ mod tests {
                 id: json!(3),
                 tool: Tool::Listen {
                     question: None,
-                    context: None
+                    context: None,
+                    talk: false
                 }
             }
         );
@@ -905,14 +910,16 @@ mod tests {
             call("listen", json!({})),
             Ok(Tool::Listen {
                 question: None,
-                context: None
+                context: None,
+                talk: false
             })
         );
         assert_eq!(
             call("listen", json!({ "question": "Which one?" })),
             Ok(Tool::Listen {
                 question: Some("Which one?".to_string()),
-                context: None
+                context: None,
+                talk: false
             })
         );
         assert_eq!(
@@ -951,7 +958,8 @@ mod tests {
             Tool::parse(&json!({ "name": "listen" }), both()),
             Ok(Tool::Listen {
                 question: None,
-                context: None
+                context: None,
+                talk: false
             })
         );
     }

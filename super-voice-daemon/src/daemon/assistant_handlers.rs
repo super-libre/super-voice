@@ -191,6 +191,11 @@ impl SuperSTTDaemon {
             .unwrap_or_else(|e| Err(Error::Config(e.to_string())))?;
         match (id, program) {
             (AssistantId::Codex, Some(codex)) => assistants::install_codex_plugin(&codex).await,
+            (AssistantId::OpenCode, _) => {
+                tokio::task::spawn_blocking(assistants::install_opencode_plugin)
+                    .await
+                    .unwrap_or_else(|e| Err(Error::Plugin(e.to_string())))
+            }
             _ => Ok(()),
         }
     }
@@ -221,6 +226,11 @@ impl SuperSTTDaemon {
                 assistants::uninstall_claude_plugin(claude).await
             }
             (AssistantId::Codex, Some(codex)) => assistants::uninstall_codex_plugin(codex).await,
+            (AssistantId::OpenCode, _) => {
+                tokio::task::spawn_blocking(assistants::uninstall_opencode_plugin)
+                    .await
+                    .unwrap_or_else(|e| Err(Error::Plugin(e.to_string())))
+            }
             _ => Ok(()),
         };
         let removed = if id == AssistantId::ClaudeCode {
