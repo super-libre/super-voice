@@ -17,7 +17,7 @@
 //! daemon answers one.
 
 use super::identity::identity;
-use super::protocol::{self, Access, Handled, Tool};
+use super::protocol::{self, Access, Handled, Plugin, Tool};
 use super::tools;
 use crate::assistants::calls::Caller;
 use crate::assistants::sessions::Who;
@@ -85,10 +85,11 @@ pub(crate) async fn post(
     let access = Access {
         may_speak: session.meta.scopes.iter().any(|s| s == "speak"),
         may_listen: session.meta.scopes.iter().any(|s| s == "transcribe"),
-        has_plugin: matches!(
-            assistant,
-            Some(AssistantId::ClaudeCode | AssistantId::Codex)
-        ),
+        plugin: match assistant {
+            Some(AssistantId::ClaudeCode) => Plugin::HidesItsTools,
+            Some(AssistantId::Codex) => Plugin::ReadsTheMark,
+            _ => Plugin::None,
+        },
     };
     match protocol::handle(&message, access) {
         Handled::Reply(reply)

@@ -88,9 +88,11 @@ recording in the way, and so on. Silence is not an error: `listen` answers
 ### The plugin's tools
 
 Claude Code and Codex also get four tools their plugin calls itself, never the
-model. Each is marked `"_meta": {"ui": {"visibility": ["app"]}}`: Codex keeps
-such a tool from its model, and Claude Code's plugin hides them itself. A key
-made by hand, OpenCode and the Antigravity CLI don't get them.
+model. For Codex each is marked `"_meta": {"ui": {"visibility": ["app"]}}`,
+which Codex reads to keep it from its model. For Claude Code they go unmarked:
+Claude Code reads the mark too, and then refuses its plugin's own calls to the
+tool, so the plugin hides them from the model itself. A key made by hand,
+OpenCode and the Antigravity CLI don't get them.
 
 | Tool       | What it does                                                                                     |
 |------------|--------------------------------------------------------------------------------------------------|

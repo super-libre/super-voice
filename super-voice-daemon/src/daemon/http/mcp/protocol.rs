@@ -48,9 +48,24 @@ pub(crate) struct Access {
     pub(crate) may_speak: bool,
     /// It holds `transcribe`.
     pub(crate) may_listen: bool,
-    /// An assistant whose plugin works through its own connection, and can
-    /// keep the plugin's tools from its model: Claude Code and Codex.
-    pub(crate) has_plugin: bool,
+    /// Its assistant's plugin, which calls tools of its own.
+    pub(crate) plugin: Plugin,
+}
+
+/// An assistant's plugin that works through its own connection, and how the
+/// tools it calls itself are kept from the assistant's model.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Plugin {
+    /// No plugin: the model's tools alone.
+    #[default]
+    None,
+    /// Claude Code's, which hides them from the model itself. Claude Code
+    /// keeps a tool marked for the app alone from the plugin's own calls
+    /// too, so they go unmarked.
+    HidesItsTools,
+    /// Codex's: its client keeps a tool marked for the app alone from its
+    /// model, so they are marked.
+    ReadsTheMark,
 }
 
 /// What one message comes to.
@@ -219,23 +234,25 @@ impl Tool {
                     context: listen_context(&args["context"])?,
                 })
             }
-            "stop" if access.has_plugin => Ok(Self::Stop),
-            "status" if access.has_plugin => Ok(Self::Status),
+            "stop" if access.plugin != Plugin::None => Ok(Self::Stop),
+            "status" if access.plugin != Plugin::None => Ok(Self::Status),
             // `message` is what a hook's notification carries.
-            "announce" if access.has_plugin && access.may_speak => Ok(Self::Announce {
+            "announce" if access.plugin != Plugin::None && access.may_speak => Ok(Self::Announce {
                 text: match optional_text(args, "text")? {
                     Some(text) => text,
                     None => required_text(args, "message")
                         .map_err(|_| CallError::Arguments("`text` is required".to_string()))?,
                 },
             }),
-            "session" if access.has_plugin => match optional_text(args, "event")?.as_deref() {
-                Some("start") => Ok(Self::Session { started: true }),
-                Some("end") => Ok(Self::Session { started: false }),
-                _ => Err(CallError::Arguments(
-                    "`event` is \"start\" or \"end\"".to_string(),
-                )),
-            },
+            "session" if access.plugin != Plugin::None => {
+                match optional_text(args, "event")?.as_deref() {
+                    Some("start") => Ok(Self::Session { started: true }),
+                    Some("end") => Ok(Self::Session { started: false }),
+                    _ => Err(CallError::Arguments(
+                        "`event` is \"start\" or \"end\"".to_string(),
+                    )),
+                }
+            }
             other => Err(CallError::UnknownTool(other.to_string())),
         }
     }
@@ -357,17 +374,20 @@ fn tools(access: Access) -> Vec<Value> {
             "inputSchema": { "type": "object", "properties": properties },
         }));
     }
-    if access.has_plugin {
-        tools.extend(plugin_tools(access.may_speak));
+    if access.plugin != Plugin::None {
+        tools.extend(plugin_tools(
+            access.may_speak,
+            access.plugin == Plugin::ReadsTheMark,
+        ));
     }
     tools
 }
 
-/// The tools an assistant's plugin calls itself. Each is marked for the app
-/// alone, which Codex reads to keep it from its model; Claude Code's plugin
-/// hides them itself.
-fn plugin_tools(may_speak: bool) -> Vec<Value> {
-    let for_the_app = json!({ "ui": { "visibility": ["app"] } });
+/// The tools an assistant's plugin calls itself. With `marked`, each is
+/// marked for the app alone, which Codex reads to keep it from its model.
+/// Claude Code reads the mark too, and then refuses its plugin's own calls,
+/// so its plugin hides them itself instead.
+fn plugin_tools(may_speak: bool, marked: bool) -> Vec<Value> {
     let empty = json!({ "type": "object", "properties": {} });
     let mut tools = vec![
         json!({
@@ -376,7 +396,6 @@ fn plugin_tools(may_speak: bool) -> Vec<Value> {
             "description": "Stop this session's own speech, and end its recording: what it heard so far is \
                 still transcribed. Another session's speech and recording are left alone.",
             "inputSchema": empty,
-            "_meta": for_the_app,
         }),
         json!({
             "name": "status",
@@ -384,7 +403,6 @@ fn plugin_tools(may_speak: bool) -> Vec<Value> {
             "description": "Whether this session's own speech is playing, and whether it is recording, as \
                 {\"speaking\": bool, \"listening\": bool}.",
             "inputSchema": empty,
-            "_meta": for_the_app,
         }),
         json!({
             "name": "session",
@@ -395,7 +413,6 @@ fn plugin_tools(may_speak: bool) -> Vec<Value> {
                 "properties": { "event": { "type": "string", "enum": ["start", "end"] } },
                 "required": ["event"],
             },
-            "_meta": for_the_app,
         }),
     ];
     if may_speak {
@@ -409,8 +426,12 @@ fn plugin_tools(may_speak: bool) -> Vec<Value> {
                 "properties": { "text": { "type": "string", "description": "The notice." } },
                 "required": ["text"],
             },
-            "_meta": for_the_app,
         }));
+    }
+    if marked {
+        for tool in &mut tools {
+            tool["_meta"] = json!({ "ui": { "visibility": ["app"] } });
+        }
     }
     tools
 }
@@ -445,7 +466,7 @@ mod tests {
         Access {
             may_speak: true,
             may_listen: true,
-            has_plugin: false,
+            plugin: Plugin::None,
         }
     }
 
@@ -489,14 +510,23 @@ mod tests {
         };
         assert_eq!(names(both()), ["speak", "listen"]);
         let plugin = Access {
-            has_plugin: true,
+            plugin: Plugin::HidesItsTools,
             ..both()
         };
         assert_eq!(
             names(plugin),
             ["speak", "listen", "stop", "status", "session", "announce"]
         );
+        // Claude Code's are not marked: it would refuse its plugin's calls.
         let tools = reply(&list, plugin)["result"]["tools"].clone();
+        assert_eq!(tools[0].get("_meta"), None, "the model's own tools");
+        assert_eq!(tools[2].get("_meta"), None, "{}", tools[2]);
+        // Codex's are, so it keeps them from its model.
+        let codex = Access {
+            plugin: Plugin::ReadsTheMark,
+            ..plugin
+        };
+        let tools = reply(&list, codex)["result"]["tools"].clone();
         assert_eq!(tools[0].get("_meta"), None, "the model's own tools");
         assert_eq!(tools[2]["_meta"]["ui"]["visibility"], json!(["app"]));
         let quiet = Access {
@@ -511,7 +541,7 @@ mod tests {
     #[test]
     fn the_plugins_calls_parse() {
         let plugin = Access {
-            has_plugin: true,
+            plugin: Plugin::HidesItsTools,
             ..both()
         };
         let call = |name: &str, arguments: Value| {
