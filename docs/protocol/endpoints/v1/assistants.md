@@ -193,7 +193,8 @@ Answers the whole list.
 
 1. `announce_when_needed`: whether Super Voice says aloud when the assistant
    needs the user, like Claude Code's own notices that it needs a permission
-   or an answer. Only Claude Code announces, through its plugin.
+   or an answer. Claude Code, Codex and OpenCode announce, through their
+   plugins; the Antigravity CLI has no hook for it.
 2. `conversation_context`: whether its `listen` calls are heard with the
    context they bring from the conversation.
 

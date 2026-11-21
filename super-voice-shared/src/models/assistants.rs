@@ -79,7 +79,7 @@ pub struct Assistant {
     pub state: AssistantState,
     /// Whether Super Voice says aloud when the assistant needs the user, like
     /// Claude Code's own notices that it needs a permission or an answer.
-    /// Only Claude Code announces, through its plugin.
+    /// Claude Code, Codex and `OpenCode` announce, through their plugins.
     pub announce_when_needed: bool,
     /// Whether its `listen` calls are heard with the context they bring from
     /// the conversation, on top of the user's own.
