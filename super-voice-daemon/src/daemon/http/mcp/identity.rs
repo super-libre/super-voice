@@ -43,7 +43,11 @@ pub(crate) fn identity(params: &Value) -> Named {
         None,
     );
 
-    let (codex_id, codex_agent) = match (text(&meta["sessionId"]), text(&meta["threadId"])) {
+    // Codex before 0.156 sends no `sessionId`; its turn metadata names the
+    // conversation as `session_id`.
+    let codex_root = text(&meta["sessionId"])
+        .or_else(|| codex_turn(meta).and_then(|turn| text(&turn["session_id"])));
+    let (codex_id, codex_agent) = match (codex_root, text(&meta["threadId"])) {
         (Some(root), Some(thread)) if root != thread => (Some(root), Some(thread)),
         (Some(root), _) => (Some(root), None),
         (None, thread) => (thread, None),
@@ -67,18 +71,19 @@ fn fill(named: &mut Named, id: Option<String>, agent: Option<String>, folder: Op
     }
 }
 
-/// The first git root Codex names for the turn. `x-codex-turn-metadata` may
-/// come as an object or as its JSON text.
+/// Codex's `x-codex-turn-metadata`, which may come as an object or as its
+/// JSON text.
+fn codex_turn(meta: &Value) -> Option<Value> {
+    match &meta["x-codex-turn-metadata"] {
+        Value::String(json) => serde_json::from_str(json).ok(),
+        Value::Object(_) => Some(meta["x-codex-turn-metadata"].clone()),
+        _ => None,
+    }
+}
+
+/// The first git root Codex names for the turn.
 fn codex_folder(meta: &Value) -> Option<String> {
-    let turn = &meta["x-codex-turn-metadata"];
-    let parsed;
-    let turn = if let Value::String(json) = turn {
-        parsed = serde_json::from_str::<Value>(json).ok()?;
-        &parsed
-    } else {
-        turn
-    };
-    turn["workspaces"]
+    codex_turn(meta)?["workspaces"]
         .as_object()?
         .keys()
         .find_map(|root| text(&Value::from(root.as_str())))
@@ -161,6 +166,20 @@ mod tests {
             },
         });
         assert_eq!(identity(&main), named(Some("root-1"), None, Some("/srv/x")));
+
+        // Codex 0.155 sends no `sessionId`: the turn names the conversation.
+        let older = json!({
+            "_meta": {
+                "threadId": "thread-2",
+                "x-codex-turn-metadata": "{\"session_id\":\"root-1\",\"thread_id\":\"thread-2\"}",
+            },
+        });
+        assert_eq!(
+            identity(&older),
+            named(Some("root-1"), Some("thread-2"), None)
+        );
+        let alone = json!({ "_meta": { "threadId": "root-1" } });
+        assert_eq!(identity(&alone), named(Some("root-1"), None, None));
     }
 
     #[test]
