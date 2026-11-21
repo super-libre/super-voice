@@ -16,8 +16,9 @@
 //! [`read`] and [`update`] are the file wrappers around them. Everything else
 //! in a file is kept: comments and layout in Codex's TOML, and keys and their
 //! order in the JSON files. `OpenCode` also reads comments and trailing
-//! commas, which a JSON parser would drop, so a JSON file with them is
-//! refused, not rewritten.
+//! commas, which a JSON parser would drop, so its file is edited in place
+//! when it has them. Any other JSON file with them is refused, not
+//! rewritten.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -40,6 +41,9 @@ pub enum Error {
     /// which rewriting it would lose.
     #[error("the file is not plain JSON, so it is left as it is: {0}")]
     NotPlainJson(#[from] serde_json::Error),
+    /// The file is not JSON, even with comments and trailing commas.
+    #[error("the file is not JSON: {0}")]
+    NotJson(String),
     /// The file is JSON, but not an object.
     #[error("the file is not a JSON object")]
     NotAnObject,
@@ -272,12 +276,19 @@ pub fn opencode_file() -> Option<PathBuf> {
 /// there is updated in place, keeping the keys and headers it has of its
 /// own; one in the other place is taken out, so there is only one.
 ///
+/// A file with comments or trailing commas, which `OpenCode` reads, is
+/// edited in place, so they stay.
+///
 /// # Errors
 ///
-/// When `text` is not plain JSON, or a key on the way to the entry is not an
+/// When `text` is not JSON, or a key on the way to the entry is not an
 /// object.
 pub fn opencode_with_super_voice(text: &str, url: &str, key: &str) -> Result<String, Error> {
-    let mut root = json_object(text)?;
+    let mut root = match json_object(text) {
+        Ok(root) => root,
+        Err(Error::NotPlainJson(_)) => return jsonc::opencode_with_super_voice(text, url, key),
+        Err(e) => return Err(e),
+    };
     let mcp = object_at(&mut root, "mcp", "mcp")?;
     let listed_the_new_way = mcp.get("servers").is_some_and(Value::is_object);
     let entry = if listed_the_new_way {
@@ -310,11 +321,17 @@ pub fn opencode_with_super_voice(text: &str, url: &str, key: &str) -> Result<Str
 /// `mcp.servers`. `mcp.servers` and `mcp` go too if that leaves them empty.
 /// `text` as it is when it has none.
 ///
+/// A file with comments or trailing commas is edited in place, so they stay.
+///
 /// # Errors
 ///
-/// When `text` is not plain JSON.
+/// When `text` is not JSON.
 pub fn opencode_without_super_voice(text: &str) -> Result<String, Error> {
-    let mut root = json_object(text)?;
+    let mut root = match json_object(text) {
+        Ok(root) => root,
+        Err(Error::NotPlainJson(_)) => return jsonc::opencode_without_super_voice(text),
+        Err(e) => return Err(e),
+    };
     let Some(mcp) = root.get_mut("mcp").and_then(Value::as_object_mut) else {
         return Ok(text.to_string());
     };
@@ -337,17 +354,160 @@ pub fn opencode_without_super_voice(text: &str) -> Result<String, Error> {
 }
 
 /// Whether `text`, `OpenCode`'s config, has Super Voice's entry, under `mcp`
-/// or `mcp.servers`. Text that is not plain JSON has none.
+/// or `mcp.servers`, comments and trailing commas or not. Text that is not
+/// JSON has none.
 #[must_use]
 pub fn opencode_has_super_voice(text: &str) -> bool {
-    json_object(text).is_ok_and(|root| {
-        let mcp = root.get("mcp");
-        let v1 = mcp.and_then(|mcp| mcp.get(ENTRY));
-        let v2 = mcp
-            .and_then(|mcp| mcp.get("servers"))
-            .and_then(|servers| servers.get(ENTRY));
-        v1.is_some_and(Value::is_object) || v2.is_some_and(Value::is_object)
-    })
+    let root = match json_object(text) {
+        Ok(root) => root,
+        Err(Error::NotPlainJson(_)) => return jsonc::opencode_has_super_voice(text),
+        Err(_) => return false,
+    };
+    let mcp = root.get("mcp");
+    let v1 = mcp.and_then(|mcp| mcp.get(ENTRY));
+    let v2 = mcp
+        .and_then(|mcp| mcp.get("servers"))
+        .and_then(|servers| servers.get(ENTRY));
+    v1.is_some_and(Value::is_object) || v2.is_some_and(Value::is_object)
+}
+
+/// `OpenCode`'s config when it has comments or trailing commas, which it
+/// reads. Edited in place, so they and everything else in the file stay as
+/// they are; the steps are the plain JSON ones above.
+mod jsonc {
+    use jsonc_parser::ParseOptions;
+    use jsonc_parser::cst::{CstInputValue, CstObject, CstRootNode};
+
+    use super::{ENTRY, Error, OPENCODE_STALE_KEYS, OPENCODE_TIMEOUT_MS};
+
+    fn parse(text: &str) -> Result<CstRootNode, Error> {
+        CstRootNode::parse(text, &ParseOptions::default())
+            .map_err(|e| Error::NotJson(e.to_string()))
+    }
+
+    /// The object at `key` in `object`, made empty when there is none.
+    /// `path` names it in the error when `key` holds something else.
+    fn object_at(object: &CstObject, key: &str, path: &str) -> Result<CstObject, Error> {
+        object
+            .object_value_or_create(key)
+            .ok_or_else(|| Error::NotATable(path.to_string()))
+    }
+
+    /// Give `object` the value `value` at `key`, in place of any it has.
+    fn set(object: &CstObject, key: &str, value: CstInputValue) {
+        match object.get(key) {
+            Some(prop) => prop.set_value(value),
+            None => {
+                object.append(key, value);
+            }
+        }
+    }
+
+    /// Take `key` out of `object`, saying whether it was there.
+    fn remove(object: &CstObject, key: &str) -> bool {
+        object
+            .get(key)
+            .map(jsonc_parser::cst::CstObjectProp::remove)
+            .is_some()
+    }
+
+    /// `object` has no keys.
+    fn is_empty(object: &CstObject) -> bool {
+        object.properties().is_empty()
+    }
+
+    pub(super) fn opencode_with_super_voice(
+        text: &str,
+        url: &str,
+        key: &str,
+    ) -> Result<String, Error> {
+        let root = parse(text)?;
+        let object = root.object_value_or_create().ok_or(Error::NotAnObject)?;
+        let mcp = object_at(&object, "mcp", "mcp")?;
+        let listed_the_new_way = mcp.object_value("servers").is_some();
+        let entry = if listed_the_new_way {
+            remove(&mcp, ENTRY);
+            let servers = object_at(&mcp, "servers", "mcp.servers")?;
+            object_at(&servers, ENTRY, &format!("mcp.servers.{ENTRY}"))?
+        } else {
+            object_at(&mcp, ENTRY, &format!("mcp.{ENTRY}"))?
+        };
+        for stale in OPENCODE_STALE_KEYS {
+            remove(&entry, stale);
+        }
+        set(&entry, "type", "remote".into());
+        set(&entry, "url", url.into());
+        set_bearer(&entry, key);
+        if !listed_the_new_way {
+            let long_enough = entry
+                .get("timeout")
+                .and_then(|prop| prop.value())
+                .and_then(|value| value.as_number_lit())
+                .and_then(|ms| ms.to_string().parse::<i64>().ok())
+                .is_some_and(|ms| ms >= i64::from(OPENCODE_TIMEOUT_MS));
+            if !long_enough {
+                set(
+                    &entry,
+                    "timeout",
+                    CstInputValue::Number(OPENCODE_TIMEOUT_MS.to_string()),
+                );
+            }
+        }
+        Ok(root.to_string())
+    }
+
+    /// Give `entry` an `Authorization` header with `key` as its bearer
+    /// token, keeping its other headers, as the plain JSON `set_bearer`
+    /// does.
+    fn set_bearer(entry: &CstObject, key: &str) {
+        let headers = entry.object_value_or_set("headers");
+        let name = headers
+            .properties()
+            .iter()
+            .filter_map(jsonc_parser::cst::CstObjectProp::decoded_name)
+            .find(|name| name.eq_ignore_ascii_case("authorization"))
+            .unwrap_or_else(|| "Authorization".to_string());
+        set(&headers, &name, format!("Bearer {key}").into());
+    }
+
+    pub(super) fn opencode_without_super_voice(text: &str) -> Result<String, Error> {
+        let root = parse(text)?;
+        let object = root.object_value().ok_or(Error::NotAnObject)?;
+        let Some(mcp) = object.object_value("mcp") else {
+            return Ok(text.to_string());
+        };
+        let mut removed = remove(&mcp, ENTRY);
+        if let Some(servers) = mcp.object_value("servers")
+            && remove(&servers, ENTRY)
+        {
+            removed = true;
+            if is_empty(&servers) {
+                remove(&mcp, "servers");
+            }
+        }
+        if !removed {
+            return Ok(text.to_string());
+        }
+        if is_empty(&mcp) {
+            remove(&object, "mcp");
+        }
+        Ok(root.to_string())
+    }
+
+    pub(super) fn opencode_has_super_voice(text: &str) -> bool {
+        let Some(mcp) = parse(text)
+            .ok()
+            .and_then(|root| root.object_value())
+            .and_then(|object| object.object_value("mcp"))
+        else {
+            return false;
+        };
+        mcp.object_value(ENTRY).is_some()
+            || mcp
+                .object_value("servers")
+                .and_then(|servers| servers.object_value(ENTRY))
+                .is_some()
+    }
 }
 
 // Antigravity CLI (`agy`).
@@ -960,30 +1120,119 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
         }
     }
 
-    /// Comments and trailing commas, which `OpenCode` reads, would be lost
-    /// in a rewrite, so such a file is refused.
+    /// An `opencode.jsonc` like most people's: a comment, and trailing
+    /// commas, which `OpenCode` reads.
+    const OPENCODE_JSONC: &str = r#"{
+  "$schema": "https://opencode.ai/config.json",
+  // Local models.
+  "provider": {
+    "ollama": {
+      "options": {
+        "baseURL": "http://127.0.0.1:11434/v1",
+      },
+    },
+  },
+}
+"#;
+
+    /// Such a file is edited in place: its comment and trailing commas stay,
+    /// and taking the entry out gives back the file as it was.
     #[test]
-    fn opencode_refuses_what_it_would_lose() {
-        let commented = "{\n  // My theme.\n  \"theme\": \"opencode\"\n}\n";
-        let trailing = "{\n  \"theme\": \"opencode\",\n}\n";
-        for text in [commented, trailing] {
-            assert!(matches!(
-                opencode_with_super_voice(text, URL, "k1"),
-                Err(Error::NotPlainJson(_))
-            ));
-            assert!(matches!(
-                opencode_without_super_voice(text),
-                Err(Error::NotPlainJson(_))
-            ));
-        }
+    fn opencode_keeps_comments_and_trailing_commas() {
+        let text = opencode_with_super_voice(OPENCODE_JSONC, URL, "k1").unwrap();
+        assert!(
+            text.starts_with(
+                &OPENCODE_JSONC[..OPENCODE_JSONC
+                    .find(
+                        "  },
+}"
+                    )
+                    .unwrap()]
+            ),
+            "{text}"
+        );
+        assert!(text.contains("// Local models."), "{text}");
+        assert!(
+            text.contains("\"baseURL\": \"http://127.0.0.1:11434/v1\",\n"),
+            "{text}"
+        );
+        assert!(opencode_has_super_voice(&text), "{text}");
+        let root =
+            jsonc_parser::cst::CstRootNode::parse(&text, &jsonc_parser::ParseOptions::default())
+                .unwrap();
+        let entry = root
+            .object_value()
+            .and_then(|root| root.object_value("mcp"))
+            .and_then(|mcp| mcp.object_value(ENTRY))
+            .unwrap();
+        let raw = |object: &jsonc_parser::cst::CstObject, key: &str| {
+            object
+                .get(key)
+                .and_then(|prop| prop.value())
+                .map(|value| value.to_string())
+        };
+        assert_eq!(raw(&entry, "type").as_deref(), Some("\"remote\""));
+        assert_eq!(raw(&entry, "url"), Some(format!("\"{URL}\"")));
+        assert_eq!(
+            entry
+                .object_value("headers")
+                .and_then(|headers| raw(&headers, "Authorization"))
+                .as_deref(),
+            Some("\"Bearer k1\"")
+        );
+        assert_eq!(
+            raw(&entry, "timeout"),
+            Some(OPENCODE_TIMEOUT_MS.to_string())
+        );
+
+        // Connecting again only changes the key.
+        let again = opencode_with_super_voice(&text, URL, "k2").unwrap();
+        assert_eq!(again, text.replace("Bearer k1", "Bearer k2"));
+
+        assert_eq!(opencode_without_super_voice(&text).unwrap(), OPENCODE_JSONC);
+        assert!(!opencode_has_super_voice(OPENCODE_JSONC));
+        assert_eq!(
+            opencode_without_super_voice(OPENCODE_JSONC).unwrap(),
+            OPENCODE_JSONC
+        );
+    }
+
+    /// With comments, an entry under `mcp.servers` is found and updated
+    /// there, as it is in plain JSON.
+    #[test]
+    fn opencode_jsonc_keeps_the_new_way_of_listing() {
+        let text = "{\n  // Servers.\n  \"mcp\": {\"servers\": {\"docs\": {}}},\n}\n";
+        let connected = opencode_with_super_voice(text, URL, "k1").unwrap();
+        assert!(opencode_has_super_voice(&connected), "{connected}");
+        assert!(connected.contains("\"servers\""), "{connected}");
+        assert!(!connected.contains("timeout"), "{connected}");
+        assert_eq!(
+            opencode_without_super_voice(&connected)
+                .unwrap()
+                .contains(ENTRY),
+            false
+        );
+    }
+
+    /// What can't be read, or holds something else on the way to the entry,
+    /// is refused and left as it is.
+    #[test]
+    fn opencode_refuses_what_it_cannot_edit() {
+        assert!(matches!(
+            opencode_with_super_voice("{ nope", URL, "k1"),
+            Err(Error::NotJson(_))
+        ));
         assert!(matches!(
             opencode_with_super_voice("[]", URL, "k1"),
             Err(Error::NotAnObject)
         ));
-        assert!(matches!(
-            opencode_with_super_voice(r#"{"mcp": 3}"#, URL, "k1"),
-            Err(Error::NotATable(path)) if path == "mcp"
-        ));
+        for text in [r#"{"mcp": 3}"#, "{\n  // Off.\n  \"mcp\": 3,\n}\n"] {
+            assert!(matches!(
+                opencode_with_super_voice(text, URL, "k1"),
+                Err(Error::NotATable(path)) if path == "mcp"
+            ));
+        }
+        assert!(!opencode_has_super_voice("{ nope"));
     }
 
     // Antigravity CLI.
@@ -1146,15 +1395,16 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
         assert!(!dir.path().join("missing").exists());
     }
 
-    /// A transform that fails leaves the file as it was.
+    /// A transform that fails leaves the file as it was: here a comment the
+    /// Antigravity CLI's plain JSON would lose.
     #[test]
     fn update_leaves_a_file_it_would_lose() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("opencode.jsonc");
-        let commented = "{\n  // Mine.\n  \"theme\": \"opencode\"\n}\n";
+        let path = dir.path().join("mcp_config.json");
+        let commented = "{\n  // Mine.\n  \"mcpServers\": {}\n}\n";
         std::fs::write(&path, commented).unwrap();
         assert!(matches!(
-            update(&path, |text| opencode_with_super_voice(text, URL, "k1")),
+            update(&path, |text| antigravity_with_super_voice(text, URL, "k1")),
             Err(Error::NotPlainJson(_))
         ));
         assert_eq!(read(&path).unwrap(), commented);
