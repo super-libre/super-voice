@@ -387,6 +387,7 @@ fn tools(access: Access) -> Vec<Value> {
                 },
                 "required": ["text"],
             },
+            "annotations": local_audio(),
         }));
     }
     if access.may_listen {
@@ -431,6 +432,7 @@ fn tools(access: Access) -> Vec<Value> {
             "title": "Listen",
             "description": description,
             "inputSchema": { "type": "object", "properties": properties },
+            "annotations": local_audio(),
         }));
     }
     if access.plugin != Plugin::None {
@@ -440,6 +442,19 @@ fn tools(access: Access) -> Vec<Value> {
         ));
     }
     tools
+}
+
+/// What `speak` and `listen` do, as MCP's tool annotations say it: they play
+/// or record audio on this machine, and change nothing else. A client may
+/// run such a tool without asking the user first, as Codex does; otherwise
+/// each spoken answer would wait on an approval.
+fn local_audio() -> Value {
+    json!({
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+    })
 }
 
 /// The tools an assistant's plugin calls itself. With `marked`, each is
@@ -740,6 +755,22 @@ mod tests {
         };
         assert_eq!(names(listen_only), ["listen"]);
         assert!(names(Access::default()).is_empty());
+    }
+
+    /// `speak` and `listen` say they change nothing and reach nothing
+    /// outside this machine, so a client such as Codex runs them without
+    /// asking the user first.
+    #[test]
+    fn speaking_and_listening_need_no_approval() {
+        let answer = reply(
+            &json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+            both(),
+        );
+        for tool in answer["result"]["tools"].as_array().unwrap() {
+            let annotations = &tool["annotations"];
+            assert_eq!(annotations["destructiveHint"], false, "{tool}");
+            assert_eq!(annotations["openWorldHint"], false, "{tool}");
+        }
     }
 
     /// A caller that may not speak gives `listen` no question.

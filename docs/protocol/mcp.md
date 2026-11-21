@@ -58,6 +58,11 @@ Each assistant is rate-limited by its key, apart from every other client.
 call names only one of those: any other is the JSON-RPC error `-32602`. A key
 the daemon makes has both scopes.
 
+Both tools carry MCP's annotations `destructiveHint: false` and
+`openWorldHint: false`: they play or record audio on this machine, and change
+nothing else. A client may run them without asking the user first, as Codex
+does, so a spoken answer doesn't wait on an approval.
+
 `listen` records with the stop mode "silence or manual": it ends when the user
 stops talking, and the user's own shortcut stops it early. It never toggles a
 recording someone else started: when one is running, the call answers with an
