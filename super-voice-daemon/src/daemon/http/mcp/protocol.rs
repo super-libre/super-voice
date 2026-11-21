@@ -103,10 +103,49 @@ pub(crate) enum Tool {
     Announce {
         text: String,
     },
-    /// The plugin's: the session started or ended.
-    Session {
-        started: bool,
-    },
+    /// The plugin's: the session started, ended, or is still there.
+    Session(SessionEvent),
+    /// The plugin's: the user sent a prompt, or the assistant answered it.
+    Turn(TurnEvent),
+}
+
+/// What a plugin says of its session.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum SessionEvent {
+    /// It started, and checks in while it is open.
+    Start,
+    /// It ended.
+    End,
+    /// It is there, from a plugin that cannot check in, like a hook's.
+    Seen,
+}
+
+/// A turn of a session: the prompt that starts it, and the reply that ends
+/// it.
+#[derive(Debug, PartialEq)]
+pub(crate) enum TurnEvent {
+    /// The user sent `text`. `spoken` when the plugin knows whether it was
+    /// said aloud; when it does not, the daemon tells from its dictation.
+    Prompt { text: String, spoken: Option<bool> },
+    /// The assistant answered with `text`, read aloud when the turn was
+    /// spoken.
+    Reply { text: String },
+}
+
+/// The form a hook takes a tool's answer in, when a hook calls the tool
+/// itself and reads its text as its own output.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(crate) enum Hook {
+    /// Codex's `mcp_tool` hooks: nothing, or the hook's JSON.
+    Codex,
+}
+
+/// The hook a call comes from, by its `hook` argument.
+pub(crate) fn hook_of(params: &Value) -> Option<Hook> {
+    match params["arguments"]["hook"].as_str()? {
+        "codex" => Some(Hook::Codex),
+        _ => None,
+    }
 }
 
 impl Tool {
@@ -118,7 +157,8 @@ impl Tool {
             Self::Stop => "stop",
             Self::Status => "status",
             Self::Announce { .. } => "announce",
-            Self::Session { .. } => "session",
+            Self::Session(_) => "session",
+            Self::Turn(_) => "turn",
         }
     }
 }
@@ -246,10 +286,25 @@ impl Tool {
             }),
             "session" if access.plugin != Plugin::None => {
                 match optional_text(args, "event")?.as_deref() {
-                    Some("start") => Ok(Self::Session { started: true }),
-                    Some("end") => Ok(Self::Session { started: false }),
+                    Some("start") => Ok(Self::Session(SessionEvent::Start)),
+                    Some("end") => Ok(Self::Session(SessionEvent::End)),
+                    Some("seen") => Ok(Self::Session(SessionEvent::Seen)),
                     _ => Err(CallError::Arguments(
-                        "`event` is \"start\" or \"end\"".to_string(),
+                        "`event` is \"start\", \"end\" or \"seen\"".to_string(),
+                    )),
+                }
+            }
+            "turn" if access.plugin != Plugin::None => {
+                // A hook may hand over nothing for a reply it lacks.
+                let text = optional_text(args, "text")?.unwrap_or_default();
+                match optional_text(args, "event")?.as_deref() {
+                    Some("prompt") => Ok(Self::Turn(TurnEvent::Prompt {
+                        text,
+                        spoken: args["spoken"].as_bool(),
+                    })),
+                    Some("reply") => Ok(Self::Turn(TurnEvent::Reply { text })),
+                    _ => Err(CallError::Arguments(
+                        "`event` is \"prompt\" or \"reply\"".to_string(),
                     )),
                 }
             }
@@ -410,7 +465,22 @@ fn plugin_tools(may_speak: bool, marked: bool) -> Vec<Value> {
             "description": "Say that this session started or ended, so Super Voice lists it while it is open.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "event": { "type": "string", "enum": ["start", "end"] } },
+                "properties": { "event": { "type": "string", "enum": ["start", "end", "seen"] } },
+                "required": ["event"],
+            },
+        }),
+        json!({
+            "name": "turn",
+            "title": "Turn",
+            "description": "Say that the user sent a prompt, and whether it was spoken, or that the \
+                assistant answered it. A spoken turn's reply is read aloud.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "event": { "type": "string", "enum": ["prompt", "reply"] },
+                    "text": { "type": "string" },
+                    "spoken": { "type": "boolean" },
+                },
                 "required": ["event"],
             },
         }),
@@ -515,7 +585,9 @@ mod tests {
         };
         assert_eq!(
             names(plugin),
-            ["speak", "listen", "stop", "status", "session", "announce"]
+            [
+                "speak", "listen", "stop", "status", "session", "turn", "announce"
+            ]
         );
         // Claude Code's are not marked: it would refuse its plugin's calls.
         let tools = reply(&list, plugin)["result"]["tools"].clone();
@@ -579,7 +651,7 @@ mod tests {
             call("session", json!({ "event": "end" })),
             Handled::Call {
                 id: json!(1),
-                tool: Tool::Session { started: false }
+                tool: Tool::Session(SessionEvent::End)
             }
         );
         let Handled::Reply(refused) = call("session", json!({ "event": "later" })) else {

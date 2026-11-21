@@ -410,7 +410,9 @@ async fn an_assistant_gets_in_over_tcp_with_its_key_alone() {
     let list = json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" });
     assert_eq!(
         tool_names(&post(&via, &key, &list).await),
-        ["speak", "listen", "stop", "status", "session", "announce"]
+        [
+            "speak", "listen", "stop", "status", "session", "turn", "announce"
+        ]
     );
     // A key made by hand is for a client with no plugin of Super Voice's.
     let (status, made) = daemon
@@ -502,7 +504,9 @@ async fn an_assistants_sessions_are_its_own() {
     .await;
     assert_eq!(
         tool_names(&listed),
-        ["speak", "listen", "stop", "status", "session", "announce"]
+        [
+            "speak", "listen", "stop", "status", "session", "turn", "announce"
+        ]
     );
     for tool in &listed.json()["result"]["tools"].as_array().expect("tools")[2..] {
         assert_eq!(tool["_meta"]["ui"]["visibility"], json!(["app"]), "{tool}");

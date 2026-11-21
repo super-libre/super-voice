@@ -79,6 +79,8 @@ struct Entry {
     opened: bool,
     utterance: Option<String>,
     recordings: usize,
+    /// Whether the turn under way was spoken, once its plugin has said.
+    spoken: Option<bool>,
 }
 
 impl Entry {
@@ -100,10 +102,34 @@ impl Entry {
     }
 }
 
+/// How long after a dictation a prompt that holds it counts as spoken: time
+/// to look it over and send it.
+pub const DICTATION_FRESH: Duration = Duration::from_mins(10);
+
 /// Every session the daemon knows of.
 #[derive(Default)]
 pub struct Sessions {
     entries: Mutex<Vec<Entry>>,
+    /// What the user last dictated into a window, and when: a prompt that
+    /// holds it was spoken.
+    dictated: Mutex<Option<(String, Instant)>>,
+}
+
+/// `text` as it is compared: lower case, letters and digits, one space
+/// between words.
+fn plain(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_lowercase().next().unwrap_or(c)
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// A recording one session's `listen` holds. Dropped when the take ends.
@@ -214,6 +240,46 @@ impl Sessions {
             .any(|entry| entry.is(who) && entry.recordings > 0)
     }
 
+    /// The user dictated `text` into a window, as a prompt may be.
+    pub fn dictated(&self, text: &str) {
+        let text = plain(text);
+        if !text.is_empty() {
+            *self.dictated.lock() = Some((text, Instant::now()));
+        }
+    }
+
+    /// Whether `prompt` holds the user's last dictation, made within
+    /// [`DICTATION_FRESH`] of `now`. A match uses the dictation up, so the
+    /// next prompt is not spoken for it too.
+    pub fn was_dictated(&self, prompt: &str, now: Instant) -> bool {
+        let prompt = plain(prompt);
+        let mut dictated = self.dictated.lock();
+        let matches = dictated.as_ref().is_some_and(|(text, at)| {
+            now.saturating_duration_since(*at) < DICTATION_FRESH
+                && !prompt.is_empty()
+                && (prompt.contains(text.as_str()) || text.contains(prompt.as_str()))
+        });
+        if matches {
+            *dictated = None;
+        }
+        matches
+    }
+
+    /// `who`'s turn under way was `spoken`, or typed.
+    pub fn set_spoken(&self, who: &Who, spoken: bool) {
+        self.with(who, |entry| entry.spoken = Some(spoken));
+    }
+
+    /// Whether `who`'s turn under way was spoken, once its plugin has said.
+    #[must_use]
+    pub fn spoken(&self, who: &Who) -> Option<bool> {
+        self.entries
+            .lock()
+            .iter()
+            .find(|entry| entry.is(who))
+            .and_then(|entry| entry.spoken)
+    }
+
     /// Forget every session of `caller`, whose key was revoked.
     pub fn forget(&self, caller: &Caller) {
         self.entries.lock().retain(|entry| entry.caller != *caller);
@@ -256,6 +322,7 @@ impl Sessions {
                 opened: false,
                 utterance: None,
                 recordings: 0,
+                spoken: None,
             });
             entries.len() - 1
         };
@@ -420,5 +487,43 @@ mod tests {
         assert_eq!(left[0].id.as_deref(), Some("listening"));
         drop(take);
         assert_eq!(sessions.sweep(now + SEEN_IDLE + Duration::from_secs(1)), 1);
+    }
+
+    /// A prompt that holds the user's fresh dictation was spoken, once; one
+    /// typed, or sent long after, was not.
+    #[test]
+    fn a_prompt_holding_a_fresh_dictation_was_spoken() {
+        let sessions = Sessions::default();
+        let now = Instant::now();
+        assert!(!sessions.was_dictated("Open the release notes.", now));
+        sessions.dictated("Open the release notes");
+        assert!(sessions.was_dictated("  open the RELEASE notes! ", now));
+        assert!(
+            !sessions.was_dictated("Open the release notes.", now),
+            "used up"
+        );
+
+        sessions.dictated("open the notes");
+        assert!(!sessions.was_dictated("something else", now));
+        assert!(!sessions.was_dictated(
+            "open the notes",
+            now + DICTATION_FRESH + Duration::from_secs(1)
+        ));
+        sessions.dictated("   ");
+        assert!(!sessions.was_dictated("", now));
+    }
+
+    /// A session's turn is spoken or typed once its plugin says, and the next
+    /// prompt says again.
+    #[test]
+    fn a_turn_is_spoken_or_typed() {
+        let sessions = Sessions::default();
+        let one = who("a", Some("s1"));
+        assert_eq!(sessions.spoken(&one), None);
+        sessions.set_spoken(&one, true);
+        assert_eq!(sessions.spoken(&one), Some(true));
+        sessions.set_spoken(&one, false);
+        assert_eq!(sessions.spoken(&one), Some(false));
+        assert_eq!(sessions.spoken(&who("a", Some("s2"))), None);
     }
 }

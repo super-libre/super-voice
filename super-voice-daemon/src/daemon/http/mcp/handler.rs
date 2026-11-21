@@ -86,9 +86,11 @@ pub(crate) async fn post(
         may_speak: session.meta.scopes.iter().any(|s| s == "speak"),
         may_listen: session.meta.scopes.iter().any(|s| s == "transcribe"),
         plugin: match assistant {
-            Some(AssistantId::ClaudeCode) => Plugin::HidesItsTools,
             Some(AssistantId::Codex) => Plugin::ReadsTheMark,
-            _ => Plugin::None,
+            Some(AssistantId::ClaudeCode | AssistantId::OpenCode | AssistantId::Antigravity) => {
+                Plugin::HidesItsTools
+            }
+            None => Plugin::None,
         },
     };
     match protocol::handle(&message, access) {
@@ -143,6 +145,7 @@ pub(crate) async fn post(
                 who,
                 announces,
                 uses_context,
+                hook: protocol::hook_of(&message["params"]),
             };
             stream_call(Arc::clone(&state.daemon), caller, for_tool, id, tool)
         }

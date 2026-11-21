@@ -17,7 +17,7 @@
 //! 3. `listen` recording stops the recording, and the take is finished all
 //!    the same, so the microphone is freed as at any other stop.
 
-use super::protocol::Tool;
+use super::protocol::{Hook, SessionEvent, Tool, TurnEvent};
 use crate::assistants::sessions::{Sessions, Who};
 use crate::daemon::events::Topic;
 use crate::daemon::recording::{Stopped, TakeSettings};
@@ -39,12 +39,36 @@ use tokio_util::sync::CancellationToken;
 const TICK: Duration = Duration::from_millis(100);
 
 /// Who a call is for: its session, whether the user lets its assistant
-/// announce, and whether its `listen` calls are heard with the context they
-/// bring.
+/// announce, whether its `listen` calls are heard with the context they
+/// bring, and the hook that made the call, if one did.
 pub(crate) struct Caller {
     pub(crate) who: Who,
     pub(crate) announces: bool,
     pub(crate) uses_context: bool,
+    pub(crate) hook: Option<Hook>,
+}
+
+/// Why `speak` and `listen` are refused in a turn the user typed.
+const NOT_SPOKEN_TO: &str = "The user typed this prompt, so answer in writing. Super Voice \
+    speaks and listens only while the user is talking to you by voice.";
+
+/// What the assistant is told beside a prompt the user said aloud.
+const SPOKEN_NOTE: &str = "The user said this aloud, through Super Voice. Your reply will be \
+    read aloud to them: keep it short and plain to listen to, and end with any question you have.";
+
+/// The refusal for `who`, when its plugin said the turn under way was typed.
+fn not_spoken_to(daemon: &SuperSTTDaemon, who: &Who) -> Option<String> {
+    (daemon.assistants.sessions.spoken(who) == Some(false)).then(|| NOT_SPOKEN_TO.to_string())
+}
+
+/// `answer`, or for a hook, which reads the text as its own output,
+/// nothing.
+fn for_caller(caller: &Caller, answer: String) -> String {
+    if caller.hook.is_some() {
+        String::new()
+    } else {
+        answer
+    }
 }
 
 /// What `tool` comes to: its text, or the error the model sees. `None` when
@@ -56,7 +80,11 @@ pub(crate) async fn run(
     cancel: &CancellationToken,
 ) -> Option<Result<String, String>> {
     let who = &caller.who;
+    let sessions = &daemon.assistants.sessions;
     match tool {
+        Tool::Speak { .. } | Tool::Listen { .. } if not_spoken_to(daemon, who).is_some() => {
+            not_spoken_to(daemon, who).map(Err)
+        }
         Tool::Speak { text } => speak(daemon, who, text, cancel).await,
         Tool::Listen { question, context } => {
             let extra = take_context(question.as_deref(), context, caller.uses_context);
@@ -64,20 +92,71 @@ pub(crate) async fn run(
         }
         Tool::Stop => Some(Ok(stop(daemon, who).await)),
         Tool::Status => Some(Ok(status(daemon, who))),
-        Tool::Announce { text } if caller.announces => speak(daemon, who, text, cancel).await,
-        Tool::Announce { .. } => Some(Ok(
+        Tool::Announce { text } if caller.announces => speak(daemon, who, text, cancel)
+            .await
+            .map(|said| said.map(|answer| for_caller(caller, answer))),
+        Tool::Announce { .. } => Some(Ok(for_caller(
+            caller,
             "Not said: the user turned announcing off for this assistant.".to_string(),
-        )),
-        Tool::Session { started } => {
-            let sessions = &daemon.assistants.sessions;
-            Some(Ok(if started {
-                sessions.open(who);
-                "Started.".to_string()
-            } else {
-                sessions.close(who);
-                "Ended.".to_string()
-            }))
+        ))),
+        Tool::Session(event) => Some(Ok(for_caller(
+            caller,
+            match event {
+                SessionEvent::Start => {
+                    sessions.open(who);
+                    "Started."
+                }
+                SessionEvent::End => {
+                    sessions.close(who);
+                    "Ended."
+                }
+                SessionEvent::Seen => {
+                    sessions.touch(who);
+                    "Seen."
+                }
+            }
+            .to_string(),
+        ))),
+        Tool::Turn(TurnEvent::Prompt { text, spoken }) => {
+            let spoken =
+                spoken.unwrap_or_else(|| sessions.was_dictated(&text, std::time::Instant::now()));
+            sessions.set_spoken(who, spoken);
+            Some(Ok(prompt_answer(caller.hook, spoken)))
         }
+        Tool::Turn(TurnEvent::Reply { text }) => {
+            let read = sessions.spoken(who) == Some(true) && !text.trim().is_empty();
+            if read {
+                match speak(daemon, who, text, cancel).await {
+                    Some(Ok(_)) => {}
+                    other => return other,
+                }
+            }
+            Some(Ok(for_caller(
+                caller,
+                serde_json::json!({ "read": read }).to_string(),
+            )))
+        }
+    }
+}
+
+/// The answer to a prompt's turn: for a Codex hook, the context that goes
+/// beside a spoken prompt, or nothing; for a plugin, whether it was spoken
+/// and that context.
+fn prompt_answer(hook: Option<Hook>, spoken: bool) -> String {
+    match hook {
+        Some(Hook::Codex) if spoken => serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": SPOKEN_NOTE,
+            },
+        })
+        .to_string(),
+        Some(Hook::Codex) => String::new(),
+        None => serde_json::json!({
+            "spoken": spoken,
+            "note": spoken.then_some(SPOKEN_NOTE),
+        })
+        .to_string(),
     }
 }
 
@@ -361,6 +440,7 @@ mod tests {
             },
             announces: true,
             uses_context: true,
+            hook: None,
         }
     }
 
@@ -498,16 +578,119 @@ mod tests {
     async fn a_session_opens_and_closes() {
         let daemon = Arc::new(test_daemon().await);
         let cancel = CancellationToken::new();
-        run(&daemon, Tool::Session { started: true }, &caller(), &cancel).await;
+        run(
+            &daemon,
+            Tool::Session(SessionEvent::Start),
+            &caller(),
+            &cancel,
+        )
+        .await;
         assert_eq!(daemon.assistants.sessions.list().len(), 1);
         run(
             &daemon,
-            Tool::Session { started: false },
+            Tool::Session(SessionEvent::End),
             &caller(),
             &cancel,
         )
         .await;
         assert!(daemon.assistants.sessions.list().is_empty());
+        run(
+            &daemon,
+            Tool::Session(SessionEvent::Seen),
+            &caller(),
+            &cancel,
+        )
+        .await;
+        assert_eq!(daemon.assistants.sessions.list().len(), 1);
+    }
+
+    /// A typed turn refuses speaking and listening; a spoken one, or one no
+    /// plugin has said anything of, does not. A prompt holding the user's
+    /// dictation is spoken.
+    #[tokio::test]
+    async fn a_typed_turn_is_answered_in_writing() {
+        let daemon = Arc::new(test_daemon().await);
+        let cancel = CancellationToken::new();
+        let prompt = |text: &str, spoken| {
+            Tool::Turn(TurnEvent::Prompt {
+                text: text.to_string(),
+                spoken,
+            })
+        };
+        let typed = run(&daemon, prompt("Hi.", Some(false)), &caller(), &cancel)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&typed).unwrap(),
+            serde_json::json!({ "spoken": false, "note": null })
+        );
+        let refused = run(
+            &daemon,
+            Tool::Speak {
+                text: "Hello.".to_string(),
+            },
+            &caller(),
+            &cancel,
+        )
+        .await;
+        assert_eq!(refused, Some(Err(NOT_SPOKEN_TO.to_string())));
+
+        daemon.assistants.sessions.dictated("Open the notes");
+        let spoken = run(&daemon, prompt("open the notes.", None), &caller(), &cancel)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(spoken.contains(r#""spoken":true"#), "{spoken}");
+        assert_eq!(daemon.assistants.sessions.spoken(&caller().who), Some(true));
+    }
+
+    /// A Codex hook reads the answer as its own output: the context beside a
+    /// spoken prompt, and nothing else.
+    #[tokio::test]
+    async fn a_hook_gets_its_own_output() {
+        let daemon = Arc::new(test_daemon().await);
+        let cancel = CancellationToken::new();
+        let hook = Caller {
+            hook: Some(Hook::Codex),
+            ..caller()
+        };
+        let prompt = |spoken| {
+            Tool::Turn(TurnEvent::Prompt {
+                text: "Hi.".to_string(),
+                spoken: Some(spoken),
+            })
+        };
+        let spoken = run(&daemon, prompt(true), &hook, &cancel)
+            .await
+            .unwrap()
+            .unwrap();
+        let output: serde_json::Value = serde_json::from_str(&spoken).unwrap();
+        assert_eq!(
+            output["hookSpecificOutput"]["hookEventName"],
+            "UserPromptSubmit"
+        );
+        assert_eq!(
+            output["hookSpecificOutput"]["additionalContext"],
+            SPOKEN_NOTE
+        );
+        assert_eq!(
+            run(&daemon, prompt(false), &hook, &cancel).await,
+            Some(Ok(String::new()))
+        );
+        // A typed turn's reply is not read, and the hook hears nothing.
+        let reply = Tool::Turn(TurnEvent::Reply {
+            text: "Done.".to_string(),
+        });
+        assert_eq!(
+            run(&daemon, reply, &hook, &cancel).await,
+            Some(Ok(String::new()))
+        );
+        let seen = Tool::Session(SessionEvent::Seen);
+        assert_eq!(
+            run(&daemon, seen, &hook, &cancel).await,
+            Some(Ok(String::new()))
+        );
     }
 
     #[test]

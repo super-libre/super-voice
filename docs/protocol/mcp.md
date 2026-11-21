@@ -87,19 +87,28 @@ recording in the way, and so on. Silence is not an error: `listen` answers
 
 ### The plugin's tools
 
-Claude Code and Codex also get four tools their plugin calls itself, never the
-model. For Codex each is marked `"_meta": {"ui": {"visibility": ["app"]}}`,
-which Codex reads to keep it from its model. For Claude Code they go unmarked:
-Claude Code reads the mark too, and then refuses its plugin's own calls to the
-tool, so the plugin hides them from the model itself. A key made by hand,
-OpenCode and the Antigravity CLI don't get them.
+Every assistant Super Voice connects also gets five tools its plugin calls
+itself, never the model. For Codex each is marked
+`"_meta": {"ui": {"visibility": ["app"]}}`, which Codex reads to keep it from
+its model. For the others they go unmarked, and the plugin hides them from the
+model itself: Claude Code reads the mark too, and then refuses its plugin's own
+calls to the tool. A key made by hand doesn't get them.
 
 | Tool       | What it does                                                                                     |
 |------------|--------------------------------------------------------------------------------------------------|
 | `stop`     | Stops this session's own speech, and ends its own recording, which is still transcribed. Another session's are left alone. |
 | `status`   | Whether this session's own speech plays, and whether it records: `{"speaking": bool, "listening": bool}`. |
 | `announce` | Says `text` (or a hook's `message`) aloud, unless the user turned off **Announce when it needs you** for the assistant. Then it says nothing, and answers so. |
-| `session`  | `{"event": "start"}` or `{"event": "end"}`: the session opened or closed, so it is listed while it is open. |
+| `session`  | `{"event": "start"}` or `{"event": "end"}`: the session opened or closed, so it is listed while it is open, checking in each minute. `{"event": "seen"}`: it is there, from a plugin that cannot check in, like a hook's; it is listed until it has been quiet for 30 minutes. |
+| `turn`     | `{"event": "prompt", "text", "spoken"?}`: the user sent a prompt. `spoken` says whether it was said aloud; left out, it is spoken when it holds what the user last dictated into a window, within 10 minutes. Answers `{"spoken": bool, "note": text}`, `note` being what the assistant is told beside a spoken prompt. `{"event": "reply", "text"}`: the assistant answered, and a spoken turn's reply is read aloud. Answers `{"read": bool}`. |
+
+Once a plugin has said a turn was typed, `speak` and `listen` refuse in it, so
+the assistant answers in writing. A session whose plugin says nothing of its
+turns is not held to it.
+
+A tool a hook calls itself takes `"hook": "codex"`, and then answers as Codex's
+hooks read a hook's output: the `UserPromptSubmit` JSON with the note beside a
+spoken prompt, and nothing for anything else.
 
 ## Sessions
 
