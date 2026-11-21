@@ -129,7 +129,7 @@ pub(crate) async fn run(
                 .or(again)
                 .unwrap_or_else(|| sessions.was_dictated(&text, std::time::Instant::now()));
             sessions.set_spoken(who, spoken);
-            Some(Ok(prompt_answer(caller.hook, spoken)))
+            Some(Ok(prompt_answer(caller.hook, spoken, again.is_none())))
         }
         Tool::Turn(TurnEvent::Reply { text }) => {
             let read = sessions.spoken(who) == Some(true) && !text.trim().is_empty();
@@ -149,8 +149,9 @@ pub(crate) async fn run(
 
 /// The answer to a prompt's turn: for a Codex hook, the context that goes
 /// beside a spoken prompt, or nothing; for a plugin, whether it was spoken
-/// and that context.
-fn prompt_answer(hook: Option<Hook>, spoken: bool) -> String {
+/// and, when the turn is `new`, that context. A plugin whose hook runs before
+/// each model call adds it to the turn once.
+fn prompt_answer(hook: Option<Hook>, spoken: bool, new: bool) -> String {
     match hook {
         Some(Hook::Codex) if spoken => serde_json::json!({
             "hookSpecificOutput": {
@@ -162,7 +163,7 @@ fn prompt_answer(hook: Option<Hook>, spoken: bool) -> String {
         Some(Hook::Codex) => String::new(),
         None => serde_json::json!({
             "spoken": spoken,
-            "note": spoken.then_some(SPOKEN_NOTE),
+            "note": (spoken && new).then_some(SPOKEN_NOTE),
         })
         .to_string(),
     }
@@ -651,14 +652,21 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(spoken.contains(r#""spoken":true"#), "{spoken}");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&spoken).unwrap(),
+            serde_json::json!({ "spoken": true, "note": SPOKEN_NOTE })
+        );
         assert_eq!(daemon.assistants.sessions.spoken(&caller().who), Some(true));
-        // Said again before each model call, it stays spoken.
+        // Said again before each model call, it stays spoken, and the note
+        // is added once.
         let again = run(&daemon, prompt("open the notes.", None), &caller(), &cancel)
             .await
             .unwrap()
             .unwrap();
-        assert!(again.contains(r#""spoken":true"#), "{again}");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&again).unwrap(),
+            serde_json::json!({ "spoken": true, "note": null })
+        );
     }
 
     /// A Codex hook reads the answer as its own output: the context beside a
