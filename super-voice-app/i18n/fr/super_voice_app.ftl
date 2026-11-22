@@ -742,7 +742,19 @@ assistant-not-found = Introuvable sur cet ordinateur.
 assistant-restart-to-use = Redémarrez { $name } pour commencer à l’utiliser.
 assistant-connected = Connecté
 show-talk-above-prompt = Afficher Talk au-dessus de l'invite
+show-talk-above-prompt-description = 0 lance Talk tant que l'invite est vide. Désactivé, rien ne s'affiche au-dessus de l'invite.
 announce-when-needed = Annoncer quand il a besoin de vous
+announce-when-needed-description = Annonce à voix haute quand { $name } demande une autorisation ou une réponse.
+use-conversation-as-context-description = Vous entend avec les noms et les termes de votre conversation avec lui.
+all-assistants = Tous les assistants
+sessions = Sessions
+sessions-open = { $count ->
+    [0] Aucune session ouverte
+    [one] 1 session ouverte
+   *[other] { $count } sessions ouvertes
+}
+disconnect-assistant = Déconnecter { $name }
+disconnect-assistant-description = Retire de { $name } le plugin et la clé de Super Voice.
 use-conversation-as-context = Utiliser la conversation comme contexte
 session-unnamed = Session
 session-speaking = Parle

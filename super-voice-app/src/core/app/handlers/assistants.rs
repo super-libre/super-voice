@@ -74,6 +74,14 @@ impl AppModel {
                 self.change_conversation_context(id, on)
             }
             AssistantsMessage::SetShowTalk(id, on) => self.change_show_talk(id, on),
+            AssistantsMessage::Open(id) => {
+                self.assistants.open = Some(id);
+                Task::none()
+            }
+            AssistantsMessage::Close => {
+                self.assistants.open = None;
+                Task::none()
+            }
             AssistantsMessage::SetAnnounceWhenNeeded(id, on) => {
                 self.change_announce_when_needed(id, on)
             }
@@ -190,6 +198,10 @@ impl AppModel {
         match result {
             Ok(list) => {
                 self.assistants.list = Some(list);
+                // Its page has nothing left to show: back to the list.
+                if self.assistants.open == Some(id) {
+                    self.assistants.open = None;
+                }
                 Task::none()
             }
             Err(error) => {

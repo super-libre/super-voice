@@ -20,6 +20,8 @@ pub struct AssistantsState {
     /// The assistants connected since the app started. An assistant reads its
     /// config when it starts, so each row says to restart it.
     pub connected_here: HashSet<AssistantId>,
+    /// The connected assistant whose own page is open, in the list's place.
+    pub open: Option<AssistantId>,
 }
 
 impl AssistantsState {

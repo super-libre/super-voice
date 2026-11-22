@@ -9,7 +9,7 @@ use cosmic::Element;
 use cosmic::iced::widget::text::Wrapping;
 use cosmic::iced::widget::{Space, column, row};
 use cosmic::iced::{Alignment, Length};
-use cosmic::widget::{self, Id, button, settings, text};
+use cosmic::widget::{self, Id, button, icon, settings, text};
 use super_voice_shared::models::assistants::{
     Assistant, AssistantId, AssistantList, AssistantSession, AssistantState, CustomKey, NewKey,
 };
@@ -97,9 +97,20 @@ fn used_ago(last_used_at: Option<&str>, now: DateTime<Utc>) -> Option<String> {
     })
 }
 
-/// One open session, under the assistant it belongs to: the folder it works
-/// in, whether it speaks or listens, and when it last did.
+/// One open session, set in under the key it belongs to.
 fn session_row(
+    session: &AssistantSession,
+    home: Option<&std::path::Path>,
+    now: DateTime<Utc>,
+) -> Element<'static, Message> {
+    widget::container(session_item(session, home, now))
+        .padding([0, 0, 0, cosmic::theme::spacing().space_l])
+        .into()
+}
+
+/// One open session: the folder it works in, whether it speaks or listens,
+/// and when it last did.
+fn session_item(
     session: &AssistantSession,
     home: Option<&std::path::Path>,
     now: DateTime<Utc>,
@@ -141,87 +152,143 @@ fn session_row(
                 .align_x(cosmic::iced::alignment::Horizontal::Right),
         ));
     }
-    // Set in from its assistant's row, so it reads as that assistant's.
-    widget::container(settings::item_row(vec![label.into(), control.into()]))
-        .padding([0, 0, 0, spacing.space_l])
-        .into()
+    settings::item_row(vec![label.into(), control.into()]).into()
 }
 
-/// One assistant's row: what it does, and Connect, or where it stands once
-/// connected. One the daemon cannot find has no control.
-fn row_for<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<'a, Message> {
+/// The row of an assistant that is not connected: what it does, and Connect.
+/// One the daemon cannot find has no control. A connected one's row is
+/// [`connected_row`].
+fn unconnected_row<'a>(assistant: &Assistant) -> Element<'a, Message> {
     let id = assistant.id;
     let item = settings::item::builder(id.display_name());
-    match assistant.state {
-        AssistantState::NotFound => item
-            .description(crate::fl!("assistant-not-found"))
+    if assistant.state == AssistantState::NotFound {
+        item.description(crate::fl!("assistant-not-found"))
             .control(Space::new())
-            .into(),
-        AssistantState::Found => item
-            .description(does(id))
+            .into()
+    } else {
+        item.description(does(id))
             .control(
                 button::suggested(crate::fl!("connect"))
                     .on_press(message(AssistantsMessage::AskConnect(id))),
             )
-            .into(),
-        AssistantState::Connected => connected_row(assistant, state),
+            .into()
     }
 }
 
-/// A connected assistant's row. Its switches sit under what it does, so they
-/// are plainly this assistant's: for one whose plugin has Talk, whether it
-/// shows; for one whose plugin can tell when it needs the user, whether
-/// Super Voice announces it; and whether its `listen` calls use the
-/// conversation.
-fn connected_row<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<'a, Message> {
+/// A connected assistant's row on the list: how many sessions it has open,
+/// or that it needs a restart to use Super Voice, and the chevron that opens
+/// its page.
+fn connected_row<'a>(
+    assistant: &Assistant,
+    state: &AssistantsState,
+) -> widget::list::ListButton<'a, Message> {
     let id = assistant.id;
     let spacing = cosmic::theme::spacing();
+    // An assistant reads its config when it starts.
+    let about = if state.connected_here.contains(&id) {
+        crate::fl!("assistant-restart-to-use", name = id.display_name())
+    } else {
+        crate::fl!("sessions-open", count = assistant.sessions.len())
+    };
+    let content = row![
+        column![
+            text::body(id.display_name()).wrapping(Wrapping::Word),
+            text::caption(about).wrapping(Wrapping::Word),
+        ]
+        .spacing(2)
+        .width(Length::Fill),
+        connected_pill(),
+        icon::from_name("go-next-symbolic").size(16).icon(),
+    ]
+    .spacing(spacing.space_s)
+    .align_y(Alignment::Center)
+    .padding([spacing.space_xxs, 0]);
+    widget::list::button(content).on_press(message(AssistantsMessage::Open(id)))
+}
+
+/// A connected assistant's own page, in the list's place: back to the list,
+/// where it stands, its switches with what each does, its open sessions, and
+/// Disconnect.
+fn assistant_page<'a>(
+    assistant: &'a Assistant,
+    state: &'a AssistantsState,
+) -> Vec<Element<'a, Message>> {
+    let id = assistant.id;
+    let name = id.display_name();
+    let spacing = cosmic::theme::spacing();
+
+    let back = button::text(crate::fl!("all-assistants"))
+        .leading_icon(icon::from_name("go-previous-symbolic"))
+        .on_press(message(AssistantsMessage::Close));
     let mut description = does(id);
     // An assistant reads its config when it starts.
     if state.connected_here.contains(&id) {
         description.push(' ');
-        description.push_str(&crate::fl!(
-            "assistant-restart-to-use",
-            name = id.display_name()
-        ));
+        description.push_str(&crate::fl!("assistant-restart-to-use", name = name));
     }
-    // Laid out as `settings::item`'s own label, with the switch below it.
-    let mut label = column![
-        text::body(id.display_name()).wrapping(Wrapping::Word),
-        text::caption(description).wrapping(Wrapping::Word),
+    let heading = column![
+        row![text::title4(name), connected_pill()]
+            .spacing(spacing.space_s)
+            .align_y(Alignment::Center),
+        muted(text::caption(description).wrapping(Wrapping::Word)),
     ]
-    .spacing(2)
-    .width(Length::Fill);
-    let switch = |toggler: widget::Toggler<'a, Message>| {
-        widget::container(toggler.spacing(spacing.space_xs)).padding([spacing.space_xxs, 0, 0, 0])
-    };
+    .spacing(spacing.space_xxs);
+    let mut blocks: Vec<Element<'a, Message>> =
+        vec![column![back, heading].spacing(spacing.space_xs).into()];
+
+    let mut switches = settings::section().title(crate::fl!("settings"));
+    // Only these two plugins have Talk.
     if matches!(id, AssistantId::ClaudeCode | AssistantId::OpenCode) {
-        label = label.push(switch(
-            widget::toggler(assistant.show_talk)
-                .label(crate::fl!("show-talk-above-prompt"))
-                .on_toggle(move |on| message(AssistantsMessage::SetShowTalk(id, on))),
-        ));
+        switches = switches.add(
+            settings::item::builder(crate::fl!("show-talk-above-prompt"))
+                .description(crate::fl!("show-talk-above-prompt-description"))
+                .toggler(assistant.show_talk, move |on| {
+                    message(AssistantsMessage::SetShowTalk(id, on))
+                }),
+        );
     }
     // The Antigravity CLI has no hook for when it needs the user.
     if id != AssistantId::Antigravity {
-        label = label.push(switch(
-            widget::toggler(assistant.announce_when_needed)
-                .label(crate::fl!("announce-when-needed"))
-                .on_toggle(move |on| message(AssistantsMessage::SetAnnounceWhenNeeded(id, on))),
-        ));
+        switches = switches.add(
+            settings::item::builder(crate::fl!("announce-when-needed"))
+                .description(crate::fl!("announce-when-needed-description", name = name))
+                .toggler(assistant.announce_when_needed, move |on| {
+                    message(AssistantsMessage::SetAnnounceWhenNeeded(id, on))
+                }),
+        );
     }
-    label = label.push(switch(
-        widget::toggler(assistant.conversation_context)
-            .label(crate::fl!("use-conversation-as-context"))
-            .on_toggle(move |on| message(AssistantsMessage::SetConversationContext(id, on))),
-    ));
+    switches = switches.add(
+        settings::item::builder(crate::fl!("use-conversation-as-context"))
+            .description(crate::fl!("use-conversation-as-context-description"))
+            .toggler(assistant.conversation_context, move |on| {
+                message(AssistantsMessage::SetConversationContext(id, on))
+            }),
+    );
+    blocks.push(switches.into());
+
+    if !assistant.sessions.is_empty() {
+        let home = dirs::home_dir();
+        let now = Utc::now();
+        let mut sessions = settings::section().title(crate::fl!("sessions"));
+        for session in &assistant.sessions {
+            sessions = sessions.add(session_item(session, home.as_deref(), now));
+        }
+        blocks.push(sessions.into());
+    }
+
     let disconnect = button::standard(crate::fl!("disconnect")).on_press_maybe(
         (!state.disconnecting.contains(&id)).then_some(message(AssistantsMessage::Disconnect(id))),
     );
-    let control = row![connected_pill(), disconnect]
-        .spacing(spacing.space_xs)
-        .align_y(Alignment::Center);
-    settings::item_row(vec![label.into(), control.into()]).into()
+    blocks.push(
+        settings::section()
+            .add(
+                settings::item::builder(crate::fl!("disconnect-assistant", name = name))
+                    .description(crate::fl!("disconnect-assistant-description", name = name))
+                    .control(disconnect),
+            )
+            .into(),
+    );
+    blocks
 }
 
 /// When a key was made, as the Notes tab says when a note was: "Today,
@@ -285,21 +352,30 @@ pub fn page<'a>(state: &'a AssistantsState, action_error: Option<&'a str>) -> El
     if let Some(error) = action_error.filter(|_| !state.dialog_open()) {
         blocks.push(error_banner(error));
     }
-    blocks.push(intro());
-    if let Some(list) = &state.list {
+    let opened = state.list.as_ref().and_then(|list| {
+        let id = state.open?;
+        list.assistants
+            .iter()
+            .find(|a| a.id == id && a.state == AssistantState::Connected)
+    });
+    if let Some(assistant) = opened {
+        blocks.extend(assistant_page(assistant, state));
+    } else if let Some(list) = &state.list {
+        blocks.push(intro());
         let mut section = settings::section().title(crate::fl!("on-this-computer"));
-        let home = dirs::home_dir();
-        let now = Utc::now();
         for id in AssistantId::ALL {
             if let Some(assistant) = list.assistants.iter().find(|a| a.id == id) {
-                section = section.add(row_for(assistant, state));
-                for session in &assistant.sessions {
-                    section = section.add(session_row(session, home.as_deref(), now));
-                }
+                section = if assistant.state == AssistantState::Connected {
+                    section.add(connected_row(assistant, state))
+                } else {
+                    section.add(unconnected_row(assistant))
+                };
             }
         }
         blocks.push(section.into());
         blocks.push(another_assistant(list));
+    } else {
+        blocks.push(intro());
     }
     page_layout(crate::fl!("assistants"), settings::view_column(blocks))
 }

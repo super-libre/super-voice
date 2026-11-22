@@ -742,7 +742,19 @@ assistant-not-found = Not found on this computer.
 assistant-restart-to-use = Restart { $name } to start using it.
 assistant-connected = Connected
 show-talk-above-prompt = Show Talk above the prompt
+show-talk-above-prompt-description = 0 starts Talk while the prompt is empty. Off, nothing shows above the prompt.
 announce-when-needed = Announce when it needs you
+announce-when-needed-description = Says aloud when { $name } asks for a permission or an answer.
+use-conversation-as-context-description = Hears you with the names and terms of your conversation with it.
+all-assistants = All assistants
+sessions = Sessions
+sessions-open = { $count ->
+    [0] No session open
+    [one] 1 session open
+   *[other] { $count } sessions open
+}
+disconnect-assistant = Disconnect { $name }
+disconnect-assistant-description = Removes Super Voice's plugin and key from { $name }.
 use-conversation-as-context = Use the conversation as context
 session-unnamed = Session
 session-speaking = Speaking

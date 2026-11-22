@@ -650,6 +650,10 @@ pub enum AssistantsMessage {
     Changed(Result<AssistantList, String>),
     /// Open the Connect dialog for this assistant.
     AskConnect(AssistantId),
+    /// Open a connected assistant's own page: its switches and sessions.
+    Open(AssistantId),
+    /// Back from an assistant's page to the list.
+    Close,
     /// The Connect dialog's Cancel.
     CancelConnect,
     /// The Connect dialog's Connect.
