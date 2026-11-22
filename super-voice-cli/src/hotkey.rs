@@ -130,7 +130,8 @@ pub fn run(socket_path: PathBuf, binding: &str) -> Result<()> {
                     APP_ID,
                     APP_NAME,
                     socket_path.clone(),
-                    |token| crate::cmd_record(socket_path.clone(), token, true, false, None),
+                    // A shortcut's take brings no context of its own.
+                    |token| crate::cmd_record(socket_path.clone(), token, true, false, None, None),
                 ));
                 if let Err(e) = result {
                     // Logged, not fatal: the daemon being down or restarting is
