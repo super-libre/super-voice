@@ -29,7 +29,7 @@ Whether you talk or type:
       `Stop and talk` also opens the microphone.
    3. What Claude's `listen` hears goes through the prompt box the same way.
       Stopping it without saying anything ends Claude's turn.
-4. A 🔊 under each reply reads it again; press it again to stop. In a terminal
+4. A 🔊 under each reply reads it again. While it reads, it is a 🔇: press it to stop. In a terminal
    it takes a mouse click, in fullscreen mode (`/tui fullscreen`).
 
 Super Voice's own shortcut (`voice record --write`) types into the focused

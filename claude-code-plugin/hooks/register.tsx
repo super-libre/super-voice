@@ -724,7 +724,9 @@ export const register: Register = on => {
         {row}
         <Button
           key={key}
-          label={isReading ? '\u{23F9}' : '\u{1F50A}'}
+          // Both glyphs are emoji two columns wide: a narrower stop left only
+          // half of what the terminal draws to click.
+          label={isReading ? '\u{1F507}' : '\u{1F50A}'}
           plain
           dimColor={!isReading}
           onPress={() => void readAgain($, key, text)}
