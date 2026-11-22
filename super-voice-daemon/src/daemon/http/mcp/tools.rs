@@ -82,12 +82,12 @@ pub(crate) async fn run(
     let who = &caller.who;
     let sessions = &daemon.assistants.sessions;
     match tool {
-        Tool::Speak { .. } | Tool::Listen { talk: false, .. }
+        Tool::Speak { asked: false, .. } | Tool::Listen { asked: false, .. }
             if not_spoken_to(daemon, who).is_some() =>
         {
             not_spoken_to(daemon, who).map(Err)
         }
-        Tool::Speak { text } => speak(daemon, who, text, cancel).await,
+        Tool::Speak { text, .. } => speak(daemon, who, text, cancel).await,
         Tool::Listen {
             question, context, ..
         } => {
@@ -483,7 +483,7 @@ mod tests {
             Tool::Listen {
                 question: None,
                 context: None,
-                talk: false,
+                asked: false,
             },
             &caller(),
             &CancellationToken::new(),
@@ -503,6 +503,7 @@ mod tests {
             &daemon,
             Tool::Speak {
                 text: "Hello.".to_string(),
+                asked: false,
             },
             &caller(),
             &CancellationToken::new(),
@@ -523,7 +524,7 @@ mod tests {
             Tool::Listen {
                 question: None,
                 context: None,
-                talk: false,
+                asked: false,
             },
             &caller(),
             &cancel,
@@ -640,6 +641,7 @@ mod tests {
             &daemon,
             Tool::Speak {
                 text: "Hello.".to_string(),
+                asked: false,
             },
             &caller(),
             &cancel,

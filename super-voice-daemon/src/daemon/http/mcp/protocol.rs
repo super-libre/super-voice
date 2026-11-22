@@ -88,14 +88,18 @@ pub(crate) enum Handled {
 pub(crate) enum Tool {
     Speak {
         text: String,
+        /// The user asked for it themselves, through their plugin, as with
+        /// a reply's button that reads it again: a typed turn does not
+        /// refuse it.
+        asked: bool,
     },
     Listen {
         question: Option<String>,
         /// What the conversation tells about what the user will say.
         context: Option<ExtraContext>,
-        /// The user asked for it, with their plugin's Talk: a typed turn
-        /// does not refuse it.
-        talk: bool,
+        /// The user asked for it themselves, through their plugin's Talk: a
+        /// typed turn does not refuse it.
+        asked: bool,
     },
     /// The plugin's: stop the session's own speech and recording.
     Stop,
@@ -103,9 +107,7 @@ pub(crate) enum Tool {
     /// records.
     Status,
     /// The plugin's: say a notice, unless the user turned announcing off.
-    Announce {
-        text: String,
-    },
+    Announce { text: String },
     /// The plugin's: the session started, ended, or is still there.
     Session(SessionEvent),
     /// The plugin's: the user sent a prompt, or the assistant answered it.
@@ -262,6 +264,7 @@ impl Tool {
         match params["name"].as_str().unwrap_or_default() {
             "speak" if access.may_speak => Ok(Self::Speak {
                 text: required_text(args, "text")?,
+                asked: args["asked"].as_bool().unwrap_or(false),
             }),
             "listen" if access.may_listen => {
                 let question = optional_text(args, "question")?;
@@ -275,7 +278,7 @@ impl Tool {
                 Ok(Self::Listen {
                     question,
                     context: listen_context(&args["context"])?,
-                    talk: args["talk"].as_bool().unwrap_or(false),
+                    asked: args["asked"].as_bool().unwrap_or(false),
                 })
             }
             "stop" if access.plugin != Plugin::None => Ok(Self::Stop),
@@ -650,7 +653,8 @@ mod tests {
             Handled::Call {
                 id: json!(1),
                 tool: Tool::Speak {
-                    text: "Hi.".to_string()
+                    text: "Hi.".to_string(),
+                    asked: false,
                 }
             }
         );
@@ -809,7 +813,7 @@ mod tests {
                 tool: Tool::Listen {
                     question: None,
                     context: None,
-                    talk: false
+                    asked: false
                 }
             }
         );
@@ -934,7 +938,8 @@ mod tests {
         assert_eq!(
             call("speak", json!({ "text": "Hello." })),
             Ok(Tool::Speak {
-                text: "Hello.".to_string()
+                text: "Hello.".to_string(),
+                asked: false,
             })
         );
         assert_eq!(
@@ -942,7 +947,7 @@ mod tests {
             Ok(Tool::Listen {
                 question: None,
                 context: None,
-                talk: false
+                asked: false
             })
         );
         assert_eq!(
@@ -950,7 +955,24 @@ mod tests {
             Ok(Tool::Listen {
                 question: Some("Which one?".to_string()),
                 context: None,
-                talk: false
+                asked: false
+            })
+        );
+        // What the user asked for through their plugin: Talk, or reading a
+        // reply again.
+        assert_eq!(
+            call("speak", json!({ "text": "Hello.", "asked": true })),
+            Ok(Tool::Speak {
+                text: "Hello.".to_string(),
+                asked: true,
+            })
+        );
+        assert_eq!(
+            call("listen", json!({ "asked": true })),
+            Ok(Tool::Listen {
+                question: None,
+                context: None,
+                asked: true
             })
         );
         assert_eq!(
@@ -990,7 +1012,7 @@ mod tests {
             Ok(Tool::Listen {
                 question: None,
                 context: None,
-                talk: false
+                asked: false
             })
         );
     }

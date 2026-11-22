@@ -4,7 +4,8 @@ A Claude Code plugin that talks to Claude Code through Super Voice, on your own
 machine. Nothing leaves it.
 
 Claude speaks only after being spoken to. You start talking with the `0` key,
-and from then on:
+or by dictating a prompt into Claude Code with Super Voice's shortcut, and from
+then on:
 
 1. Claude's reply to what you said is read aloud. Code blocks are said as "code
    block". The microphone opens after it, so you can answer.
@@ -29,7 +30,8 @@ Whether you talk or type:
    it takes a mouse click, in fullscreen mode (`/tui fullscreen`).
 
 Super Voice's own shortcut (`voice record --write`) types into the focused
-terminal like any other window. A prompt typed that way counts as typed.
+terminal like any other window. A prompt you send within 90 seconds that holds
+what it typed counts as spoken, even with a word or two you fixed by hand.
 
 ## Requirements
 

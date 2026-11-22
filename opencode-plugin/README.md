@@ -10,7 +10,7 @@ Connect OpenCode on the Assistants page of the Super Voice app. Super Voice adds
    - **0: Talk** records you until you stop talking, and sends what you said.
    - **Listening. 0: Stop listening** ends the recording, which is still sent.
    - **0: Stop speaking** stops Super Voice. In a spoken conversation it's **0: Stop and talk**, and the microphone opens.
-2. After a spoken prompt, OpenCode is told to answer briefly, and its answer is read aloud. Then the microphone opens by itself, unless you've started typing.
+2. After a spoken prompt, OpenCode is told to answer briefly, and its answer is read aloud. Then the microphone opens by itself, unless you've started typing. A prompt is spoken when Talk heard it, or when you dictated it into OpenCode with Super Voice's shortcut and sent it within 90 seconds, even with a word or two fixed by hand.
 3. A prompt you typed is answered in writing: the model's calls to `speak` and `listen` are refused in it.
 4. Super Voice lists each session with its folder, and says aloud when OpenCode asks for your permission, unless you turned off **Announce when it needs you** for OpenCode.
 

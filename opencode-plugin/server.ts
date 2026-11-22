@@ -36,6 +36,15 @@ function isSpoken(metadata: unknown): boolean {
   return voice?.spoken === true
 }
 
+/** Whether Super Voice's answer to a prompt's `turn` says it was spoken. */
+function saysSpoken(text: string | undefined): boolean {
+  try {
+    return (JSON.parse(text ?? '{}') as { spoken?: unknown }).spoken === true
+  } catch {
+    return false
+  }
+}
+
 /** The text of a stored message, its text parts joined. */
 function textOf(message: unknown): string {
   const { text, content } = message as { text?: unknown; content?: unknown }
@@ -93,10 +102,16 @@ export default Plugin.define({
       }
     })
 
+    // Talk's words are spoken, and so are ones the user dictated into the
+    // prompt with Super Voice's shortcut, which Super Voice recognizes.
     const prompted = await ctx.session.hook('prompt', async event => {
       const isTalk = isSpoken(event.metadata)
-      spoken.set(event.sessionID, isTalk)
-      await call('turn', event.sessionID, { event: 'prompt', text: event.prompt.text, spoken: isTalk })
+      const answer = await call('turn', event.sessionID, {
+        event: 'prompt',
+        text: event.prompt.text,
+        ...(isTalk ? { spoken: true } : {}),
+      })
+      spoken.set(event.sessionID, isTalk || saysSpoken(answer?.isError ? undefined : answer?.text))
     })
 
     const told = await ctx.session.hook('context', event => {
@@ -126,7 +141,7 @@ export default Plugin.define({
         const heard = await call(
           'listen',
           sessionID,
-          { talk: true, ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}) },
+          { asked: true, ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}) },
           context.signal,
         )
         if (heard === undefined) {

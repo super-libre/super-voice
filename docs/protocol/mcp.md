@@ -109,7 +109,9 @@ calls to the tool. A key made by hand doesn't get them.
 
 Once a plugin has said a turn was typed, `speak` and `listen` refuse in it, so
 the assistant answers in writing. A session whose plugin says nothing of its
-turns is not held to it.
+turns is not held to it. A plugin's own call for what the user asked for
+themselves, as Talk's `listen` or a button that reads a reply again, takes
+`"asked": true` and is not refused. No tool declares it, as with `session`.
 
 A tool a hook calls itself takes `"hook": "codex"`, and then answers as Codex's
 hooks read a hook's output: the `UserPromptSubmit` JSON with the note beside a
@@ -150,9 +152,10 @@ a question to `listen` rather than call `speak` first, and to use them only
 while the user is talking to it by voice. A prompt the user typed gets a
 written answer, even one that asks it to speak.
 
-The server can't tell a spoken prompt from a typed one, so for most assistants
-this is only what the model is told. Claude Code's plugin holds it: it refuses
-the tools in a turn the user typed.
+Where Super Voice has a plugin, it holds the model to this: the plugin says
+whether each prompt was spoken, with the `turn` tool, and `speak` and `listen`
+refuse in a typed turn. An assistant connected without one, as with a key made
+by hand, is only told.
 
 ## Transport
 

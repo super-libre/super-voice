@@ -161,6 +161,22 @@ async function call(
   }
 }
 
+/** Tell Super Voice of the prompt the user sent, and whether it was spoken:
+ * `isTalk` when Talk heard it, else as Super Voice says, which knows a prompt
+ * the user dictated into the box with its own shortcut. Typed, when Super
+ * Voice can't say. */
+async function promptWasSpoken($: EngineInterface, text: string, isTalk: boolean): Promise<boolean> {
+  const answer = await call($, 'turn', { event: 'prompt', text, ...(isTalk ? { spoken: true } : {}) })
+  if (isTalk || answer === undefined || answer.isError) {
+    return isTalk
+  }
+  try {
+    return (JSON.parse(answer.text) as { spoken?: unknown }).spoken === true
+  } catch {
+    return false
+  }
+}
+
 type VoiceStatus = { isSpeaking: boolean; isListening: boolean }
 
 /** Whether this session's own speech plays, and whether it records; nothing
@@ -312,7 +328,8 @@ async function readAgain($: EngineInterface, key: string, text: string) {
     return
   }
   await update($, readingAgain, () => key)
-  const spoken = await call($, 'speak', { text })
+  // The user asked for it: a typed turn does not refuse it.
+  const spoken = await call($, 'speak', { text, asked: true })
   if (spoken === undefined || spoken.isError) {
     await update($, readingAgain, () => '')
     $.ui.toast(spoken?.text || 'Could not read it aloud.')
@@ -347,7 +364,11 @@ async function recordAndFill($: EngineInterface) {
   // `listen` without a question: it records until the user stops talking.
   // The names and terms of the conversation help Super Voice hear them.
   const vocabulary = pickTerms(`${lastReply}\n${lastPrompt}`)
-  const heard = await call($, 'listen', vocabulary.length > 0 ? { context: { vocabulary } } : {})
+  // Talk is the user's own asking: a typed turn does not refuse it.
+  const heard = await call($, 'listen', {
+    asked: true,
+    ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}),
+  })
   if (heard === undefined) {
     $.ui.toast('Could not record.')
   } else if (heard.isError) {
@@ -650,7 +671,8 @@ export const register: Register = on => {
       if (phase === 'countdown') {
         await stopCountdown($)
       }
-      const isSpoken = talkedSinceSubmit
+      // Talk's words, or ones the user dictated with Super Voice's shortcut.
+      const isSpoken = await promptWasSpoken($, e.text, talkedSinceSubmit)
       lastPrompt = e.text
       listenAfterReply = isSpoken
       talkedSinceSubmit = false
@@ -658,6 +680,7 @@ export const register: Register = on => {
       return next(isSpoken ? { ...e, context: [...(e.context ?? []), VOICE_NOTE] } : e)
     }
     if (isOwn) {
+      await promptWasSpoken($, e.text, true)
       lastPrompt = e.text
       listenAfterReply = true
       talkedSinceSubmit = false
