@@ -126,7 +126,15 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
 fn invocation(turn: &Value) -> Value {
     if let Some(answered) = turn["answered"].as_str() {
         if turn["failed"] == false {
-            return json!({ "terminationBehavior": "terminate" });
+            return json!({
+                // An empty, hidden step: agy's screen takes a turn that ends
+                // with no new step for one that ended before it was sent, and
+                // waits on it.
+                "injectSteps": [{
+                    "systemMessage": { "systemMessage": "", "renderInfo": { "hidden": true } },
+                }],
+                "terminationBehavior": "terminate",
+            });
         }
         return json!({
             "injectSteps": [{ "errorMessage": { "userMessage": answered } }],
@@ -263,7 +271,12 @@ mod tests {
             json!({ "spoken": false, "answered": "Reading reply 1 aloud.", "failed": false });
         assert_eq!(
             invocation(&read),
-            json!({ "terminationBehavior": "terminate" })
+            json!({
+                "injectSteps": [{
+                    "systemMessage": { "systemMessage": "", "renderInfo": { "hidden": true } },
+                }],
+                "terminationBehavior": "terminate",
+            })
         );
         let unread = json!({ "spoken": false, "answered": "There is no reply to read yet.", "failed": true });
         assert_eq!(
