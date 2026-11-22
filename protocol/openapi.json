@@ -30,6 +30,603 @@
     }
   ],
   "paths": {
+    "/v1/assistants": {
+      "get": {
+        "tags": [
+          "assistants"
+        ],
+        "summary": "List the AI assistants (scope: settings)",
+        "description": "The AI assistants Super Voice can connect to, `claude-code`, `codex`, `opencode` and `antigravity`, and where each stands on this computer: `not_found` when the daemon finds neither its program nor its config, `found` when it is here and Super Voice is not in its config, and `connected` when Super Voice is in its config with a key of its own. `announce_when_needed` says whether Super Voice says aloud when the assistant needs the user. Claude Code, Codex and OpenCode announce, through their plugins. `conversation_context` says whether its `listen` calls are heard with the context they bring from the conversation, on top of the user's own. `show_talk` says whether its plugin shows Talk above the prompt, for Claude Code and OpenCode, which have one. `sessions` are its open sessions on the MCP server, oldest first: one conversation each, with its folder when the assistant says, and whether speech it started is playing or it is recording.\n\nAlso the keys made by hand for other MCP clients, without the keys themselves, each with its sessions, and `address`, where an MCP client reaches Super Voice.\n\nRead from the assistants' configs on every request, so an entry changed by hand shows here at once.",
+        "operationId": "list_assistants",
+        "responses": {
+          "200": {
+            "description": "Every assistant, every key made by hand, and the address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/assistants/keys": {
+      "post": {
+        "tags": [
+          "assistants"
+        ],
+        "summary": "Make a key for another MCP client (scope: settings)",
+        "description": "Makes a key, under the name given, for an MCP client that is not one of the assistants the daemon connects itself. The key may speak and hear the user, as an assistant's does. The answer carries the key itself, and this is the only time it is shown: the list names the key by its `id` and `name` alone.\n\nThe name is trimmed. A blank one is `400 name_required`, and an assistant's id is `400 name_reserved`, since the daemon names an assistant's key itself.\n\nFor Super Voice's own clients alone, since it makes a key: any other caller is `403` with reason `not_official_client`.",
+        "operationId": "create_key",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The key, with the address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The name is blank (`name_required`) or an assistant's id (`name_reserved`), or the body is not `{\"name\": <string>}` (`invalid_value`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope (`scope_denied`), or the caller is not one of Super Voice's own clients (`auth_denied`, reason `not_official_client`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The key could not be saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/assistants/keys/{id}": {
+      "delete": {
+        "tags": [
+          "assistants"
+        ],
+        "summary": "Revoke a key made by hand (scope: settings)",
+        "description": "Revokes a key made with `POST /assistants/keys`, and cancels its calls in flight. It stops working at once. An assistant's own key is not one of these: disconnecting the assistant revokes it. Answers the whole list, as `GET /assistants` does.",
+        "operationId": "revoke_key",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The key's `id`, from the list.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "0f3c9a1e"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked. Every assistant, and the keys left.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No key made by hand has that id (`unknown_key`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/assistants/{id}": {
+      "delete": {
+        "tags": [
+          "assistants"
+        ],
+        "summary": "Disconnect an AI assistant (scope: settings)",
+        "description": "Takes Super Voice out of the assistant's config, revokes its key, and cancels its calls in flight. For Claude Code the daemon uninstalls Super Voice's plugin, with `claude plugin uninstall`. Disconnecting one that is not connected changes nothing. Answers the whole list, as `GET /assistants` does.\n\nThe key is revoked even when the config cannot be changed, which is `500`: the entry left behind does nothing without it.",
+        "operationId": "disconnect_assistant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "`claude-code`, `codex`, `opencode` or `antigravity`.",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AssistantId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Disconnected, or not connected. Every assistant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No assistant has that id (`unknown_assistant`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The config could not be changed, or the plugin could not be uninstalled. The key is revoked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "assistants"
+        ],
+        "summary": "Change an assistant's switches (scope: settings)",
+        "description": "Sets any of the assistant's switches. `announce_when_needed`: whether Super Voice says aloud when the assistant needs the user, like Claude Code's own notices that it needs a permission or an answer. `conversation_context`: whether its `listen` calls are heard with the context they bring from the conversation. `show_talk`: whether its plugin shows Talk above the prompt, for Claude Code and OpenCode; off, the plugin shows nothing there, and the microphone does not open after a reply. Each is on until the user turns it off, and the next call reads it, in every session. Answers the whole list, as `GET /assistants` does.",
+        "operationId": "change_assistant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "`claude-code`, `codex`, `opencode` or `antigravity`.",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AssistantId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Changed. Every assistant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body names no switch, or one is not a boolean (`invalid_value`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No assistant has that id (`unknown_assistant`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/assistants/{id}/connect": {
+      "post": {
+        "tags": [
+          "assistants"
+        ],
+        "summary": "Connect an AI assistant (scope: settings)",
+        "description": "Makes the assistant a key of its own, or uses the one it has, and writes Super Voice into its config. For Claude Code the daemon installs Super Voice's plugin, with `claude plugin install`, and the plugin gets its key from `voice assistant-header claude-code`. Codex gets its key the same way, from `voice assistant-header codex`. `OpenCode` and the Antigravity CLI have the key written into their configs. Connecting one that is connected already writes its entry again. Answers the whole list, as `GET /assistants` does.\n\nThe assistant reads its config when it starts, so one already running is connected from its next start.\n\nAn assistant the daemon finds no sign of is `409 assistant_not_found`. When its config cannot be changed, or the plugin cannot be installed, it is `500`, and a key made for this request is revoked again.\n\nFor Super Voice's own clients alone, since it makes a key: any other caller is `403` with reason `not_official_client`.",
+        "operationId": "connect_assistant",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "`claude-code`, `codex`, `opencode` or `antigravity`.",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AssistantId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connected. Every assistant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope (`scope_denied`), or the caller is not one of Super Voice's own clients (`auth_denied`, reason `not_official_client`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No assistant has that id (`unknown_assistant`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The daemon finds no sign of the assistant on this computer (`assistant_not_found`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The config could not be changed, the plugin could not be installed, or the key could not be saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/assistants/{id}/key": {
+      "get": {
+        "tags": [
+          "assistants"
+        ],
+        "summary": "Show an assistant's key (scope: settings)",
+        "description": "The key the daemon made for the assistant when it was connected. `voice assistant-header <id>` asks for it, for an assistant that gets its key by running that command, as Claude Code's plugin and Codex do. An assistant that is not connected has none: `404 not_connected`.\n\nFor Super Voice's own clients alone, since it shows a key: any other caller is `403` with reason `not_official_client`.",
+        "operationId": "assistant_key",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "`claude-code`, `codex`, `opencode` or `antigravity`.",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AssistantId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantKeyValue"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope (`scope_denied`), or the caller is not one of Super Voice's own clients (`auth_denied`, reason `not_official_client`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No assistant has that id (`unknown_assistant`), or it is not connected (`not_connected`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      }
+    },
     "/v1/auth/request": {
       "post": {
         "tags": [
@@ -1194,8 +1791,8 @@
                   "$ref": "#/components/schemas/Ack"
                 },
                 "example": {
-                  "message": "pong",
-                  "status": "success"
+                  "status": "success",
+                  "message": "pong"
                 }
               }
             }
@@ -6328,8 +6925,8 @@
                   "$ref": "#/components/schemas/Ack"
                 },
                 "example": {
-                  "message": "Recording started",
-                  "status": "success"
+                  "status": "success",
+                  "message": "Recording started"
                 }
               }
             }
@@ -6473,8 +7070,8 @@
                   "$ref": "#/components/schemas/Ack"
                 },
                 "example": {
-                  "message": "Recording stop signal sent",
-                  "status": "success"
+                  "status": "success",
+                  "message": "Recording stop signal sent"
                 }
               }
             }
@@ -9898,6 +10495,189 @@
         },
         "additionalProperties": false
       },
+      "Assistant": {
+        "type": "object",
+        "description": "One assistant in an [`AssistantList`].",
+        "required": [
+          "id",
+          "state",
+          "announce_when_needed"
+        ],
+        "properties": {
+          "announce_when_needed": {
+            "type": "boolean",
+            "description": "Whether Super Voice says aloud when the assistant needs the user, like\nClaude Code's own notices that it needs a permission or an answer.\nClaude Code, Codex and `OpenCode` announce, through their plugins."
+          },
+          "conversation_context": {
+            "type": "boolean",
+            "description": "Whether its `listen` calls are heard with the context they bring from\nthe conversation, on top of the user's own."
+          },
+          "id": {
+            "$ref": "#/components/schemas/AssistantId"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantSession"
+            },
+            "description": "Its open sessions, oldest first."
+          },
+          "show_talk": {
+            "type": "boolean",
+            "description": "Whether its plugin shows Talk above the prompt: Claude Code's and\n`OpenCode`'s, the assistants with a Talk of their own."
+          },
+          "state": {
+            "$ref": "#/components/schemas/AssistantState"
+          }
+        }
+      },
+      "AssistantChange": {
+        "type": "object",
+        "description": "The body of `PATCH /assistants/{id}`: either switch, or both.",
+        "properties": {
+          "announce_when_needed": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether Super Voice says aloud when the assistant needs the user."
+          },
+          "conversation_context": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the assistant's `listen` calls are heard with the context they\nbring from the conversation."
+          },
+          "show_talk": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the assistant's plugin shows Talk above its prompt: Claude\nCode's and `OpenCode`'s."
+          }
+        }
+      },
+      "AssistantId": {
+        "type": "string",
+        "enum": [
+          "claude-code",
+          "codex",
+          "opencode",
+          "antigravity"
+        ]
+      },
+      "AssistantKeyValue": {
+        "type": "object",
+        "description": "`GET /assistants/{id}/key` — the key an assistant sends.",
+        "required": [
+          "key",
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Where the assistant reaches Super Voice's MCP server with it, as\n`GET /assistants` gives it.",
+            "example": "http://127.0.0.1:7300/v1/mcp"
+          },
+          "key": {
+            "type": "string",
+            "description": "The key. The assistant sends it as `Authorization: Bearer <key>`.",
+            "example": "sva_0f3c9a1e"
+          }
+        }
+      },
+      "AssistantList": {
+        "type": "object",
+        "description": "Every assistant, every key made by hand, and where the MCP server is.",
+        "required": [
+          "assistants",
+          "custom_keys",
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Where an MCP client reaches Super Voice.",
+            "example": "http://127.0.0.1:7300/v1/mcp"
+          },
+          "assistants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Assistant"
+            },
+            "description": "Every assistant, in [`AssistantId::ALL`]'s order."
+          },
+          "custom_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CustomKey"
+            },
+            "description": "The keys made by hand, in the order they were made."
+          }
+        }
+      },
+      "AssistantSession": {
+        "type": "object",
+        "description": "An open session of an assistant: one conversation, like one Claude Code\nsession or one Codex thread. Listed from its first request, or from when\nits plugin says it started, until it ends or goes quiet.",
+        "required": [
+          "agents",
+          "speaking",
+          "listening",
+          "started_at"
+        ],
+        "properties": {
+          "agents": {
+            "type": "integer",
+            "description": "How many agents besides the session's own, like subagents, have made\nrequests.",
+            "minimum": 0
+          },
+          "folder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The folder it works in, when the assistant says.",
+            "example": "/home/me/super-voice"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session's id, as the assistant names it. Absent when it names\nnone: then all its requests are one session."
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When it last spoke or listened, in RFC 3339. Absent until it does.",
+            "example": "2026-11-20T09:42:10Z"
+          },
+          "listening": {
+            "type": "boolean",
+            "description": "It is recording the user."
+          },
+          "speaking": {
+            "type": "boolean",
+            "description": "Speech it started is playing."
+          },
+          "started_at": {
+            "type": "string",
+            "description": "When it was first seen, in RFC 3339.",
+            "example": "2026-11-20T09:15:00Z"
+          }
+        }
+      },
+      "AssistantState": {
+        "type": "string",
+        "enum": [
+          "not_found",
+          "found",
+          "connected"
+        ]
+      },
       "AudioTheme": {
         "type": "string",
         "enum": [
@@ -10576,6 +11356,38 @@
           }
         }
       },
+      "CustomKey": {
+        "type": "object",
+        "description": "A key made by hand for another MCP client. The key itself is shown only\nonce, in the [`NewKey`] that made it.",
+        "required": [
+          "id",
+          "name",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "description": "When the key was made, in RFC 3339.",
+            "example": "2026-11-19T20:15:00Z"
+          },
+          "id": {
+            "type": "string",
+            "description": "What names the key, to revoke it."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name the user gave the key.",
+            "example": "My editor"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantSession"
+            },
+            "description": "The open sessions of the client it was made for, oldest first."
+          }
+        }
+      },
       "DeviceList": {
         "type": "object",
         "description": "The devices a model or a stage can run on.",
@@ -10646,6 +11458,7 @@
           "shortcut_keys_taken",
           "shortcuts_unsupported",
           "shortcut_refused",
+          "assistant_not_found",
           "invalid_model",
           "invalid_backend",
           "cuda_unavailable",
@@ -10691,6 +11504,28 @@
             "type": "string",
             "description": "Always `error`.",
             "example": "error"
+          }
+        }
+      },
+      "ExtraContext": {
+        "type": "object",
+        "description": "Context for one dictation, added to the user's own: what the app or the\nconversation the user is in knows about what they are about to say, like\nthe names and terms an assistant has just used. It comes with the request\nthat starts the dictation and is used for that dictation alone; nothing is\nstored.",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Instructions or a topic, for a model that follows them. Goes after the\nuser's own prompt.",
+            "example": "The user is answering a question about the release notes."
+          },
+          "vocabulary": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Terms the user may say. Go after the user's own terms.",
+            "example": [
+              "agy",
+              "Antigravity"
+            ]
           }
         }
       },
@@ -11101,6 +11936,20 @@
           }
         }
       },
+      "KeyRequest": {
+        "type": "object",
+        "description": "The body of `POST /assistants/keys`.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What the user calls the MCP client the key is for. Not blank, and not\nan assistant's id.",
+            "example": "My editor"
+          }
+        }
+      },
       "LanguageBody": {
         "type": "object",
         "description": "The language this model should transcribe in.",
@@ -11402,6 +12251,36 @@
           },
           "voice": {
             "$ref": "#/components/schemas/ModelVoiceBlock"
+          }
+        }
+      },
+      "NewKey": {
+        "type": "object",
+        "description": "A key just made by hand, with the key itself. This is the only time the\nkey is shown.",
+        "required": [
+          "id",
+          "name",
+          "key",
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Where an MCP client reaches Super Voice.",
+            "example": "http://127.0.0.1:7300/v1/mcp"
+          },
+          "id": {
+            "type": "string",
+            "description": "What names the key, to revoke it."
+          },
+          "key": {
+            "type": "string",
+            "description": "The key. An MCP client sends it as `Authorization: Bearer <key>`."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name the user gave the key.",
+            "example": "My editor"
           }
         }
       },
@@ -12670,6 +13549,17 @@
             },
             "description": "Mono PCM samples in `-1.0..=1.0`. Present means \"transcribe this buffer\"\n— the daemon does not touch the microphone, and answers with one JSON\nresult rather than a stream."
           },
+          "context": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExtraContext",
+                "description": "Context for this transcription alone, added to the user's: what the\napp or conversation knows about what the user will say. The prompt\ngoes after the user's own, and the terms after theirs. Held to a\ncontext's limits; past them, or of another shape, it is a `400`. Only\na model that takes a context hears it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "language": {
             "type": [
               "string",
@@ -13550,6 +14440,10 @@
     {
       "name": "shortcuts",
       "description": "Super Voice's keyboard shortcuts on this desktop: where each stands, adding one, removing one."
+    },
+    {
+      "name": "assistants",
+      "description": "The AI assistants Super Voice connects to, such as Claude Code and Codex: where each stands, connecting and disconnecting one, and the keys made by hand for other MCP clients."
     },
     {
       "name": "update",
