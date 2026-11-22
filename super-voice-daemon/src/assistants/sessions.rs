@@ -105,8 +105,9 @@ impl Entry {
 }
 
 /// How long after a dictation a prompt that holds it counts as spoken: time
-/// to look it over and send it.
-pub const DICTATION_FRESH: Duration = Duration::from_mins(10);
+/// to look it over and send it. Kept short, as the dictation may have gone
+/// to any window: a prompt typed long after is the user's own.
+pub const DICTATION_FRESH: Duration = Duration::from_secs(90);
 
 /// Every session the daemon knows of.
 #[derive(Default)]
@@ -528,6 +529,9 @@ mod tests {
             "open the notes",
             now + DICTATION_FRESH + Duration::from_secs(1)
         ));
+        // A minute to look it over is enough.
+        sessions.dictated("open the notes");
+        assert!(sessions.was_dictated("open the notes", now + Duration::from_secs(60)));
         sessions.dictated("   ");
         assert!(!sessions.was_dictated("", now));
     }
