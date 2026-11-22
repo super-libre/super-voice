@@ -190,13 +190,18 @@ enum ReadRequest {
     Unclear,
 }
 
-/// What `prompt` asks, when it is `/read`, or `$read` as Codex names a
-/// plugin's skill, alone or with what follows it after a space.
+/// How a prompt asks to read a reply again: as a command, or as the
+/// plugin's skill is named, typed or picked from the assistant's list: agy
+/// names it `/super-voice:read`, and Codex `$super-voice:read`.
+const READ_COMMANDS: [&str; 4] = ["/read", "/super-voice:read", "$read", "$super-voice:read"];
+
+/// What `prompt` asks, when it is one of [`READ_COMMANDS`], alone or with
+/// what follows it after a space.
 fn read_request(prompt: &str) -> Option<ReadRequest> {
     let prompt = prompt.trim();
-    let rest = prompt
-        .strip_prefix("/read")
-        .or_else(|| prompt.strip_prefix("$read"))?;
+    let rest = READ_COMMANDS
+        .iter()
+        .find_map(|command| prompt.strip_prefix(command))?;
     if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
         return None;
     }
@@ -843,6 +848,11 @@ mod tests {
         assert_eq!(read_request("$read"), Some(ReadRequest::Last));
         assert_eq!(read_request("/read 0"), Some(ReadRequest::Back(0)));
         assert_eq!(read_request("$read  9\n"), Some(ReadRequest::Back(9)));
+        assert_eq!(
+            read_request("$super-voice:read 2"),
+            Some(ReadRequest::Back(2))
+        );
+        assert_eq!(read_request("/super-voice:read"), Some(ReadRequest::Last));
         assert_eq!(read_request("/read 10"), Some(ReadRequest::Unclear));
         assert_eq!(read_request("/read +1"), Some(ReadRequest::Unclear));
         assert_eq!(read_request("/read the notes"), Some(ReadRequest::Unclear));

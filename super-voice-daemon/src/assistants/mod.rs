@@ -82,7 +82,7 @@ const OPENCODE_PLUGIN_FILES: [(&str, &str); 5] = [
 
 /// Super Voice's plugin for the Antigravity CLI, by each file's name in its
 /// folder. `{voice}` in its hooks becomes the `voice` command's path.
-const ANTIGRAVITY_PLUGIN_FILES: [(&str, &str); 2] = [
+const ANTIGRAVITY_PLUGIN_FILES: [(&str, &str); 3] = [
     (
         "plugin.json",
         include_str!("../../../antigravity-plugin/plugin.json"),
@@ -90,6 +90,10 @@ const ANTIGRAVITY_PLUGIN_FILES: [(&str, &str); 2] = [
     (
         "hooks.json",
         include_str!("../../../antigravity-plugin/hooks.json"),
+    ),
+    (
+        "skills/read/SKILL.md",
+        include_str!("../../../antigravity-plugin/skills/read/SKILL.md"),
     ),
 ];
 

@@ -118,16 +118,13 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
 /// The answer before a model call, from Super Voice's answer to its prompt:
 /// a spoken prompt's note for the model; or, for a prompt Super Voice
 /// answered itself, like `/read`, its answer for the user alone, and the
-/// turn ended before the model runs.
+/// turn ended before the model runs. agy 1.5 shows the user a hook's text
+/// that the model never reads only as an error: a system message's
+/// `metadata` would, but any `metadata` panics in its hook runner.
 fn invocation(turn: &Value) -> Value {
     if let Some(answered) = turn["answered"].as_str() {
         return json!({
-            "injectSteps": [{
-                "systemMessage": {
-                    "systemMessage": "",
-                    "metadata": { "user_markdown": answered },
-                },
-            }],
+            "injectSteps": [{ "errorMessage": { "userMessage": answered } }],
             "terminationBehavior": "terminate",
         });
     }
@@ -259,9 +256,10 @@ mod tests {
         let read = json!({ "spoken": false, "answered": "Reading reply 1 aloud." });
         let answer = invocation(&read);
         assert_eq!(answer["terminationBehavior"], "terminate");
-        let step = &answer["injectSteps"][0]["systemMessage"];
-        assert_eq!(step["systemMessage"], "");
-        assert_eq!(step["metadata"]["user_markdown"], "Reading reply 1 aloud.");
+        assert_eq!(
+            answer["injectSteps"],
+            json!([{ "errorMessage": { "userMessage": "Reading reply 1 aloud." } }])
+        );
     }
 
     #[test]
