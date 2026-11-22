@@ -100,12 +100,7 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
             }
             let answer = call("turn", json!({ "event": "prompt", "text": prompt })).await?;
             let turn: Value = serde_json::from_str(&answer.text).ok()?;
-            Some(match turn["note"].as_str() {
-                Some(note) if turn["spoken"] == true => json!({
-                    "injectSteps": [{ "systemMessage": { "systemMessage": note } }],
-                }),
-                _ => json!({}),
-            })
+            Some(invocation(&turn))
         }
         "pre-tool-use" => Some(named_call(&hook["toolCall"], &session)),
         "stop" => {
@@ -117,6 +112,30 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
             Some(going_on(event))
         }
         _ => None,
+    }
+}
+
+/// The answer before a model call, from Super Voice's answer to its prompt:
+/// a spoken prompt's note for the model; or, for a prompt Super Voice
+/// answered itself, like `/read`, its answer for the user alone, and the
+/// turn ended before the model runs.
+fn invocation(turn: &Value) -> Value {
+    if let Some(answered) = turn["answered"].as_str() {
+        return json!({
+            "injectSteps": [{
+                "systemMessage": {
+                    "systemMessage": "",
+                    "metadata": { "user_markdown": answered },
+                },
+            }],
+            "terminationBehavior": "terminate",
+        });
+    }
+    match turn["note"].as_str() {
+        Some(note) if turn["spoken"] == true => json!({
+            "injectSteps": [{ "systemMessage": { "systemMessage": note } }],
+        }),
+        _ => json!({}),
     }
 }
 
@@ -224,6 +243,27 @@ mod tests {
     }
 
     /// The reply is the last model response with text.
+    /// A spoken prompt's note goes to the model; a prompt Super Voice
+    /// answered ends the turn, with its answer for the user alone.
+    #[test]
+    fn a_prompt_super_voice_answered_never_reaches_the_model() {
+        let spoken = json!({ "spoken": true, "note": "Keep it short." });
+        assert_eq!(
+            invocation(&spoken),
+            json!({ "injectSteps": [{ "systemMessage": { "systemMessage": "Keep it short." } }] })
+        );
+        assert_eq!(
+            invocation(&json!({ "spoken": false, "note": null })),
+            json!({})
+        );
+        let read = json!({ "spoken": false, "answered": "Reading reply 1 aloud." });
+        let answer = invocation(&read);
+        assert_eq!(answer["terminationBehavior"], "terminate");
+        let step = &answer["injectSteps"][0]["systemMessage"];
+        assert_eq!(step["systemMessage"], "");
+        assert_eq!(step["metadata"]["user_markdown"], "Reading reply 1 aloud.");
+    }
+
     #[test]
     fn the_reply_is_the_last_model_text() {
         let transcript = [

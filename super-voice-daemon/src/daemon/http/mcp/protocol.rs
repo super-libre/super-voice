@@ -131,9 +131,11 @@ pub(crate) enum SessionEvent {
 pub(crate) enum TurnEvent {
     /// The user sent `text`. `spoken` when the plugin knows whether it was
     /// said aloud; when it does not, the daemon tells from its dictation.
+    /// `/read` asks to hear a reply again instead, and is answered by the
+    /// daemon.
     Prompt { text: String, spoken: Option<bool> },
-    /// The assistant answered with `text`, read aloud when the turn was
-    /// spoken.
+    /// The assistant answered with `text`, kept to read again, and read
+    /// aloud when the turn was spoken.
     Reply { text: String },
 }
 
@@ -496,7 +498,9 @@ fn plugin_tools(may_speak: bool, marked: bool) -> Vec<Value> {
             "name": "turn",
             "title": "Turn",
             "description": "Say that the user sent a prompt, and whether it was spoken, or that the \
-                assistant answered it. A spoken turn's reply is read aloud.",
+                assistant answered it. A spoken turn's reply is read aloud. A prompt of `/read` or \
+                `$read`, with a number from 0 to 9, reads one of the last replies aloud again \
+                instead, and is answered here rather than by the assistant.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

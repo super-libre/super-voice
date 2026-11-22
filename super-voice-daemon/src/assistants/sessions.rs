@@ -10,7 +10,7 @@
 use super::calls::Caller;
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -83,6 +83,9 @@ struct Entry {
     spoken: Option<bool>,
     /// The prompt that started it, as its plugin last said.
     prompt: Option<String>,
+    /// Its last [`READ_BACK`] replies, as its plugin said them, the last one
+    /// first.
+    replies: VecDeque<String>,
 }
 
 impl Entry {
@@ -108,6 +111,9 @@ impl Entry {
 /// to look it over and send it. Kept short, as the dictation may have gone
 /// to any window: a prompt typed long after is the user's own.
 pub const DICTATION_FRESH: Duration = Duration::from_secs(90);
+
+/// How many of a session's replies are kept to read aloud again.
+pub const READ_BACK: usize = 10;
 
 /// Every session the daemon knows of.
 #[derive(Default)]
@@ -347,6 +353,39 @@ impl Sessions {
         said
     }
 
+    /// `who`'s plugin says the assistant answered its turn with `reply`. The
+    /// same reply said again, as a turn that ended before the model ran
+    /// says, is kept once.
+    pub fn replied(&self, who: &Who, reply: &str) {
+        let reply = reply.trim();
+        if reply.is_empty() {
+            return;
+        }
+        self.with(who, |entry| {
+            if entry.replies.front().map(String::as_str) != Some(reply) {
+                entry.replies.push_front(reply.to_string());
+                entry.replies.truncate(READ_BACK);
+            }
+        });
+    }
+
+    /// `who`'s reply `back` replies before its last one.
+    ///
+    /// # Errors
+    ///
+    /// How many replies it has kept, when there is none that far back.
+    pub fn reply(&self, who: &Who, back: usize) -> Result<String, usize> {
+        let entries = self.entries.lock();
+        let replies = entries
+            .iter()
+            .find(|entry| entry.is(who))
+            .map(|entry| &entry.replies);
+        match replies {
+            Some(replies) => replies.get(back).cloned().ok_or(replies.len()),
+            None => Err(0),
+        }
+    }
+
     /// Whether `who`'s turn under way was spoken, once its plugin has said.
     #[must_use]
     pub fn spoken(&self, who: &Who) -> Option<bool> {
@@ -401,6 +440,7 @@ impl Sessions {
                 recordings: 0,
                 spoken: None,
                 prompt: None,
+                replies: VecDeque::new(),
             });
             entries.len() - 1
         };
@@ -565,6 +605,34 @@ mod tests {
         assert_eq!(left[0].id.as_deref(), Some("listening"));
         drop(take);
         assert_eq!(sessions.sweep(now + SEEN_IDLE + Duration::from_secs(1)), 1);
+    }
+
+    /// A session keeps its last replies, the last one first, each once, and
+    /// says how many it has when asked for one further back.
+    #[test]
+    fn a_session_keeps_its_last_replies() {
+        let sessions = Sessions::default();
+        let one = who("a", Some("s1"));
+        assert_eq!(sessions.reply(&one, 0), Err(0));
+        sessions.replied(&one, " First. ");
+        sessions.replied(&one, "Second.");
+        // A turn that ended before the model ran says its last reply again.
+        sessions.replied(&one, "Second.");
+        sessions.replied(&one, "  ");
+        assert_eq!(sessions.reply(&one, 0).as_deref(), Ok("Second."));
+        assert_eq!(sessions.reply(&one, 1).as_deref(), Ok("First."));
+        assert_eq!(sessions.reply(&one, 2), Err(2));
+        assert_eq!(sessions.reply(&who("a", Some("s2")), 0), Err(0));
+
+        for reply in 0..READ_BACK + 2 {
+            sessions.replied(&one, &format!("Reply {reply}."));
+        }
+        assert_eq!(sessions.reply(&one, 0).as_deref(), Ok("Reply 11."));
+        assert_eq!(
+            sessions.reply(&one, READ_BACK - 1).as_deref(),
+            Ok("Reply 2.")
+        );
+        assert_eq!(sessions.reply(&one, READ_BACK), Err(READ_BACK));
     }
 
     /// A prompt that holds the user's fresh dictation was spoken, once; one

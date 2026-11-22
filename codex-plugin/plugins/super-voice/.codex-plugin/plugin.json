@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "description": "Hear Codex answer what you say to it, with Super Voice on your own machine.",
   "hooks": "./hooks/hooks.json",
+  "skills": "./skills/",
   "interface": {
     "displayName": "Super Voice",
     "shortDescription": "Hear Codex answer what you say to it.",
-    "longDescription": "When you dictate a prompt with Super Voice, Codex's answer is read aloud. A prompt you type is answered in writing. Super Voice lists each Codex conversation, and says aloud when Codex needs your permission."
+    "longDescription": "When you dictate a prompt with Super Voice, Codex's answer is read aloud. A prompt you type is answered in writing. $read reads a reply aloud again. Super Voice lists each Codex conversation, and says aloud when Codex needs your permission."
   }
 }

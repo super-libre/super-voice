@@ -123,6 +123,13 @@ pub(crate) async fn run(
             }
             .to_string(),
         ))),
+        Tool::Turn(TurnEvent::Prompt { text, .. }) if read_request(&text).is_some() => {
+            let request = read_request(&text)?;
+            // A turn of its own, typed, that ends before the assistant runs.
+            sessions.set_spoken(who, false);
+            let said = read_again(daemon, who, request).await;
+            Some(Ok(read_answer(caller.hook, &said)))
+        }
         Tool::Turn(TurnEvent::Prompt { text, spoken }) => {
             // The same prompt said again keeps its turn: its dictation is
             // used up by now.
@@ -134,6 +141,7 @@ pub(crate) async fn run(
             Some(Ok(prompt_answer(caller.hook, spoken, again.is_none())))
         }
         Tool::Turn(TurnEvent::Reply { text }) => {
+            sessions.replied(who, &text);
             let read = sessions.spoken(who) == Some(true) && !text.trim().is_empty();
             if read {
                 match speak(daemon, who, text, cancel).await {
@@ -169,6 +177,87 @@ fn prompt_answer(hook: Option<Hook>, spoken: bool, new: bool) -> String {
         })
         .to_string(),
     }
+}
+
+/// What a `/read` prompt asks for.
+#[derive(Debug, PartialEq)]
+enum ReadRequest {
+    /// Plain `/read`: the last reply, or to stop what the session says.
+    Last,
+    /// `/read 3`: the reply that many before the last one.
+    Back(usize),
+    /// `/read` with something other than a number from 0 to 9.
+    Unclear,
+}
+
+/// What `prompt` asks, when it is `/read`, or `$read` as Codex names a
+/// plugin's skill, alone or with what follows it after a space.
+fn read_request(prompt: &str) -> Option<ReadRequest> {
+    let prompt = prompt.trim();
+    let rest = prompt
+        .strip_prefix("/read")
+        .or_else(|| prompt.strip_prefix("$read"))?;
+    if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let rest = rest.trim();
+    Some(match rest.parse::<usize>() {
+        _ if rest.is_empty() => ReadRequest::Last,
+        Ok(back) if rest.len() == 1 => ReadRequest::Back(back),
+        _ => ReadRequest::Unclear,
+    })
+}
+
+/// What `/read` takes.
+const READ_USAGE: &str = "Read takes a number from 0, the last reply, to 9. Alone, it reads \
+    the last reply, or stops the one being read.";
+
+/// How long `/read` waits for its reply to start being read, so what keeps
+/// it from being read is told at once. A long reply goes on being made after.
+const READ_START: Duration = Duration::from_secs(2);
+
+/// Read one of `who`'s kept replies aloud again, or stop the one it reads:
+/// what to tell the user.
+async fn read_again(daemon: &Arc<SuperSTTDaemon>, who: &Who, request: ReadRequest) -> String {
+    let back = match request {
+        ReadRequest::Unclear => return READ_USAGE.to_string(),
+        ReadRequest::Last if is_speaking(daemon, who) => {
+            stop(daemon, who).await;
+            return "Stopped reading.".to_string();
+        }
+        ReadRequest::Last => 0,
+        ReadRequest::Back(back) => back,
+    };
+    let reply = match daemon.assistants.sessions.reply(who, back) {
+        Ok(reply) => reply,
+        Err(0) => return "There is no reply to read yet.".to_string(),
+        Err(1) => return "There is only one reply to read: 0.".to_string(),
+        Err(count) => {
+            return format!("There are {count} replies to read: 0 to {}.", count - 1);
+        }
+    };
+    let mut spoken = start_speaking(daemon, who, reply);
+    let started = match tokio::time::timeout(READ_START, &mut spoken).await {
+        Ok(joined) => spoken_outcome(joined).map(|_| ()),
+        // Still being made: it is read as it is.
+        Err(_) => Ok(()),
+    };
+    match started {
+        Ok(()) if back == 0 => "Reading the last reply aloud.".to_string(),
+        Ok(()) => format!("Reading reply {back} aloud."),
+        Err(error) => error,
+    }
+}
+
+/// The answer to a `/read` prompt, which the assistant never sees: for a
+/// Codex hook, the prompt blocked with `said` as the reason; for a plugin,
+/// `said` as what answered it.
+fn read_answer(hook: Option<Hook>, said: &str) -> String {
+    match hook {
+        Some(Hook::Codex) => serde_json::json!({ "decision": "block", "reason": said }),
+        None => serde_json::json!({ "spoken": false, "answered": said }),
+    }
+    .to_string()
 }
 
 async fn speak(
@@ -217,17 +306,21 @@ async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     }
 }
 
-/// Whether `who`'s own speech plays, and whether it records, as JSON.
+/// Whether `who`'s own speech plays.
+fn is_speaking(daemon: &SuperSTTDaemon, who: &Who) -> bool {
+    daemon
+        .assistants
+        .sessions
+        .utterance(who)
+        .is_some_and(|utterance| daemon.tts.speech.current().as_deref() == Some(utterance.as_str()))
+}
+
 /// Whether `who`'s own speech plays and whether it records, and whether the
-/// user shows its plugin's Talk.
+/// user shows its plugin's Talk, as JSON.
 fn status(daemon: &SuperSTTDaemon, who: &Who, shows_talk: bool) -> String {
-    let sessions = &daemon.assistants.sessions;
-    let speaking = sessions.utterance(who).is_some_and(|utterance| {
-        daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
-    });
     serde_json::json!({
-        "speaking": speaking,
-        "listening": sessions.is_recording(who),
+        "speaking": is_speaking(daemon, who),
+        "listening": daemon.assistants.sessions.is_recording(who),
         "talk": shows_talk,
     })
     .to_string()
@@ -739,6 +832,87 @@ mod tests {
         assert_eq!(
             run(&daemon, seen, &hook, &cancel).await,
             Some(Ok(String::new()))
+        );
+    }
+
+    /// `/read`, or `$read`, alone or with one digit; anything else after it
+    /// is unclear, and a prompt that only starts with the word is not one.
+    #[test]
+    fn read_asks_for_a_reply_by_how_far_back_it_is() {
+        assert_eq!(read_request(" /read "), Some(ReadRequest::Last));
+        assert_eq!(read_request("$read"), Some(ReadRequest::Last));
+        assert_eq!(read_request("/read 0"), Some(ReadRequest::Back(0)));
+        assert_eq!(read_request("$read  9\n"), Some(ReadRequest::Back(9)));
+        assert_eq!(read_request("/read 10"), Some(ReadRequest::Unclear));
+        assert_eq!(read_request("/read +1"), Some(ReadRequest::Unclear));
+        assert_eq!(read_request("/read the notes"), Some(ReadRequest::Unclear));
+        assert_eq!(read_request("/readme"), None);
+        assert_eq!(read_request("read 1"), None);
+        assert_eq!(read_request("Please /read 1"), None);
+    }
+
+    /// A `/read` prompt is answered by Super Voice, as a typed turn the
+    /// assistant never sees: Codex's hook blocks it with the answer.
+    #[tokio::test]
+    async fn a_read_prompt_is_answered_without_the_assistant() {
+        let daemon = Arc::new(test_daemon().await);
+        let cancel = CancellationToken::new();
+        let codex = Caller {
+            hook: Some(Hook::Codex),
+            ..caller()
+        };
+        let ask = async |text: &str, caller: &Caller| {
+            let prompt = Tool::Turn(TurnEvent::Prompt {
+                text: text.to_string(),
+                spoken: None,
+            });
+            let answer = run(&daemon, prompt, caller, &cancel)
+                .await
+                .unwrap()
+                .unwrap();
+            serde_json::from_str::<serde_json::Value>(&answer).unwrap()
+        };
+        let answered = |said: &str| serde_json::json!({ "spoken": false, "answered": said });
+
+        assert_eq!(
+            ask("/read", &caller()).await,
+            answered("There is no reply to read yet.")
+        );
+        for text in ["First.", "Second."] {
+            let reply = Tool::Turn(TurnEvent::Reply {
+                text: text.to_string(),
+            });
+            run(&daemon, reply, &caller(), &cancel).await;
+        }
+        assert_eq!(
+            ask("/read 5", &caller()).await,
+            answered("There are 2 replies to read: 0 to 1.")
+        );
+        assert_eq!(ask("/read x", &caller()).await, answered(READ_USAGE));
+        // The test daemon has no model to read it with.
+        let unread = ask("/read 1", &caller()).await;
+        assert!(
+            unread["answered"]
+                .as_str()
+                .is_some_and(|said| said.contains("no text to speech model")),
+            "{unread}"
+        );
+        assert_eq!(
+            daemon.assistants.sessions.spoken(&caller().who),
+            Some(false)
+        );
+
+        assert_eq!(
+            ask("$read 9", &codex).await,
+            serde_json::json!({
+                "decision": "block",
+                "reason": "There are 2 replies to read: 0 to 1.",
+            })
+        );
+        // A prompt that only starts like it goes to the assistant.
+        assert_eq!(
+            ask("/readme is out of date", &caller()).await,
+            serde_json::json!({ "spoken": false, "note": null })
         );
     }
 

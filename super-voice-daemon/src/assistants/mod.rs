@@ -99,7 +99,7 @@ const ANTIGRAVITY_PLUGIN: &str = "super-voice";
 /// Super Voice's plugin for Codex, as a marketplace of one, by each file's
 /// place in it. The daemon writes it to [`codex_marketplace_dir`] and
 /// installs the plugin from there.
-const CODEX_MARKETPLACE_FILES: [(&str, &str); 3] = [
+const CODEX_MARKETPLACE_FILES: [(&str, &str); 4] = [
     (
         ".agents/plugins/marketplace.json",
         include_str!("../../../codex-plugin/.agents/plugins/marketplace.json"),
@@ -111,6 +111,10 @@ const CODEX_MARKETPLACE_FILES: [(&str, &str); 3] = [
     (
         "plugins/super-voice/hooks/hooks.json",
         include_str!("../../../codex-plugin/plugins/super-voice/hooks/hooks.json"),
+    ),
+    (
+        "plugins/super-voice/skills/read/SKILL.md",
+        include_str!("../../../codex-plugin/plugins/super-voice/skills/read/SKILL.md"),
     ),
 ];
 
