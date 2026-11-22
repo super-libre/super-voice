@@ -4,7 +4,8 @@
 // Super Voice and does what the TUI part asks; tells Super Voice of each
 // session, and whether each prompt was spoken; keeps the plugin's own tools
 // from the model; lets the model speak and listen only in a spoken turn, and
-// tells it so; reads a spoken prompt's reply aloud; and says aloud when
+// tells it so; reads a spoken prompt's reply aloud, and any reply again when
+// the user asks with /read; and says aloud when
 // OpenCode needs the user's permission.
 
 import { Plugin } from '@opencode/plugin'
@@ -62,6 +63,14 @@ function textOf(message: unknown): string {
     .join('')
 }
 
+/** Why `/read` found no reply that far back, with `count` replies to read. */
+function tooFarBack(count: number): string {
+  if (count === 0) {
+    return 'There is no reply to read yet.'
+  }
+  return count === 1 ? 'There is only one reply to read: 0.' : `There are ${count} replies to read: 0 to ${count - 1}.`
+}
+
 /** Whether a stored message is the user's, or the assistant's. */
 function roleOf(message: unknown): string {
   const { type, role } = message as { type?: unknown; role?: unknown }
@@ -94,6 +103,33 @@ export default Plugin.define({
       const messages = ((await ctx.session.context({ sessionID }).catch(() => [])) ?? []) as unknown[]
       const last = (role: string) => textOf([...messages].reverse().find(message => roleOf(message) === role) ?? {})
       return { prompt: last('user'), reply: last('assistant') }
+    }
+
+    /** The session's replies, the last one first: what the assistant last
+     * wrote in each turn. */
+    const replies = async (sessionID: string) => {
+      const messages = ((await ctx.session.context({ sessionID }).catch(() => [])) ?? []) as unknown[]
+      const found: string[] = []
+      let reply = ''
+      for (const message of messages) {
+        const text = textOf(message).trim()
+        if (!text) {
+          continue
+        }
+        const role = roleOf(message)
+        if (role === 'user') {
+          if (reply) {
+            found.push(reply)
+          }
+          reply = ''
+        } else if (role === 'assistant') {
+          reply = text
+        }
+      }
+      if (reply) {
+        found.push(reply)
+      }
+      return found.reverse()
     }
 
     const hidden = await ctx.tool.transform(editor => {
@@ -148,6 +184,20 @@ export default Plugin.define({
           return { error: 'Super Voice is not reachable.' }
         }
         return heard.isError ? { error: heard.text } : { text: heard.text }
+      },
+      read: async input => {
+        const { sessionID, back } = input as { sessionID: string; back: number }
+        const found = await replies(sessionID)
+        const reply = found[back]
+        if (reply === undefined) {
+          return { error: tooFarBack(found.length) }
+        }
+        // The user asked for it: a typed turn does not refuse it.
+        const spoke = await call('speak', sessionID, { text: reply, asked: true })
+        if (spoke === undefined) {
+          return { error: 'Super Voice is not reachable.' }
+        }
+        return spoke.isError ? { error: spoke.text } : {}
       },
       stop: async input => {
         await call('stop', (input as { sessionID: string }).sessionID)

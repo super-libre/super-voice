@@ -24,6 +24,24 @@ export const Voice = Rpc.define({
         additionalProperties: false,
       },
     },
+    /** Read one of the session's replies aloud again, counted back from the
+     * last one, 0: nothing, or why not. */
+    read: {
+      input: {
+        type: 'object',
+        properties: {
+          sessionID: { type: 'string' },
+          back: { type: 'integer', minimum: 0, maximum: 9 },
+        },
+        required: ['sessionID', 'back'],
+        additionalProperties: false,
+      },
+      output: {
+        type: 'object',
+        properties: { error: { type: 'string' } },
+        additionalProperties: false,
+      },
+    },
     /** Stop the session's own speech, and end its recording. */
     stop: { input: session, output: { type: 'object', additionalProperties: false } },
     /** Whether the session's speech plays or it records, whether its turn

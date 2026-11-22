@@ -9,6 +9,9 @@
 //
 // With Talk turned off on Super Voice's Assistants page, there is no row and
 // no key: 0 types a 0, and Talk never starts by itself.
+//
+// OpenCode has no place under a reply for a button, so /read reads a reply
+// aloud again instead, Talk shown or not.
 
 import { Plugin } from '@opencode/plugin/tui'
 import { Show, createSignal } from 'solid-js'
@@ -21,6 +24,8 @@ const NO_SPEECH = '(no speech detected)'
 const POLL_MS = 1000
 /** How long to wait for a reply's reading to start before giving up on it. */
 const START_WAIT_MS = 10_000
+/** What `/read` takes. */
+const READ_USAGE = '/read reads the last reply aloud; /read 1 the one before it, up to 9. /read again stops it.'
 
 type Phase = 'idle' | 'listening' | 'sending'
 
@@ -88,8 +93,54 @@ export default Plugin.define({
       void talk(sessionID)
     }
 
+    /** `/read` and `/read 3`: read the last reply aloud again, or the one
+     * that many back. Plain `/read` stops what this session says. */
+    const readAgain = async (input?: string) => {
+      const sessionID = currentSession()
+      if (!sessionID) {
+        return
+      }
+      const given = (input ?? '').trim()
+      if (!given && speaking()) {
+        setSpeaking(false)
+        await voice.stop({ sessionID }).catch(() => {})
+        return
+      }
+      if (given && !/^[0-9]$/.test(given)) {
+        context.ui.toast.show({ message: READ_USAGE, variant: 'info' })
+        return
+      }
+      // Hearing a reply again is not a turn to answer.
+      armed = undefined
+      const answer = await voice
+        .read({ sessionID, back: Number(given || '0') })
+        .catch(() => ({ error: 'Super Voice is not reachable.' }))
+      const { error } = answer as { error?: string }
+      if (error) {
+        context.ui.toast.show({ message: error, variant: 'error' })
+      } else {
+        setSpeaking(true)
+      }
+    }
+
     context.keymap.layer(() => ({
       commands: [{ id: 'super-voice.talk', title: 'Talk', bind: '0', run: press }],
+    }))
+    // Slash commands and the command palette offer only what every mode
+    // reaches, as OpenCode's own /btw is.
+    context.keymap.layer(() => ({
+      mode: 'global',
+      commands: [
+        {
+          id: 'super-voice.read',
+          title: 'Read a reply aloud',
+          description: READ_USAGE,
+          group: 'Super Voice',
+          palette: true,
+          slash: { name: 'read', arguments: true },
+          run: readAgain,
+        },
+      ],
     }))
 
     const label = () => {
