@@ -117,12 +117,17 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
 
 /// The answer before a model call, from Super Voice's answer to its prompt:
 /// a spoken prompt's note for the model; or, for a prompt Super Voice
-/// answered itself, like `/read`, its answer for the user alone, and the
-/// turn ended before the model runs. agy 1.5 shows the user a hook's text
-/// that the model never reads only as an error: a system message's
-/// `metadata` would, but any `metadata` panics in its hook runner.
+/// answered itself, like `/read`, the turn ended before the model runs.
+///
+/// agy 1.5 shows the user a hook's text that the model never reads only as
+/// an error, with a warning sign: a system message's `metadata` would, but
+/// any `metadata` panics in its hook runner. So Super Voice's answer shows
+/// only when it failed; when it worked, the user hears it.
 fn invocation(turn: &Value) -> Value {
     if let Some(answered) = turn["answered"].as_str() {
+        if turn["failed"] == false {
+            return json!({ "terminationBehavior": "terminate" });
+        }
         return json!({
             "injectSteps": [{ "errorMessage": { "userMessage": answered } }],
             "terminationBehavior": "terminate",
@@ -253,12 +258,20 @@ mod tests {
             invocation(&json!({ "spoken": false, "note": null })),
             json!({})
         );
-        let read = json!({ "spoken": false, "answered": "Reading reply 1 aloud." });
-        let answer = invocation(&read);
-        assert_eq!(answer["terminationBehavior"], "terminate");
+        // Heard, so nothing is shown.
+        let read =
+            json!({ "spoken": false, "answered": "Reading reply 1 aloud.", "failed": false });
         assert_eq!(
-            answer["injectSteps"],
-            json!([{ "errorMessage": { "userMessage": "Reading reply 1 aloud." } }])
+            invocation(&read),
+            json!({ "terminationBehavior": "terminate" })
+        );
+        let unread = json!({ "spoken": false, "answered": "There is no reply to read yet.", "failed": true });
+        assert_eq!(
+            invocation(&unread),
+            json!({
+                "injectSteps": [{ "errorMessage": { "userMessage": "There is no reply to read yet." } }],
+                "terminationBehavior": "terminate",
+            })
         );
     }
 

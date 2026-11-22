@@ -127,8 +127,8 @@ pub(crate) async fn run(
             let request = read_request(&text)?;
             // A turn of its own, typed, that ends before the assistant runs.
             sessions.set_spoken(who, false);
-            let said = read_again(daemon, who, request).await;
-            Some(Ok(read_answer(caller.hook, &said)))
+            let outcome = read_again(daemon, who, request).await;
+            Some(Ok(read_answer(caller.hook, outcome)))
         }
         Tool::Turn(TurnEvent::Prompt { text, spoken }) => {
             // The same prompt said again keeps its turn: its dictation is
@@ -221,24 +221,31 @@ const READ_USAGE: &str = "Read takes a number from 0, the last reply, to 9. Alon
 /// it from being read is told at once. A long reply goes on being made after.
 const READ_START: Duration = Duration::from_secs(2);
 
-/// Read one of `who`'s kept replies aloud again, or stop the one it reads:
-/// what to tell the user.
-async fn read_again(daemon: &Arc<SuperSTTDaemon>, who: &Who, request: ReadRequest) -> String {
+/// Read one of `who`'s kept replies aloud again, or stop the one it reads.
+/// What to tell the user that it did, or why it could not.
+async fn read_again(
+    daemon: &Arc<SuperSTTDaemon>,
+    who: &Who,
+    request: ReadRequest,
+) -> Result<String, String> {
     let back = match request {
-        ReadRequest::Unclear => return READ_USAGE.to_string(),
+        ReadRequest::Unclear => return Err(READ_USAGE.to_string()),
         ReadRequest::Last if is_speaking(daemon, who) => {
             stop(daemon, who).await;
-            return "Stopped reading.".to_string();
+            return Ok("Stopped reading.".to_string());
         }
         ReadRequest::Last => 0,
         ReadRequest::Back(back) => back,
     };
     let reply = match daemon.assistants.sessions.reply(who, back) {
         Ok(reply) => reply,
-        Err(0) => return "There is no reply to read yet.".to_string(),
-        Err(1) => return "There is only one reply to read: 0.".to_string(),
+        Err(0) => return Err("There is no reply to read yet.".to_string()),
+        Err(1) => return Err("There is only one reply to read: 0.".to_string()),
         Err(count) => {
-            return format!("There are {count} replies to read: 0 to {}.", count - 1);
+            return Err(format!(
+                "There are {count} replies to read: 0 to {}.",
+                count - 1
+            ));
         }
     };
     let mut spoken = start_speaking(daemon, who, reply);
@@ -247,20 +254,25 @@ async fn read_again(daemon: &Arc<SuperSTTDaemon>, who: &Who, request: ReadReques
         // Still being made: it is read as it is.
         Err(_) => Ok(()),
     };
-    match started {
-        Ok(()) if back == 0 => "Reading the last reply aloud.".to_string(),
-        Ok(()) => format!("Reading reply {back} aloud."),
-        Err(error) => error,
-    }
+    started.map(|()| {
+        if back == 0 {
+            "Reading the last reply aloud.".to_string()
+        } else {
+            format!("Reading reply {back} aloud.")
+        }
+    })
 }
 
 /// The answer to a `/read` prompt, which the assistant never sees: for a
-/// Codex hook, the prompt blocked with `said` as the reason; for a plugin,
-/// `said` as what answered it.
-fn read_answer(hook: Option<Hook>, said: &str) -> String {
+/// Codex hook, the prompt blocked with what was done, or why not, as the
+/// reason; for a plugin, that as what answered it, and whether it `failed`,
+/// so a plugin that can only show it as an error shows it only then.
+fn read_answer(hook: Option<Hook>, outcome: Result<String, String>) -> String {
+    let failed = outcome.is_err();
+    let said = outcome.unwrap_or_else(|error| error);
     match hook {
         Some(Hook::Codex) => serde_json::json!({ "decision": "block", "reason": said }),
-        None => serde_json::json!({ "spoken": false, "answered": said }),
+        None => serde_json::json!({ "spoken": false, "answered": said, "failed": failed }),
     }
     .to_string()
 }
@@ -882,7 +894,8 @@ mod tests {
                 .unwrap();
             serde_json::from_str::<serde_json::Value>(&answer).unwrap()
         };
-        let answered = |said: &str| serde_json::json!({ "spoken": false, "answered": said });
+        let answered =
+            |said: &str| serde_json::json!({ "spoken": false, "answered": said, "failed": true });
 
         assert_eq!(
             ask("/read", &caller()).await,
@@ -907,6 +920,7 @@ mod tests {
                 .is_some_and(|said| said.contains("no text to speech model")),
             "{unread}"
         );
+        assert_eq!(unread["failed"], true);
         assert_eq!(
             daemon.assistants.sessions.spoken(&caller().who),
             Some(false)
@@ -923,6 +937,24 @@ mod tests {
         assert_eq!(
             ask("/readme is out of date", &caller()).await,
             serde_json::json!({ "spoken": false, "note": null })
+        );
+    }
+
+    /// A plugin learns whether `/read` did what was asked, or what kept it
+    /// from it; Codex, which shows the reason either way, is not told.
+    #[test]
+    fn a_read_answer_says_whether_it_failed() {
+        let answer = |hook, outcome| {
+            serde_json::from_str::<serde_json::Value>(&read_answer(hook, outcome)).unwrap()
+        };
+        assert_eq!(
+            answer(None, Ok("Stopped reading.".to_string())),
+            serde_json::json!({ "spoken": false, "answered": "Stopped reading.", "failed": false })
+        );
+        assert_eq!(answer(None, Err(READ_USAGE.to_string()))["failed"], true);
+        assert_eq!(
+            answer(Some(Hook::Codex), Ok("Reading reply 2 aloud.".to_string())),
+            serde_json::json!({ "decision": "block", "reason": "Reading reply 2 aloud." })
         );
     }
 
