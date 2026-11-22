@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! `v1/assistants` — the Assistants page's seven calls.
+//! `v1/assistants` — the Assistants page's eight calls.
 
 use serde_json::json;
 use super_voice_shared::models::assistants::{AssistantId, AssistantState};
@@ -7,7 +7,7 @@ use super_voice_shared::models::assistants::{AssistantId, AssistantState};
 use super::fake_daemon::{FakeDaemon, Reply};
 use crate::daemon::client::v1::assistants::{
     connect_assistant, create_key, disconnect_assistant, list_assistants, remove_key,
-    set_announce_when_needed, set_conversation_context,
+    set_announce_when_needed, set_conversation_context, set_show_talk,
 };
 
 /// What the daemon answers the list's calls with: Claude Code in `claude`'s
@@ -33,6 +33,7 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
     let daemon = FakeDaemon::start().await;
     daemon.reply(Reply::json(&list("found", true)));
     daemon.reply(Reply::json(&list("connected", true)));
+    daemon.reply(Reply::json(&list("connected", false)));
     daemon.reply(Reply::json(&list("connected", false)));
     daemon.reply(Reply::json(&list("connected", false)));
     daemon.reply(Reply::json(&json!({
@@ -66,6 +67,12 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
         .expect("set");
     // A daemon that does not say uses the conversation.
     assert!(heard.assistants[1].conversation_context);
+
+    let shown = set_show_talk(AssistantId::ClaudeCode, false)
+        .await
+        .expect("set");
+    // A daemon that does not say shows Talk.
+    assert!(shown.assistants[0].show_talk);
 
     let key = create_key("Zed".to_string()).await.expect("made");
     assert_eq!(key.name, "Zed");
@@ -101,6 +108,11 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
                 "PATCH".to_string(),
                 "/assistants/codex".to_string(),
                 json!({ "conversation_context": false }),
+            ),
+            (
+                "PATCH".to_string(),
+                "/assistants/claude-code".to_string(),
+                json!({ "show_talk": false }),
             ),
             (
                 "POST".to_string(),

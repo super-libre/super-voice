@@ -422,6 +422,32 @@ async fn each_assistant_uses_its_conversation_on_its_own() {
     assert_eq!(status, StatusCode::OK, "{list}");
     assert_eq!(switches(&list, "codex"), Some((json!(false), json!(true))));
 
+    // Talk is shown until turned off, and turning it off leaves the rest.
+    let shows_talk = |list: &Value, id: &str| {
+        list["assistants"]
+            .as_array()
+            .expect("assistants")
+            .iter()
+            .find(|a| a["id"] == id)
+            .map(|a| a["show_talk"].clone())
+    };
+    assert_eq!(shows_talk(&list, "opencode"), Some(json!(true)));
+    let (status, list) = call(
+        &daemon,
+        &token,
+        Method::PATCH,
+        "/assistants/opencode",
+        Some(&json!({ "show_talk": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(shows_talk(&list, "opencode"), Some(json!(false)));
+    assert_eq!(shows_talk(&list, "claude-code"), Some(json!(true)));
+    assert_eq!(
+        switches(&list, "opencode"),
+        Some((json!(true), json!(true)))
+    );
+
     for body in [json!({}), json!({ "conversation_context": "no" })] {
         let (status, answer) = call(
             &daemon,

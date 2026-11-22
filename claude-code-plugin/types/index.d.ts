@@ -18,6 +18,10 @@ export type SuperVoiceReadingAgain = string
 /** Whether Claude's main turn is running, so sending stops it first. */
 export type SuperVoiceIsClaudeWorking = boolean
 
+/** Whether the user shows Talk above the prompt, as Super Voice last said:
+ * the switch on the Assistants page. Off, the plugin draws nothing there. */
+export type SuperVoiceShowsTalk = boolean
+
 /** Where the Talk button is: waiting, recording, transcribing, counting down
  * to send, or waiting for Enter on an answer the user is editing. */
 export type SuperVoiceTalk =
@@ -36,6 +40,7 @@ declare module 'claude-code' {
       isClaudeWorking: SuperVoiceIsClaudeWorking
       readingAgain: SuperVoiceReadingAgain
       talk: SuperVoiceTalk
+      showsTalk: SuperVoiceShowsTalk
     }
   }
 }

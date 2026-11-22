@@ -6,7 +6,7 @@ Connect OpenCode on the Assistants page of the Super Voice app. Super Voice adds
 
 ## In OpenCode
 
-1. A row above the prompt, and the key **0** while the prompt is empty:
+1. A row above the prompt, and the key **0** while the prompt is empty, unless you turned off **Show Talk above the prompt** for OpenCode on the Assistants page. Then there is neither, and the microphone never opens by itself:
    - **0: Talk** records you until you stop talking, and sends what you said.
    - **Listening. 0: Stop listening** ends the recording, which is still sent.
    - **0: Stop speaking** stops Super Voice. In a spoken conversation it's **0: Stop and talk**, and the microphone opens.

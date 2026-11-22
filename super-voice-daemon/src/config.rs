@@ -150,9 +150,37 @@ pub struct AssistantsConfig {
         deserialize_with = "super_voice_shared::utils::serde_helpers::deserialize_or_default"
     )]
     pub conversation_context: BTreeMap<String, bool>,
+    /// Whether each assistant with a Talk of its own, Claude Code and
+    /// `OpenCode`, shows it above the prompt, by its wire id. Kept as
+    /// [`announce_when_needed`](Self::announce_when_needed) is: only a
+    /// `false`.
+    #[serde(
+        default,
+        deserialize_with = "super_voice_shared::utils::serde_helpers::deserialize_or_default"
+    )]
+    pub show_talk: BTreeMap<String, bool>,
 }
 
 impl AssistantsConfig {
+    /// Whether `id`'s plugin shows Talk above its prompt.
+    #[must_use]
+    pub fn shows_talk(&self, id: AssistantId) -> bool {
+        self.show_talk
+            .get(id.as_wire_str())
+            .copied()
+            .unwrap_or(true)
+    }
+
+    /// Keep whether `id`'s plugin shows Talk above its prompt. Yes is kept as
+    /// nothing.
+    pub fn set_shows_talk(&mut self, id: AssistantId, on: bool) {
+        if on {
+            self.show_talk.remove(id.as_wire_str());
+        } else {
+            self.show_talk.insert(id.as_wire_str().to_string(), false);
+        }
+    }
+
     /// Whether `id`'s `listen` calls are heard with the context they bring
     /// from the conversation.
     #[must_use]

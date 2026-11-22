@@ -27,7 +27,7 @@ pub fn key_name_id() -> Id {
 /// What the assistant can do through Super Voice.
 fn does(id: AssistantId) -> String {
     match id {
-        AssistantId::ClaudeCode | AssistantId::OpenCode => crate::fl!("assistant-adds-talk"),
+        AssistantId::ClaudeCode | AssistantId::OpenCode => crate::fl!("assistant-reads-replies"),
         AssistantId::Codex | AssistantId::Antigravity => {
             crate::fl!("assistant-reads-dictated-replies")
         }
@@ -169,9 +169,10 @@ fn row_for<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<'a, Me
 }
 
 /// A connected assistant's row. Its switches sit under what it does, so they
-/// are plainly this assistant's: whether its `listen` calls use the
-/// conversation, and for one whose plugin can tell when it needs the user,
-/// whether Super Voice announces it.
+/// are plainly this assistant's: for one whose plugin has Talk, whether it
+/// shows; for one whose plugin can tell when it needs the user, whether
+/// Super Voice announces it; and whether its `listen` calls use the
+/// conversation.
 fn connected_row<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<'a, Message> {
     let id = assistant.id;
     let spacing = cosmic::theme::spacing();
@@ -194,6 +195,13 @@ fn connected_row<'a>(assistant: &Assistant, state: &AssistantsState) -> Element<
     let switch = |toggler: widget::Toggler<'a, Message>| {
         widget::container(toggler.spacing(spacing.space_xs)).padding([spacing.space_xxs, 0, 0, 0])
     };
+    if matches!(id, AssistantId::ClaudeCode | AssistantId::OpenCode) {
+        label = label.push(switch(
+            widget::toggler(assistant.show_talk)
+                .label(crate::fl!("show-talk-above-prompt"))
+                .on_toggle(move |on| message(AssistantsMessage::SetShowTalk(id, on))),
+        ));
+    }
     // The Antigravity CLI has no hook for when it needs the user.
     if id != AssistantId::Antigravity {
         label = label.push(switch(

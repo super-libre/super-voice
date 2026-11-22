@@ -14,6 +14,7 @@
 //! Contract: `docs/protocol/endpoints/v1/assistants.md`.
 
 use crate::assistants::Error;
+use crate::daemon::assistant_handlers::AssistantSwitches;
 use crate::daemon::http::internal::helpers::dispatch::json_response;
 use crate::daemon::http::state::AppState;
 use crate::daemon::http::wire::{ErrorEnvelope, ReasonEnvelope};
@@ -36,6 +37,10 @@ pub(crate) struct AssistantChange {
     /// bring from the conversation.
     #[serde(default)]
     pub(crate) conversation_context: Option<bool>,
+    /// Whether the assistant's plugin shows Talk above its prompt: Claude
+    /// Code's and `OpenCode`'s.
+    #[serde(default)]
+    pub(crate) show_talk: Option<bool>,
 }
 
 /// The body of `POST /assistants/keys`.
@@ -112,7 +117,8 @@ its config, and `connected` when Super Voice is in its config with a key of its 
 `announce_when_needed` says whether Super Voice says aloud when the assistant needs the \
 user. Claude Code, Codex and OpenCode announce, through their plugins. `conversation_context` says whether \
 its `listen` calls are heard with the context they bring from the conversation, on top of \
-the user's own. `sessions` are its open sessions on \
+the user's own. `show_talk` says whether its plugin shows Talk above the prompt, for Claude \
+Code and OpenCode, which have one. `sessions` are its open sessions on \
 the MCP server, oldest first: one conversation each, with its folder when the assistant \
 says, and whether speech it started is playing or it is recording.
 
@@ -218,18 +224,20 @@ pub(crate) async fn disconnect_assistant(
     tag = "assistants",
     summary = "Change an assistant's switches",
     description = "\
-Sets either of the assistant's switches, or both. `announce_when_needed`: whether Super \
-Voice says aloud when the assistant needs the user, like Claude Code's own notices that \
-it needs a permission or an answer. `conversation_context`: whether its `listen` calls \
-are heard with the context they bring from the conversation. Each is on until the user \
-turns it off, and the next call reads it, in every session. Answers the whole list, as \
+Sets any of the assistant's switches. `announce_when_needed`: whether Super Voice says \
+aloud when the assistant needs the user, like Claude Code's own notices that it needs a \
+permission or an answer. `conversation_context`: whether its `listen` calls are heard \
+with the context they bring from the conversation. `show_talk`: whether its plugin shows \
+Talk above the prompt, for Claude Code and OpenCode; off, the plugin shows nothing there, \
+and the microphone does not open after a reply. Each is on until the user turns it off, \
+and the next call reads it, in every session. Answers the whole list, as \
 `GET /assistants` does.",
     params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `antigravity`.")),
     request_body = AssistantChange,
     security(("session_token" = ["settings"])),
     responses(
         (status = 200, description = "Changed. Every assistant.", body = AssistantList),
-        (status = 400, description = "The body names neither switch, or one is not a boolean (`invalid_value`).", body = ErrorEnvelope),
+        (status = 400, description = "The body names no switch, or one is not a boolean (`invalid_value`).", body = ErrorEnvelope),
         (status = 401, description = "Token unknown, expired, or its binary changed.", body = ReasonEnvelope),
         (status = 403, description = "The token lacks the `settings` scope.", body = ErrorEnvelope),
         (status = 404, description = "No assistant has that id (`unknown_assistant`).", body = ErrorEnvelope),
@@ -244,20 +252,20 @@ pub(crate) async fn change_assistant(
     let Ok(id) = id.parse::<AssistantId>() else {
         return unknown_assistant();
     };
-    if body.announce_when_needed.is_none() && body.conversation_context.is_none() {
+    let change = AssistantSwitches {
+        announces: body.announce_when_needed,
+        uses_context: body.conversation_context,
+        shows_talk: body.show_talk,
+    };
+    if change.announces.is_none() && change.uses_context.is_none() && change.shows_talk.is_none() {
         return refusal(
             ErrorCode::InvalidValue,
-            "name `announce_when_needed`, `conversation_context`, or both",
+            "name `announce_when_needed`, `conversation_context` or `show_talk`",
         );
     }
     answer(Ok(state
         .daemon
-        .change_assistant(
-            &state.auth,
-            id,
-            body.announce_when_needed,
-            body.conversation_context,
-        )
+        .change_assistant(&state.auth, id, change)
         .await))
 }
 

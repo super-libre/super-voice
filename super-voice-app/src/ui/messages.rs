@@ -665,6 +665,8 @@ pub enum AssistantsMessage {
     /// Whether this assistant's `listen` calls are heard with the context
     /// they bring from the conversation.
     SetConversationContext(AssistantId, bool),
+    /// Whether this assistant's plugin shows Talk above its prompt.
+    SetShowTalk(AssistantId, bool),
     /// Open the dialog that makes a key for another assistant.
     AskKey,
     /// The key's name, as typed.

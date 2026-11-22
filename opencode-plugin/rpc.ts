@@ -26,8 +26,8 @@ export const Voice = Rpc.define({
     },
     /** Stop the session's own speech, and end its recording. */
     stop: { input: session, output: { type: 'object', additionalProperties: false } },
-    /** Whether the session's speech plays or it records, and whether its
-     * turn under way was spoken. */
+    /** Whether the session's speech plays or it records, whether its turn
+     * under way was spoken, and whether the user shows Talk. */
     status: {
       input: session,
       output: {
@@ -36,8 +36,9 @@ export const Voice = Rpc.define({
           speaking: { type: 'boolean' },
           listening: { type: 'boolean' },
           conversation: { type: 'boolean' },
+          talk: { type: 'boolean' },
         },
-        required: ['speaking', 'listening', 'conversation'],
+        required: ['speaking', 'listening', 'conversation', 'talk'],
         additionalProperties: false,
       },
     },

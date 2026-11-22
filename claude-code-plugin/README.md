@@ -19,7 +19,10 @@ Whether you talk or type:
 
 1. Claude says when it needs your permission. You can turn this off.
 2. Sending your next prompt stops whatever is being read.
-3. A row above the prompt, on the key `0` in an empty prompt:
+3. A row above the prompt, on the key `0` in an empty prompt. Turning off
+   **Show Talk above the prompt** for Claude Code on Super Voice's Assistants
+   page takes the row and the key away, and the microphone no longer opens by
+   itself after a reply:
    1. `Talk` records you and puts your words in the prompt box. They are sent
       after 5 seconds unless you edit them, and Enter sends them at once.
    2. While something is being read, `0` stops it. In a spoken conversation,

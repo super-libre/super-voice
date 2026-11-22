@@ -158,7 +158,7 @@ export default Plugin.define({
         const answer = await call('status', sessionID)
         const status = (() => {
           try {
-            return JSON.parse(answer?.text ?? '{}') as { speaking?: unknown; listening?: unknown }
+            return JSON.parse(answer?.text ?? '{}') as { speaking?: unknown; listening?: unknown; talk?: unknown }
           } catch {
             return {}
           }
@@ -167,6 +167,8 @@ export default Plugin.define({
           speaking: status.speaking === true,
           listening: status.listening === true,
           conversation: spoken.get(sessionID) === true,
+          // Shown until Super Voice says the user turned it off.
+          talk: status.talk !== false,
         }
       },
     })

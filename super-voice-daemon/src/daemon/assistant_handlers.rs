@@ -15,6 +15,17 @@ use super_voice_shared::models::assistants::{
     Assistant, AssistantId, AssistantList, AssistantSession, CustomKey, NewKey,
 };
 
+/// A change to an assistant's switches: each `None` is left as it is.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AssistantSwitches {
+    /// Whether Super Voice says aloud when it needs the user.
+    pub announces: Option<bool>,
+    /// Whether its `listen` calls are heard with the context they bring.
+    pub uses_context: Option<bool>,
+    /// Whether its plugin shows Talk above the prompt.
+    pub shows_talk: Option<bool>,
+}
+
 /// The key the daemon made for `id`, if it holds one. It names an
 /// assistant's key by the assistant's wire id.
 fn key_of(keys: &[AssistantKey], id: AssistantId) -> Option<&AssistantKey> {
@@ -108,6 +119,7 @@ impl SuperSTTDaemon {
                 state,
                 announce_when_needed: config.assistants.announces_when_needed(id),
                 conversation_context: config.assistants.uses_conversation_context(id),
+                show_talk: config.assistants.shows_talk(id),
                 sessions: sessions_of(key_of(&keys, id)),
             })
             .collect();
@@ -276,16 +288,20 @@ impl SuperSTTDaemon {
     }
 
     /// Keep assistant `id`'s switches: whether Super Voice says aloud when it
-    /// needs the user, and whether its `listen` calls are heard with the
-    /// context they bring. `None` leaves one as it is. The next call reads
-    /// them.
+    /// needs the user, whether its `listen` calls are heard with the context
+    /// they bring, and whether its plugin shows Talk. `None` leaves one as it
+    /// is. The next call reads them.
     pub async fn change_assistant(
         &self,
         auth: &Auth,
         id: AssistantId,
-        announces: Option<bool>,
-        uses_context: Option<bool>,
+        change: AssistantSwitches,
     ) -> AssistantList {
+        let AssistantSwitches {
+            announces,
+            uses_context,
+            shows_talk,
+        } = change;
         let saved = self
             .set_config_field(|c| {
                 if let Some(on) = announces {
@@ -293,6 +309,9 @@ impl SuperSTTDaemon {
                 }
                 if let Some(on) = uses_context {
                     c.assistants.set_uses_conversation_context(id, on);
+                }
+                if let Some(on) = shows_talk {
+                    c.assistants.set_shows_talk(id, on);
                 }
             })
             .await;

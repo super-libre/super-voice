@@ -34,6 +34,7 @@ const talk = atom(
   { plugin: 'super-voice', key: 'talk' } as const,
   { phase: 'idle' } as SuperVoiceTalk,
 )
+const showsTalk = atom({ plugin: 'super-voice', key: 'showsTalk' } as const, true)
 
 /** This plugin's name, as `prompt.change` and `prompt.submit` name a plugin. */
 const NAME = 'super-voice'
@@ -52,6 +53,9 @@ const COUNTDOWN_TICK_MS = 500
 const SERVER_KEY = 'voice'
 /** How often an open session checks in, so Super Voice keeps listing it. */
 const HEARTBEAT_MS = 60_000
+/** How often to ask whether the user shows Talk, so the switch on the
+ * Assistants page takes effect soon after it moves. */
+const SWITCH_POLL_MS = 5_000
 /** How long to wait between tries to say a session started, while Claude
  * Code may still be connecting to Super Voice. */
 const OPEN_RETRY_MS = 5_000
@@ -129,6 +133,9 @@ let folder: string | undefined
 /** The session id Super Voice was last told started. */
 let openedId: string | undefined
 let heartbeat: Timer | undefined
+let switchPoll: Timer | undefined
+/** Whether the user shows Talk, as Super Voice last said. */
+let isTalkShown = true
 
 /** Super Voice's MCP server as Claude Code names it, once connected. */
 let server = 'plugin:super-voice:voice'
@@ -187,7 +194,11 @@ async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined>
     return undefined
   }
   try {
-    const status = JSON.parse(answer.text) as { speaking?: unknown; listening?: unknown }
+    const status = JSON.parse(answer.text) as { speaking?: unknown; listening?: unknown; talk?: unknown }
+    if (typeof status.talk === 'boolean' && status.talk !== isTalkShown) {
+      isTalkShown = status.talk
+      await update($, showsTalk, () => status.talk === true)
+    }
     return { isSpeaking: status.speaking === true, isListening: status.listening === true }
   } catch {
     return undefined
@@ -266,7 +277,8 @@ async function checkSpeech($: EngineInterface) {
       await setArmed($, false)
       // Whatever a 🔊 was reading has ended, or never started.
       await update($, readingAgain, () => '')
-      if (isReplyRead) {
+      // With Talk not shown, nothing records without a row to say so.
+      if (isReplyRead && isTalkShown) {
         void startTalk($)
       }
     }
@@ -520,6 +532,10 @@ export const register: Register = on => {
     openedId = undefined
     heartbeat?.cancel()
     heartbeat = $.clock.every(HEARTBEAT_MS, () => void checkIn($))
+    // The switch as last seen, kept across a reload, until Super Voice says.
+    isTalkShown = await read($, showsTalk)
+    switchPoll?.cancel()
+    switchPoll = $.clock.every(SWITCH_POLL_MS, () => void voiceStatus($))
     void openSession($)
     return next(e)
   })
@@ -527,6 +543,8 @@ export const register: Register = on => {
   on('session.end', async ($, e, next) => {
     heartbeat?.cancel()
     heartbeat = undefined
+    switchPoll?.cancel()
+    switchPoll = undefined
     await call($, 'session', { event: 'end' }, e.sessionId)
     openedId = undefined
     return next(e)
@@ -716,7 +734,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) {
+    // The user turned Talk off on the Assistants page: nothing at all here,
+    // and the 0 key types a 0.
+    if (e.props.hasSurvey || !(await read($, showsTalk))) {
       return next(e)
     }
     const { Box, Button, Text } = $.ui.resolve(e)

@@ -6,9 +6,12 @@
 // it, and in a spoken conversation starts Talk. While Talk records, 0 ends
 // the recording, which is still sent. Once a spoken prompt's reply has been
 // read aloud, Talk starts again by itself, unless the user has typed.
+//
+// With Talk turned off on Super Voice's Assistants page, there is no row and
+// no key: 0 types a 0, and Talk never starts by itself.
 
 import { Plugin } from '@opencode/plugin/tui'
-import { createSignal } from 'solid-js'
+import { Show, createSignal } from 'solid-js'
 
 import { Voice } from './rpc'
 
@@ -28,6 +31,8 @@ export default Plugin.define({
     const [phase, setPhase] = createSignal<Phase>('idle')
     const [speaking, setSpeaking] = createSignal(false)
     const [conversation, setConversation] = createSignal(false)
+    /** Whether the user shows Talk, as Super Voice last said. */
+    const [shown, setShown] = createSignal(true)
     /** The session whose reply is being read, to listen once it has been. */
     let armed: { sessionID: string; since: number; heard: boolean } | undefined
 
@@ -60,7 +65,7 @@ export default Plugin.define({
 
     const press = () => {
       const sessionID = currentSession()
-      if (!sessionID) {
+      if (!sessionID || !shown()) {
         return false
       }
       if (phase() === 'listening') {
@@ -102,12 +107,17 @@ export default Plugin.define({
 
     const row = context.ui.slot({
       append: 'session.composer.top',
-      render: () => <text fg={context.theme.text.muted}>{label()}</text>,
+      render: () => (
+        <Show when={shown()}>
+          <text fg={context.theme.text.muted}>{label()}</text>
+        </Show>
+      ),
     })
 
     const stopReplied = voice.events.on('replied', event => {
       const sessionID = (event.data as { sessionID: string }).sessionID
-      if (sessionID === currentSession()) {
+      // Nothing records without the row to say so.
+      if (sessionID === currentSession() && shown()) {
         armed = { sessionID, since: Date.now(), heard: false }
       }
     })
@@ -123,12 +133,21 @@ export default Plugin.define({
       void voice
         .status({ sessionID })
         .then(status => {
-          const { speaking: isSpeaking, conversation: isConversation } = status as {
+          const {
+            speaking: isSpeaking,
+            conversation: isConversation,
+            talk: isShown,
+          } = status as {
             speaking: boolean
             conversation: boolean
+            talk: boolean
           }
           setSpeaking(isSpeaking)
           setConversation(isConversation)
+          setShown(isShown)
+          if (!isShown) {
+            armed = undefined
+          }
           if (!armed || armed.sessionID !== sessionID) {
             return
           }

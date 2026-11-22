@@ -131,20 +131,22 @@ pub(crate) async fn post(
             };
             state.daemon.assistants.sessions.touch(&who);
             // A key made by hand, and the user's own client, have no switches.
-            let (announces, uses_context) = match assistant {
+            let (announces, uses_context, shows_talk) = match assistant {
                 Some(id) => {
                     let config = state.daemon.config.read().await;
                     (
                         config.assistants.announces_when_needed(id),
                         config.assistants.uses_conversation_context(id),
+                        config.assistants.shows_talk(id),
                     )
                 }
-                None => (true, true),
+                None => (true, true, true),
             };
             let for_tool = tools::Caller {
                 who,
                 announces,
                 uses_context,
+                shows_talk,
                 hook: protocol::hook_of(&message["params"]),
             };
             stream_call(Arc::clone(&state.daemon), caller, for_tool, id, tool)

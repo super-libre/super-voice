@@ -40,11 +40,13 @@ const TICK: Duration = Duration::from_millis(100);
 
 /// Who a call is for: its session, whether the user lets its assistant
 /// announce, whether its `listen` calls are heard with the context they
-/// bring, and the hook that made the call, if one did.
+/// bring, whether its plugin shows Talk, and the hook that made the call, if
+/// one did.
 pub(crate) struct Caller {
     pub(crate) who: Who,
     pub(crate) announces: bool,
     pub(crate) uses_context: bool,
+    pub(crate) shows_talk: bool,
     pub(crate) hook: Option<Hook>,
 }
 
@@ -95,7 +97,7 @@ pub(crate) async fn run(
             listen(daemon, who, question, extra, cancel).await
         }
         Tool::Stop => Some(Ok(stop(daemon, who).await)),
-        Tool::Status => Some(Ok(status(daemon, who))),
+        Tool::Status => Some(Ok(status(daemon, who, caller.shows_talk))),
         Tool::Announce { text } if caller.announces => speak(daemon, who, text, cancel)
             .await
             .map(|said| said.map(|answer| for_caller(caller, answer))),
@@ -216,12 +218,19 @@ async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
 }
 
 /// Whether `who`'s own speech plays, and whether it records, as JSON.
-fn status(daemon: &SuperSTTDaemon, who: &Who) -> String {
+/// Whether `who`'s own speech plays and whether it records, and whether the
+/// user shows its plugin's Talk.
+fn status(daemon: &SuperSTTDaemon, who: &Who, shows_talk: bool) -> String {
     let sessions = &daemon.assistants.sessions;
     let speaking = sessions.utterance(who).is_some_and(|utterance| {
         daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
     });
-    serde_json::json!({ "speaking": speaking, "listening": sessions.is_recording(who) }).to_string()
+    serde_json::json!({
+        "speaking": speaking,
+        "listening": sessions.is_recording(who),
+        "talk": shows_talk,
+    })
+    .to_string()
 }
 
 /// `text` spoken on a task of its own, so it is never dropped midway: a
@@ -449,6 +458,7 @@ mod tests {
             },
             announces: true,
             uses_context: true,
+            shows_talk: true,
             hook: None,
         }
     }
@@ -545,7 +555,7 @@ mod tests {
         };
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&status).expect("JSON"),
-            serde_json::json!({ "speaking": false, "listening": false })
+            serde_json::json!({ "speaking": false, "listening": false, "talk": true })
         );
         // An utterance of its own that is not the one playing is not stopped.
         daemon

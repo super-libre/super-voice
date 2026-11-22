@@ -85,6 +85,10 @@ pub struct Assistant {
     /// the conversation, on top of the user's own.
     #[serde(default = "on")]
     pub conversation_context: bool,
+    /// Whether its plugin shows Talk above the prompt: Claude Code's and
+    /// `OpenCode`'s, the assistants with a Talk of their own.
+    #[serde(default = "on")]
+    pub show_talk: bool,
     /// Its open sessions, oldest first.
     #[serde(default)]
     pub sessions: Vec<AssistantSession>,
@@ -191,6 +195,7 @@ mod tests {
             state: AssistantState::NotFound,
             announce_when_needed: true,
             conversation_context: false,
+            show_talk: true,
             sessions: Vec::new(),
         };
         let json = serde_json::to_value(&assistant).expect("serializes");
@@ -201,6 +206,7 @@ mod tests {
                 "state": "not_found",
                 "announce_when_needed": true,
                 "conversation_context": false,
+                "show_talk": true,
                 "sessions": [],
             })
         );
@@ -212,5 +218,6 @@ mod tests {
         }))
         .expect("deserializes");
         assert!(older.conversation_context);
+        assert!(older.show_talk);
     }
 }
