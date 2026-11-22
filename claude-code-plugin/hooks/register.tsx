@@ -548,6 +548,13 @@ export const register: Register = on => {
     if (!SPEAKING_TOOLS.has(e.tool)) {
       return next(e)
     }
+    // This plugin's own calls, as Talk and reading a reply make them, name
+    // their session; Claude's never do, as no tool declares it. Claude Code
+    // runs a call this plugin makes inside one of its own hooks through this
+    // hook too, and reading a reply comes after its turn is over.
+    if ('session' in e) {
+      return next(e)
+    }
     // Claude speaks only after being spoken to.
     if (!listenAfterReply) {
       return { deny: NOT_SPOKEN_TO }
