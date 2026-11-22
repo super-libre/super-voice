@@ -59,7 +59,7 @@ const OPEN_RETRY_MS = 5_000
 const OPEN_TRIES = 12
 /** The tools this plugin calls itself, kept from the model. */
 const PLUGIN_TOOLS: ReadonlySet<string> = new Set(
-  ['stop', 'status', 'announce', 'session'].map(tool => `mcp__plugin_super-voice_voice__${tool}`),
+  ['stop', 'status', 'announce', 'session', 'turn'].map(tool => `mcp__plugin_super-voice_voice__${tool}`),
 )
 /** The Super Voice tools that speak. `listen` asks its question aloud. */
 const LISTEN_TOOL = 'mcp__plugin_super-voice_voice__listen'
