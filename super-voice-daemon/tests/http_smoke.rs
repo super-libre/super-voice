@@ -141,6 +141,7 @@ async fn http_endpoints_respond() {
             write_mode: false,
             stop_mode: Some("manual_only".to_string()),
             stream_realtime: false,
+            context: None,
         },
     )
     .await;
@@ -264,6 +265,7 @@ async fn second_transcribe_during_active_recording_surfaces_recording_in_progres
         write_mode: false,
         stop_mode: Some("manual_only".to_string()),
         stream_realtime: false,
+        context: None,
     };
 
     // Fire the two transcribe calls concurrently. When audio works
@@ -327,6 +329,7 @@ async fn a_recording_without_write_mode_does_not_wait_on_a_keyboard() {
             write_mode: false,
             stop_mode: Some("manual_only".to_string()),
             stream_realtime: false,
+            context: None,
         },
     )
     .await;

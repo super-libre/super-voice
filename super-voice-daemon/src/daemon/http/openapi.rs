@@ -86,6 +86,7 @@ curl --unix-socket \"${XDG_RUNTIME_DIR:-$TMPDIR}/voice/super-voice-http.sock\" \
         (name = "settings", description = "Stored daemon preferences, one value apiece, all under `/v1/settings`, one of each for both features: audio cues, volume, write and notification methods, language, update policy. Sharing the `settings` scope is not the same as being a setting \u{2014} `backends`, `pipeline` and `registry` are guarded by it too."),
         (name = "hardware", description = "What the daemon can see of this machine: GPUs, drivers, runtimes."),
         (name = "shortcuts", description = "Super Voice's keyboard shortcuts on this desktop: where each stands, adding one, removing one."),
+        (name = "assistants", description = "The AI assistants Super Voice connects to, such as Claude Code and Codex: where each stands, connecting and disconnecting one, and the keys made by hand for other MCP clients."),
         (name = "update", description = "Whether a newer daemon exists, and asking it to look now."),
         (name = "backends", description = "Installed backends: their models, options and secrets."),
         (name = "registry", description = "The published backend catalog: browse, install, update, uninstall."),

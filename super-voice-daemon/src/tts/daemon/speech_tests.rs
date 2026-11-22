@@ -710,6 +710,28 @@ async fn the_request_that_arrived_last_wins_whichever_is_let_through_first() {
     assert!(newer.id.starts_with("utt_"));
 }
 
+/// Speaking says the utterance's id as it starts, before its text is made:
+/// the same id it answers with once it is done, and the one in flight then.
+#[tokio::test]
+async fn speaking_says_its_utterance_as_it_starts() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine, _library) = engine(dir.path());
+    let model = shared(model(vec![VoiceKind::Preset], &["af_heart"])).await;
+
+    let mut begun = None;
+    let mut in_flight = None;
+    let spoken = engine
+        .speak_noting(engine.arrival(), &model, "Hello there.", None, None, |id| {
+            begun = Some(id.to_string());
+            in_flight = engine.current();
+        })
+        .await
+        .expect("it speaks");
+
+    assert_eq!(begun.as_deref(), Some(spoken.id.as_str()));
+    assert_eq!(in_flight, begun, "the utterance is in flight as it starts");
+}
+
 /// A stop overrules what is still waiting to start: a request asked for
 /// before it does not start speaking once its wait ends.
 #[tokio::test]

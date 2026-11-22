@@ -118,12 +118,18 @@ fn every_operation_advertises_the_scope_its_router_enforces() {
     );
 }
 
-/// Every path the router serves must appear in the document, and vice versa.
+/// Every path the scope groups serve must appear in the document, and vice
+/// versa.
 ///
 /// `routes!` makes this true by construction today — the path comes off the
 /// handler's own attribute. The test is here so that stays true if anyone
 /// registers a route the older way, with `.route("/x", get(handler))`, which
 /// compiles fine and publishes nothing.
+///
+/// One path is served outside the groups and the document on purpose:
+/// `/v1/mcp`, which is JSON-RPC rather than a path per operation. It is
+/// listed by hand in `url_surface_contract`'s `UNDOCUMENTED_SURFACE`, which
+/// is where a path served the older way has to be written down.
 #[test]
 fn the_document_and_the_router_cover_the_same_paths() {
     let doc = document();

@@ -83,7 +83,7 @@ ls -la "${XDG_RUNTIME_DIR:-$(getconf DARWIN_USER_TEMP_DIR)}/voice/super-voice-ht
 ### 2. Audio Output Protection
 - **Consent-gated authorization**: Making the machine speak requires a consent-minted session token with the `speak` scope — so a client can only reach the speakers after the user approved it through the one-time consent prompt. See [Authorization](#authorization) and [`protocol/auth.md`](protocol/auth.md)
 - **Interruption is part of the grant**: one utterance plays at a time and the newest wins, so a `speak`-scoped client can cut off whatever else is being read aloud, and can silence it with `/tts/speak/stop`. The consent prompt says so in those words ("Interrupt or stop speech this or another app started") rather than leaving it to be discovered
-- **Untrusted backend audio**: a synthesis backend's framed response is checked as it arrives — its declared format, and the size caps under [Input Validation](#6-input-validation-and-dos-protection) — and a response that fails is refused rather than played
+- **Untrusted backend audio**: a synthesis backend's framed response is checked as it arrives — its declared format, and the size caps under [Input Validation](#7-input-validation-and-dos-protection) — and a response that fails is refused rather than played
 
 ### 3. Voice Library Privacy
 - **A scope of its own**: the cloned-voice library — recordings of the user's own voice — is reachable only with the `voices` scope. It is separate from `speak`, so an app that only talks never sees the recordings, and the consent prompt names it in those terms ("List, play back, and delete your saved voice recordings")
@@ -92,7 +92,7 @@ ls -la "${XDG_RUNTIME_DIR:-$(getconf DARWIN_USER_TEMP_DIR)}/voice/super-voice-ht
 - **Stays on the machine**: a recording goes nowhere except to the loaded synthesis backend, which is local unless the user selected an online model. See [`protocol/scopes/voices.md`](protocol/scopes/voices.md)
 
 ### 4. Network Isolation
-- **No network-facing listener**: The daemon listens on a per-user Unix domain socket under the runtime directory's `voice/`, and — for browser clients, on by default — on `127.0.0.1:7300`. It binds no other address and no UDP port, so no other host on the network can connect to it. A TCP client has no peer credentials, so it is identified by its origin instead; see [`protocol/auth.md` — TCP-bound clients](protocol/auth.md#tcp-bound-clients). `http.tcp` turns the TCP listener off
+- **No network-facing listener**: The daemon listens on a per-user Unix domain socket under the runtime directory's `voice/`, and — for browser clients and AI assistants, on by default — on `127.0.0.1:7300`. It binds no other address and no UDP port, so no other host on the network can connect to it. A TCP client has no peer credentials, so a page is identified by its origin instead, and an assistant by its key; see [`protocol/auth.md` — TCP-bound clients](protocol/auth.md#tcp-bound-clients). `http.tcp` turns the TCP listener off
 - **Local visualization**: Audio-visualization frames are delivered as Server-Sent Events over that same Unix socket, not broadcast on the network
 - **Outbound only for backend installs**: The daemon reaches the network solely to fetch backends over HTTPS from the registry / GitHub — see [Daemon outbound network surface](#daemon-outbound-network-surface) below
 
@@ -102,7 +102,15 @@ ls -la "${XDG_RUNTIME_DIR:-$(getconf DARWIN_USER_TEMP_DIR)}/voice/super-voice-ht
 - **Same-UID only**: A peer whose UID differs from the daemon's is rejected before any prompt
 - See [`protocol/auth.md`](protocol/auth.md) for the full token, scope, and consent contract
 
-### 6. Input Validation and DoS Protection
+### 6. AI Assistants
+- **A key per assistant, made when the user connects it**: an AI assistant such as Claude Code or Codex reaches Super Voice's MCP server (`/v1/mcp`) on the TCP listener with an assistant key, which the daemon makes when the user connects the assistant in the settings app. Connecting it is the consent; there is no dialog. Each assistant has a key of its own, so disconnecting one leaves the others working. See [`protocol/auth.md` — Assistant keys](protocol/auth.md#assistant-keys)
+- **Speak and hear, nothing else**: a key carries the `speak` and `transcribe` scopes, for the tools `speak` and `listen`, and no other. `listen` never types and never toggles a recording someone else started
+- **Only where it is meant to work**: a key works on `/v1/mcp` alone, over TCP, with no `Origin` header (any `Origin` is a browser page, refused whatever key it holds) and a loopback `Host` (a guard against DNS rebinding). A key presented anywhere else is refused
+- **Only Super Voice's own clients make or see a key**: the routes that make a key or show one are refused to every caller but the settings app, the applet and the CLI installed beside the daemon, whatever scopes it holds, so an assistant cannot make itself another key
+- **Where a key is kept**: in the secrets file, and in the assistant's own config. Claude Code's plugin and Codex get theirs by running `voice assistant-header`, so their configs hold none; OpenCode and the Antigravity CLI cannot run a command for it, so it is written into their configs, which a new file gets with mode `0600`
+- **Revoked at once**: disconnecting an assistant, or revoking a key made by hand, stops the key's next request and cancels its calls in flight, a `listen` waiting for the user included
+
+### 7. Input Validation and DoS Protection
 - **Comprehensive validation**: All external inputs validated with strict limits
 - **Audio data protection**: Maximum 30 minutes of audio at 16kHz to prevent memory exhaustion
 - **Sample rate validation**: Must be between 8kHz and 96kHz
@@ -113,13 +121,13 @@ ls -la "${XDG_RUNTIME_DIR:-$(getconf DARWIN_USER_TEMP_DIR)}/voice/super-voice-ht
 - **Suspicious pattern detection**: Detects potential padding attacks in audio data
 - **Control character filtering**: Prevents injection of dangerous characters
 
-### 7. Resource Management and Rate Limiting
+### 8. Resource Management and Rate Limiting
 - **Connection limits**: At most 40 concurrent connections, in every build
 - **Rate limiting**: Per-client request limits with sliding window tracking: 600 requests a minute and 14,400 an hour, in every build. One daemon serves both features, so it leaves room for two apps, two CLIs and an applet
 - **Connection timeouts**: Automatic cleanup of inactive connections (3 minutes production, 10 minutes development)
 - **Memory protection**: Resource limits prevent memory exhaustion attacks
 
-### 8. Process Isolation
+### 9. Process Isolation
 - **User service**: Runs under user account, not root
 - **Per-user socket**: An owner-only runtime directory plus a same-UID peer check — no cross-user access, no shared group
 - **Socket permissions**: Enforced at filesystem level
@@ -184,6 +192,8 @@ cargo run --release --bin super-voice-daemon
 - ✅ Arbitrary command injection via keyboard
 - ✅ Unauthorized use of the speakers (reachable only with a consent-minted `speak`-scope token)
 - ✅ Unauthorized access to the user's voice recordings (a separate `voices` scope; recordings are owner-only files)
+- ✅ A web page posing as an AI assistant (an assistant key is refused with any `Origin` and with a host other than loopback)
+- ✅ An assistant making itself more keys (only Super Voice's own clients reach the routes that make or show one)
 - ✅ Privilege escalation (runs as an unprivileged user service)
 - ✅ Memory exhaustion attacks (comprehensive input validation)
 - ✅ Connection flooding attacks (rate limiting and connection limits)
@@ -211,11 +221,18 @@ journalctl --user -u super-voice -f
 
 ### Revoke Access
 Authorization is per-client consent tokens, not group membership. Forget the
-cached token (forcing the client to re-request consent on its next call) with:
+CLI's cached token (forcing it to re-request consent on its next call) with:
 ```bash
 voice logout
 ```
-Or stop the daemon (below) to drop all in-memory sessions.
+Sessions are kept in the daemon's secrets file,
+`$XDG_STATE_HOME/super-voice/secrets.ron` (`~/.local/state/super-voice/` by
+default), so stopping or restarting the daemon does not end them. To end every
+session at once, stop the daemon and move that file aside; it also holds the
+backends' API keys and the assistant keys, which go with it.
+
+Disconnect an AI assistant on the Assistants page of the settings app, or
+revoke a key made by hand there, to stop it at once.
 
 ### Emergency Shutdown
 ```bash

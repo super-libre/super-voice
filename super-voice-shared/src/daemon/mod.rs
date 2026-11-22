@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Shared daemon communication functionality for Super STT applications
 
+pub mod assistant_mcp;
 pub mod http_client;
 pub mod scopes;
 pub mod session;

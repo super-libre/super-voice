@@ -47,6 +47,26 @@ second would send a user's coding vocabulary to a backend they had deliberately
 pointed somewhere else. The pin itself is kept, so re-creating the context
 restores it.
 
+## A dictation's own context
+
+A request that starts a dictation can bring context for that dictation alone:
+the `context` field of [`POST /stt/transcribe`](./transcribe.md), or an
+assistant's `listen` call on [the MCP server](../../mcp.md). It is what the app
+or the conversation knows about what the user is about to say, like the names
+an assistant has just used, and it is added to the user's context, never in
+place of it:
+
+1. The prompt is the user's, a blank line, then the dictation's.
+2. The vocabulary is the user's terms, then the dictation's that the user's
+   does not have, compared without regard to case.
+3. The user's context always goes whole. The dictation's is cut to the room
+   left within [the limits](#limits): the prompt where it runs out, the terms
+   from the end.
+
+It follows the backend's state above: a backend pinned to no context, or a
+model that takes none, hears neither. Nothing is stored, and the backend's own
+context is unchanged for every other request.
+
 ## Auth
 
 - **Required scope:** `settings`.

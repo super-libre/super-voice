@@ -51,12 +51,17 @@ fn build_nav() -> nav_bar::Model {
         .icon(icons::phosphor(icons::KEYBOARD))
         .divider_above(true);
 
-    // Shortcuts opens the group on Linux; Settings does elsewhere.
+    // Shortcuts opens the group on Linux; Assistants does elsewhere.
+    nav.insert()
+        .text(crate::fl!("assistants"))
+        .data::<Section>(Section::Assistants)
+        .icon(icons::phosphor(icons::ROBOT))
+        .divider_above(!cfg!(target_os = "linux"));
+
     nav.insert()
         .text(crate::fl!("settings"))
         .data::<Section>(Section::Customization)
-        .icon(icons::phosphor(icons::GEAR))
-        .divider_above(!cfg!(target_os = "linux"));
+        .icon(icons::phosphor(icons::GEAR));
 
     nav.insert()
         .text(crate::fl!("updates"))
@@ -158,6 +163,7 @@ impl AppModel {
             recording_stop_mode:
                 super_voice_shared::models::recording_stop_mode::RecordingStopMode::default(),
             shortcuts: crate::state::shortcuts::ShortcutsState::default(),
+            assistants: crate::state::assistants::AssistantsState::default(),
             read_method: super_voice_shared::models::read_method::ReadMethod::default(),
             write_method: super_voice_shared::models::write_method::WriteMethod::default(),
             write_method_test_text: String::new(),

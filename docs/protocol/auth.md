@@ -248,6 +248,60 @@ binary's path, and is revoked by the `/events` exe-watch like any
 other token. A first-party client re-authenticating after an
 upgrade (`exe_changed`) therefore does so silently.
 
+A few routes are for first-party clients alone, whatever scopes another
+caller holds: the ones that make an AI assistant's key or show one
+(`POST /assistants/{id}/connect`, `POST /assistants/keys` and
+`GET /assistants/{id}/key`, see
+[assistants.md](./endpoints/v1/assistants.md)). Any other caller, a web
+page or an assistant included, gets:
+
+```http
+HTTP/1.1 403 Forbidden
+Content-Type: application/json
+
+{
+  "status":     "error",
+  "error_code": "auth_denied",
+  "message":    "auth_denied",
+  "data":       { "reason": "not_official_client" }
+}
+```
+
+An assistant must not be able to make itself another key, and neither
+must any other program the user once let in.
+
+## Assistant keys
+
+An AI assistant, such as Claude Code or Codex, is neither of the callers
+the rest of this page knows. It is not a binary on the Unix socket that
+the kernel can name, and not a page with an origin: it is a program that
+calls [Super Voice's MCP server](./mcp.md) on the TCP listener. So it does
+not ask for a session through the consent dialog. The user connects it on
+the Assistants page of the settings app, and the daemon makes it a key of
+its own ([assistants.md](./endpoints/v1/assistants.md)). Connecting it is
+the user's consent.
+
+- **Shape:** `sva_` and 64 lowercase hex characters. The prefix tells a key
+  from a session token at a glance.
+- **Id:** each key has a short hex id, which is not secret. Lists, logs and
+  the rate limiter name a key by its id.
+- **Scopes:** `speak` and `transcribe`, for the tools `speak` and `listen`.
+  A key gets no other.
+- **Lifetime:** none. A key works until the user disconnects the assistant,
+  or revokes a key made by hand. It stops working then, and its calls in
+  flight are cancelled.
+- **Where it works:** only on `/v1/mcp`, over TCP, with no `Origin` and a
+  loopback `Host` ([transport.md](./transport.md#ai-assistants-v1mcp)). The
+  same key anywhere else is refused: over the Unix socket, or past the
+  origin gate on another path, with `401 invalid_session`, reason
+  `wrong_caller`. It is not revoked then: a key pasted into the wrong place
+  is no reason to disconnect the assistant.
+- **Where it is kept:** in the secrets file beside the session tokens, and
+  in the assistant's own config. Claude Code's plugin and Codex get it by
+  running `voice assistant-header <assistant>`, so their configs hold no
+  key. OpenCode and the Antigravity CLI have no way to run a command for
+  it, so the key is written into their configs.
+
 ## Per-request authorization
 
 Every request after `/auth/request` carries:
@@ -274,6 +328,7 @@ Content-Type: application/json
 | `unknown`      | Token isn't recognized — never issued, or revoked since.                                            | Drop your cached token and re-issue `POST /auth/request`.        |
 | `expired`      | Token is older than its `expires_at` (30 days from issue).                                          | Same — drop and re-auth.                                         |
 | `exe_changed`  | You are no longer the caller the user approved — a changed binary path (upgrade, relocation, replacement), or a token presented from a different web origin. | Same — re-auth. The user must consent again to the new caller.   |
+| `wrong_caller` | An [assistant key](#assistant-keys) presented anywhere but `/v1/mcp` over TCP. The key is not revoked. | Present the key where it works: `/v1/mcp` on the TCP listener.  |
 
 A second class of failure is `403 scope_denied` — the token is
 valid but wasn't granted the scope this endpoint (or topic) requires:
@@ -326,11 +381,11 @@ endpoints leak no per-scope information.
 The endpoints and topics each scope unlocks live in the dedicated
 docs — those are the source of truth, not duplicated here:
 
-- `transcribe` — `/stt/transcribe`, `/stt/transcribe/stop`, `/stt/transcribe/realtime`; see [transcribe.md](./scopes/transcribe.md).
-- `speak` — `/tts/speak`, `/tts/speak/stop`, `/tts/speak/stream`; see [speak.md](./scopes/speak.md).
+- `transcribe` — `/stt/transcribe`, `/stt/transcribe/stop`, `/stt/transcribe/realtime`, and the tool `listen` on [`/mcp`](./mcp.md); see [transcribe.md](./scopes/transcribe.md).
+- `speak` — `/tts/speak`, `/tts/speak/stop`, `/tts/speak/stream`, and the tool `speak` on [`/mcp`](./mcp.md), and a question asked with `listen`; see [speak.md](./scopes/speak.md).
 - `synthesize` — `/tts/synthesize`; see [synthesize.md](./scopes/synthesize.md).
 - `status` — `GET /status`; see [status.md](./scopes/status.md).
-- `settings` — the configuration + registry surface, including backend options; see [settings.md](./scopes/settings.md).
+- `settings` — the configuration + registry surface, including backend options and the assistants (`/assistants*`, where making or showing a key is for first-party clients alone); see [settings.md](./scopes/settings.md).
 - `secrets` — backend credential management: `GET /backend/{backend_id}/secret/list` and `GET/POST/DELETE /backend/{backend_id}/secret/{name}` (write-only; values never returned); see [secrets.md](./scopes/secrets.md).
 - `voices` — the cloned-voice library: `GET/POST/PATCH/DELETE /tts/voice*`; see [voices.md](./scopes/voices.md).
 - `recording_events`, `playback_events`, `audio_visualization`, `global_transcriptions`, `daemon_status` — topic sets on `GET /events`; see each scope doc and [`/events`](./endpoints/v1/events.md).
@@ -344,6 +399,9 @@ Rules to remember:
 - On `GET /events`, requesting any topic outside the token's granted
   scopes fails the whole subscription with `403 scope_denied` before
   the stream opens.
+- On `/mcp`, any valid token or assistant key gets in, and each tool
+  checks its own scope: `tools/list` lists only the tools the caller may
+  use, and calling another is the JSON-RPC error `-32602`.
 
 ## Token characteristics
 
@@ -354,6 +412,9 @@ Rules to remember:
 - **Scopes:** The set the user approved, bound at issue time. To
   change the set, request a new token (a new popup); never share a
   token across apps.
+- **Assistant keys** are another kind of credential, with a shape, a
+  lifetime and a binding of their own: see
+  [Assistant keys](#assistant-keys).
 - **Binding:** Tied to whoever the user approved — the binary's
   `/proc/<pid>/exe` over the Unix socket, or the page's `Origin` over
   TCP. The two are never interchangeable: a token granted to a binary
@@ -388,9 +449,11 @@ A few non-obvious facts about how tokens behave on the wire:
 
 The daemon also serves the same HTTP API on `127.0.0.1:7300`, which is
 what a browser can reach — see
-[transport.md](./transport.md#the-tcp-listener). The wire shape
-(endpoints, headers, JSON bodies) is identical; the auth flow differs in
-four ways:
+[transport.md](./transport.md#the-tcp-listener). An AI assistant is the
+other caller there, on `/v1/mcp` alone, with an
+[assistant key](#assistant-keys) rather than a session. For a page, the
+wire shape (endpoints, headers, JSON bodies) is identical; the auth flow
+differs in four ways:
 
 - **A page must be on the allowlist to ask at all.**
   `http.tcp.allowed_origins` defaults to `["*"]`, so by default any

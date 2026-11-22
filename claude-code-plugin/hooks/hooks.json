@@ -1,0 +1,19 @@
+{
+  "description": "Say when Claude Code needs your permission, unless announcing is off for Claude Code on Super Voice's Assistants page. The module does the rest of the plugin's talking.",
+  "modules": ["./register.tsx"],
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:super-voice:voice",
+            "tool": "announce",
+            "input": { "text": "${message}" }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -67,6 +67,10 @@ pub(crate) fn build_transcribe_request(
         .and_then(Value::as_u64)
         .and_then(|v| u32::try_from(v).ok());
     let language = language_from_body(Some(&body));
+    // The one other field the command reads, checked there.
+    let data = body
+        .get("context")
+        .map(|context| serde_json::json!({ "context": context }));
     Ok(DaemonRequest {
         command: "transcribe".to_string(),
         audio_data: Some(audio_data),
@@ -77,7 +81,7 @@ pub(crate) fn build_transcribe_request(
         since_timestamp: None,
         limit: None,
         event_type: None,
-        data: None,
+        data,
         language,
         enabled: None,
     })
@@ -247,6 +251,21 @@ mod tests {
         assert!(
             req.data.is_none(),
             "audio_data is moved out, not duplicated"
+        );
+    }
+
+    /// A dictation's own context is the one other field a pre-captured body
+    /// carries through, for the command to check.
+    #[test]
+    fn build_transcribe_request_carries_the_context() {
+        let body = serde_json::json!({
+            "audio_data": [0.1],
+            "context": { "vocabulary": ["agy"] },
+        });
+        let req = super::build_transcribe_request(body).expect("valid audio_data");
+        assert_eq!(
+            req.data,
+            Some(serde_json::json!({ "context": { "vocabulary": ["agy"] } }))
         );
     }
 

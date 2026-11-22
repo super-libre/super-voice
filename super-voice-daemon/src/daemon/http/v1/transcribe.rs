@@ -182,7 +182,9 @@ async fn run_realtime_session(
         let guard = daemon.model.read().await;
         match guard.as_ref() {
             Some(loaded) if loaded.definition.realtime => {
-                let session = loaded.instance.realtime_session(transport);
+                // A client's own session starts with the user's context
+                // alone: it brings no context of its own.
+                let session = loaded.instance.realtime_session(transport, None);
                 let idle_watchdog = async {
                     loop {
                         let idle = last_activity.lock().unwrap().elapsed();
@@ -309,6 +311,13 @@ pub(crate) struct TranscribeBody {
     /// The configured volume still applies. Anything but a boolean is a `400`.
     #[serde(default)]
     pub(crate) audio_cues: Option<bool>,
+    /// Context for this transcription alone, added to the user's: what the
+    /// app or conversation knows about what the user will say. The prompt
+    /// goes after the user's own, and the terms after theirs. Held to a
+    /// context's limits; past them, or of another shape, it is a `400`. Only
+    /// a model that takes a context hears it.
+    #[serde(default)]
+    pub(crate) context: Option<super_voice_shared::models::contexts::ExtraContext>,
 }
 
 /// A one-shot transcription result, for the pre-captured path.

@@ -20,8 +20,11 @@ use async_trait::async_trait;
 use super_engine_daemon::wasm::WasmComponent;
 
 use crate::backend_headers::{self, Feature};
-use crate::stt_models::transcribe::{ModelInfo, ModelInfoData, ModelState, Transcribe};
+use crate::stt_models::transcribe::{
+    ModelInfo, ModelInfoData, ModelState, Transcribe, dictation_context,
+};
 use host::AllowlistHooks;
+use super_voice_shared::models::contexts::{DictationContext, ExtraContext};
 
 /// The realtime package Super STT's backends were published against before
 /// `super-engine:realtime` existed. Those backends import `ws` and export
@@ -37,6 +40,10 @@ pub struct WasmBackend {
     /// one-shot realtime session — the model's batch endpoint rejects it.
     realtime: bool,
     info: ModelInfoData,
+    /// The user's dictation context, whose headers the component holds, kept
+    /// whole so a dictation's own can be added to it. `None` when the model
+    /// takes no context.
+    user_context: parking_lot::RwLock<Option<DictationContext>>,
 }
 
 impl WasmBackend {
@@ -74,6 +81,7 @@ impl WasmBackend {
             model_id,
             realtime,
             info,
+            user_context: parking_lot::RwLock::new(None),
         })
     }
 
@@ -166,8 +174,11 @@ impl WasmBackend {
     /// call because `x-voice-model` is appended to a copy of the stored set —
     /// and because the stored set can change under it (see
     /// [`Transcribe::reconfigure`]).
-    fn v1_headers(&self) -> Vec<(String, String)> {
-        let mut headers = self.component.request_headers();
+    ///
+    /// A dictation that brought its own context, `extra`, gets the user's
+    /// with it added in place of the stored one, for this request alone.
+    fn v1_headers(&self, extra: Option<&ExtraContext>) -> Vec<(String, String)> {
+        let mut headers = self.context_headers(extra);
         headers.push(("content-type".to_string(), "application/json".to_string()));
         backend_headers::push(
             &mut headers,
@@ -176,6 +187,26 @@ impl WasmBackend {
             self.model_id.clone(),
         );
         headers
+    }
+
+    /// The stored `x-voice-*` set, with a dictation's own context in place of
+    /// the user's when it brought one.
+    fn context_headers(&self, extra: Option<&ExtraContext>) -> Vec<(String, String)> {
+        let headers = self.component.request_headers();
+        match dictation_context(self.user_context.read().as_ref(), extra) {
+            Some(context) => backend_headers::with_context(headers, &context),
+            None => headers,
+        }
+    }
+
+    /// The user's dictation context the model was loaded with, which a
+    /// dictation's own is added to. See [`BackendContext::context`].
+    ///
+    /// [`BackendContext::context`]: crate::stt_models::transcribe::BackendContext::context
+    #[must_use]
+    pub fn with_user_context(self, context: Option<DictationContext>) -> Self {
+        *self.user_context.write() = context;
+        self
     }
 
     /// `GET /v1/status` — readiness snapshot.
@@ -205,7 +236,12 @@ impl WasmBackend {
     /// `transcribe_audio` call sites.
     #[cfg(feature = "wasm-backends")]
     #[allow(clippy::cast_possible_truncation)] // intentional f32 -> i16 PCM clamp
-    async fn transcribe_via_realtime(&self, audio: &[f32], sample_rate: u32) -> Result<String> {
+    async fn transcribe_via_realtime(
+        &self,
+        audio: &[f32],
+        sample_rate: u32,
+        extra: Option<&ExtraContext>,
+    ) -> Result<String> {
         use ws_host::{CONSUMER_INCOMING_CAPACITY, ConsumerStreamTransport, WsFrame};
 
         // 16-bit PCM, mono, LE. Mistral's `input_audio_buffer.append` caps a
@@ -251,7 +287,7 @@ impl WasmBackend {
             incoming: incoming_rx,
             outgoing: outgoing_tx,
         };
-        self.realtime_session(transport).await?;
+        self.realtime_session(transport, extra).await?;
         // Session returned → the guest consumed every frame (or aborted); reap
         // the feeder so it can't outlive this call.
         let _ = feeder.await;
@@ -309,6 +345,7 @@ impl Transcribe for WasmBackend {
     fn reconfigure(&self, context: crate::stt_models::transcribe::BackendContext) {
         self.component
             .reconfigure(context.headers, context.user_allowed_hosts);
+        *self.user_context.write() = context.context;
     }
 
     async fn transcribe_audio(
@@ -316,15 +353,18 @@ impl Transcribe for WasmBackend {
         audio: &[f32],
         sample_rate: u32,
         language: Option<&str>,
+        extra: Option<&ExtraContext>,
     ) -> Result<String> {
         // A realtime-only model is rejected by the batch endpoint, so serve the
         // regular `/v1/transcribe` request through an internal one-shot realtime
         // session and return only the final transcript.
         if self.realtime {
-            return self.transcribe_via_realtime(audio, sample_rate).await;
+            return self
+                .transcribe_via_realtime(audio, sample_rate, extra)
+                .await;
         }
         let body = crate::stt_models::v1::build_transcribe_body(audio, sample_rate, language)?;
-        let headers = self.v1_headers();
+        let headers = self.v1_headers(extra);
         let (status, resp) = self
             .component
             .invoke("POST", "/v1/transcribe", &headers, body)
@@ -332,9 +372,14 @@ impl Transcribe for WasmBackend {
         crate::stt_models::v1::parse_transcribe_response(status, &resp)
     }
 
-    async fn process_text(&mut self, text: &str, language: Option<&str>) -> Result<String> {
+    async fn process_text(
+        &mut self,
+        text: &str,
+        language: Option<&str>,
+        extra: Option<&ExtraContext>,
+    ) -> Result<String> {
         let body = crate::stt_models::v1::build_process_body(text, language)?;
-        let headers = self.v1_headers();
+        let headers = self.v1_headers(extra);
         let (status, resp) = self
             .component
             .invoke("POST", "/v1/process", &headers, body)
@@ -349,8 +394,12 @@ impl Transcribe for WasmBackend {
     /// Returns an error if the backend is not realtime-capable, instantiation
     /// fails, or the guest's handler returns a `ws-error`.
     #[cfg(feature = "wasm-backends")]
-    async fn realtime_session(&self, transport: ws_host::ConsumerStreamTransport) -> Result<()> {
-        let mut pairs = self.component.request_headers();
+    async fn realtime_session(
+        &self,
+        transport: ws_host::ConsumerStreamTransport,
+        extra: Option<&ExtraContext>,
+    ) -> Result<()> {
+        let mut pairs = self.context_headers(extra);
         backend_headers::push(
             &mut pairs,
             Feature::SpeechToText,

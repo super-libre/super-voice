@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "voice": {
+      "type": "http",
+      "url": "http://127.0.0.1:7300/v1/mcp",
+      "headersHelper": "voice assistant-header claude-code"
+    }
+  }
+}

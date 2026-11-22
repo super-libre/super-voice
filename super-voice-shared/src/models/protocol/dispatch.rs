@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use super::command::Command;
 use super::request::DaemonRequest;
-use crate::models::contexts::DictationContext;
+use crate::models::contexts::{DictationContext, ExtraContext};
 use crate::models::read_method::ReadMethod;
 use crate::models::recording_stop_mode::RecordingStopMode;
 use crate::models::write_method::WriteMethod;
 use crate::validation::{self, Validate};
+use serde::Deserialize;
 
 impl TryFrom<DaemonRequest> for Command {
     type Error = String;
@@ -114,7 +115,26 @@ fn cmd_transcribe(request: &DaemonRequest) -> Result<Command, String> {
         sample_rate,
         client_id,
         language: request.language.clone(),
+        context: extra_context(request.data.as_ref())?,
     })
+}
+
+/// The `context` of a request that starts a dictation: context for that
+/// dictation alone, added to the user's. Strict, like `audio_cues`: a wrong
+/// shape, or one too long to send, is a bad request rather than a dictation
+/// without it. One that adds nothing is no context.
+fn extra_context(data: Option<&serde_json::Value>) -> Result<Option<ExtraContext>, String> {
+    let value = match data.and_then(|data| data.get("context")) {
+        None | Some(serde_json::Value::Null) => return Ok(None),
+        Some(value) => value,
+    };
+    let context = ExtraContext::deserialize(value).map_err(|e| {
+        format!("Invalid context: expected {{\"prompt\": text, \"vocabulary\": [text]}}: {e}")
+    })?;
+    context
+        .check()
+        .map_err(|e| format!("Invalid context: {e}"))?;
+    Ok((!context.is_empty()).then_some(context))
 }
 
 fn cmd_record(request: &DaemonRequest) -> Result<Command, String> {
@@ -174,6 +194,7 @@ fn cmd_record(request: &DaemonRequest) -> Result<Command, String> {
         preview,
         language: request.language.clone(),
         audio_cues,
+        context: extra_context(request.data.as_ref())?,
     })
 }
 

@@ -78,9 +78,26 @@ is being transcribed, speech is allowed again.
   // configured audio theme; false plays none; true plays them even when the
   // theme is "silent", using the default theme's. The configured volume
   // still applies. Anything but a boolean is a 400.
-  "audio_cues":      false
+  "audio_cues":      false,
+
+  // Optional, on both paths. Context for this transcription alone, added to
+  // the user's: the prompt after theirs, the terms after theirs. Either half
+  // may be left out. Past a context's limits, or of another shape, it is a
+  // 400.
+  "context": {
+    "prompt":     "The user is answering a question about the release notes.",
+    "vocabulary": ["agy", "Antigravity"]
+  }
 }
 ```
+
+`context` is how an app that knows what the user is about to say helps the
+model hear it: the names in a document being dictated into, the terms of a
+conversation the user is answering. The daemon adds it to the context the user
+selected, under [the rule for a dictation's own context](./context.md#a-dictations-own-context),
+and only a model that takes a context hears it. Its limits are a context's:
+a 4000-character prompt, and 200 terms of 4000 characters in all. Nothing is
+stored.
 
 `audio_cues` changes this recording only. It never writes the configured
 theme, so a client that wants a silent take does not need the `settings`

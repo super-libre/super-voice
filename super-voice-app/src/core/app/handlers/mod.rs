@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+mod assistants;
 mod backend;
 mod build;
 mod clips;

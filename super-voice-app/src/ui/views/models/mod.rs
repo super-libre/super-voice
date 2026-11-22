@@ -30,7 +30,7 @@ use cosmic::iced::widget::row;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, text};
 
-use super::common::page_container;
+use super::common::{page_container, status_dot};
 use crate::core::app::AppModel;
 use crate::state::ModelsTab;
 use crate::ui::icons;
@@ -144,42 +144,17 @@ fn feature_pill<'a>(
     status: ModelStatus,
 ) -> Element<'a, Message> {
     // 14px like the GPU pill's glyph, so both pills keep the bar's height.
-    let inner = row![icons::phosphor(glyph).size(14), status_dot(status, 10.0)]
-        .spacing(6.0)
-        .align_y(Alignment::Center);
+    let inner = row![
+        icons::phosphor(glyph).size(14),
+        status_dot(status.color(), 10.0)
+    ]
+    .spacing(6.0)
+    .align_y(Alignment::Center);
     surface::rounded_tooltip(
         header_pill(inner),
         text::body(format!("{feature}: {}", status.detail())),
         widget::tooltip::Position::Bottom,
     )
-}
-
-/// A round dot in `status`'s color: gray for no backend, yellow for nothing
-/// loaded or loading, green for ready or idle, red for setup incomplete, not
-/// running, or no voice to speak in.
-fn status_dot<'a>(status: ModelStatus, size: f32) -> Element<'a, Message> {
-    let color_fn: fn(&cosmic::Theme) -> cosmic::iced::Color = match status {
-        ModelStatus::None => |t| t.cosmic().palette.neutral_5.into(),
-        ModelStatus::Blocked | ModelStatus::Failed | ModelStatus::NoVoice => {
-            |t| t.cosmic().destructive.base.into()
-        }
-        ModelStatus::NotLoaded => |t| t.cosmic().warning.base.into(),
-        ModelStatus::Ready | ModelStatus::Idle => |t| t.cosmic().success.base.into(),
-    };
-    widget::container(widget::text(""))
-        .width(Length::Fixed(size))
-        .height(Length::Fixed(size))
-        .class(cosmic::theme::Container::custom(move |theme| {
-            cosmic::iced::widget::container::Style {
-                background: Some(cosmic::iced::Background::Color(color_fn(theme))),
-                border: cosmic::iced::Border {
-                    radius: (size / 2.0).into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        }))
-        .into()
 }
 
 /// A compact GPU readout for the header: a graphics-card glyph, the primary

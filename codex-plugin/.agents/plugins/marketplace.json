@@ -1,0 +1,15 @@
+{
+  "name": "super-voice",
+  "interface": {
+    "displayName": "Super Voice"
+  },
+  "plugins": [
+    {
+      "name": "super-voice",
+      "source": {
+        "source": "local",
+        "path": "./plugins/super-voice"
+      }
+    }
+  ]
+}

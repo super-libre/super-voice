@@ -14,20 +14,39 @@ use crate::output::notice;
 use crate::{audio::recorder::DaemonAudioRecorder, output::typer::Typer};
 use anyhow::{Context, Result};
 use chrono::Utc;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::collections::VecDeque;
 use std::sync::Arc;
+use super_voice_shared::models::contexts::ExtraContext;
 use super_voice_shared::models::protocol::{DaemonResponse, ErrorCode};
 use super_voice_shared::models::recording_stop_mode::RecordingStopMode;
 use super_voice_shared::theme::AudioTheme;
 use tokio::time::Instant;
 
-/// How a take records: what ends it, whether its previews are typed, and the
-/// cues it plays. Settled when the request arrives.
-pub(crate) struct TakeSettings {
-    pub(crate) stop_mode: RecordingStopMode,
-    pub(crate) preview_typing: bool,
-    pub(crate) cue_theme: AudioTheme,
+/// How a take records: what ends it, whether its previews are typed, the
+/// cues it plays, and the context it brought. Settled when the request
+/// arrives.
+pub struct TakeSettings {
+    pub stop_mode: RecordingStopMode,
+    pub preview_typing: bool,
+    pub cue_theme: AudioTheme,
+    /// Context for this take alone, added to the user's.
+    pub context: Option<ExtraContext>,
+}
+
+/// Say in the log that a dictation brought context of its own, by its size:
+/// the words themselves may be private.
+pub(crate) fn log_extra_context(extra: Option<&ExtraContext>) {
+    if let Some(extra) = extra {
+        debug!(
+            "This dictation adds context: a {}-character prompt and {} terms",
+            extra.prompt.trim().chars().count(),
+            super_voice_shared::models::contexts::DictationContext::clean_vocabulary(
+                &extra.vocabulary
+            )
+            .len()
+        );
+    }
 }
 
 /// `client_id` reported on every daemon-mic lifecycle event.
@@ -195,9 +214,7 @@ impl SuperSTTDaemon {
         &self,
         typer: &mut Typer,
         write_mode: bool,
-        stop_mode: RecordingStopMode,
-        preview_typing: bool,
-        cue_theme: AudioTheme,
+        settings: TakeSettings,
         request_language: Option<&str>,
     ) -> DaemonResponse {
         // One recording at a time. The claim is this recording's for its whole
@@ -229,6 +246,8 @@ impl SuperSTTDaemon {
             );
         };
 
+        log_extra_context(settings.context.as_ref());
+
         // Silence any speech before the microphone opens: dictating over the
         // voice is asking it to stop, and the take must not hear it. A request
         // to speak still waiting for its model does not start either.
@@ -238,18 +257,7 @@ impl SuperSTTDaemon {
 
         // Wait for recording to complete and return the transcription.
         let outcome = self
-            .record_and_transcribe(
-                claim,
-                typer,
-                write_mode,
-                TakeSettings {
-                    stop_mode,
-                    preview_typing,
-                    cue_theme,
-                },
-                request_language,
-                load,
-            )
+            .record_and_transcribe(claim, typer, write_mode, settings, request_language, load)
             .await;
         // The models' idle time starts when the take ends, however it ended.
         self.finished_using_pipeline();
@@ -327,6 +335,8 @@ impl SuperSTTDaemon {
         info!("Starting direct audio recording in daemon with simplified architecture");
 
         // Phase 1: take the microphone and spawn the recorder.
+        let extra = settings.context.clone();
+        let extra = extra.as_ref();
         let (session, capture_started) = self.spawn_recorder(&claim, settings).await?;
         // Announce capture once the microphone is capturing, not when the
         // recorder is spawned: the start cue plays first, and a widget lit up
@@ -353,13 +363,14 @@ impl SuperSTTDaemon {
             if session.realtime {
                 self.capture_until_loaded(&session, &mut load).await;
             }
-            self.run_realtime_stream_loop(&session, typer, write_mode, request_language)
+            self.run_realtime_stream_loop(&session, typer, write_mode, request_language, extra)
                 .await
         };
         #[cfg(not(feature = "wasm-backends"))]
         let streamed: Option<String> = None;
         if streamed.is_none() {
-            self.run_preview_loop(&session, &mut load, typer, write_mode, request_language)
+            let language = request_language;
+            self.run_preview_loop(&session, &mut load, typer, write_mode, language, extra)
                 .await;
         }
 
@@ -430,6 +441,7 @@ impl SuperSTTDaemon {
                     load,
                     audio_for_final_decode(&full_audio_data, &speech_state),
                     request_language,
+                    extra,
                 )
                 .await
             {
@@ -468,12 +480,16 @@ impl SuperSTTDaemon {
         // enabled. Previews stay raw by design — only the final transcript
         // is rewritten.
         let language = self.resolve_active_language(request_language).await;
-        let transcription_result = self.post_process_final(raw_transcript, language).await;
+        let transcription_result = self
+            .post_process_final(raw_transcript, language, extra)
+            .await;
 
         // Phase 5: type the final transcript.
         if write_mode {
             info!("Writing transcription via {}", typer.write_method_name());
             typer.process_final_text(&transcription_result).await;
+            // An assistant's prompt that holds it was spoken.
+            self.assistants.sessions.dictated(&transcription_result);
         }
 
         // Phase 6: finalize the cycle.
@@ -490,9 +506,10 @@ impl SuperSTTDaemon {
         load: PipelineLoad,
         audio: &[f32],
         request_language: Option<&str>,
+        extra: Option<&ExtraContext>,
     ) -> std::result::Result<String, Undecoded> {
         load.wait().await.map_err(Undecoded::NoModel)?;
-        self.transcribe_final(audio, request_language)
+        self.transcribe_final(audio, request_language, extra)
             .await
             .map_err(Undecoded::Failed)
     }

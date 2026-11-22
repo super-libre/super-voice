@@ -62,6 +62,9 @@ What the protocol gives you:
 - **Streaming text in.** Send an LLM's reply as it is generated over a
   WebSocket at [`/tts/speak/stream`](./endpoints/v1/tts/speak/stream.md), and
   the daemon speaks each sentence as it completes.
+- **An MCP server.** An AI assistant speaks to the user and hears them
+  through the tools `speak` and `listen` at [`/v1/mcp`](./mcp.md), with a key
+  the daemon makes it when the user connects it.
 
 Reference:
 
@@ -82,12 +85,15 @@ Reference:
   envelopes, connection lifecycle, and a minimal non-Rust client recipe.
 - [auth.md](./auth.md) — the consent handshake, tokens, and the full scope
   catalog.
+- [mcp.md](./mcp.md) — the MCP server AI assistants speak and listen through.
 - [endpoints/](./endpoints/) — every endpoint, request/response by request.
 - [scopes/](./scopes/) — what each scope unlocks.
 
 The OpenAPI document is generated from the daemon's router, not maintained
 alongside it: every route is registered through the same declaration that
-carries its documentation. It is not committed; CI generates it on every push
+carries its documentation. The one path it leaves out is `/v1/mcp`, which is
+JSON-RPC, with the operation in the body rather than the path; its contract is
+[mcp.md](./mcp.md). The document is not committed; CI generates it on every push
 and publishes it at the link above, and `just openapi` writes it locally to
 `docs/protocol/openapi.json`. The prose above is not replaced by it — that
 explains *when* to call an endpoint and how the pieces fit, where the spec
@@ -152,6 +158,22 @@ knowing them means most paths can be guessed rather than looked up:
 | `/v1/shortcuts/{id}` | `POST`, `DELETE` | `settings` | [shortcuts.md](./endpoints/v1/shortcuts.md) |
 | `/v1/update` | `GET` | `settings` | [update.md](./endpoints/v1/update.md) |
 | `/v1/update/check` | `POST` | `settings` | [update/check.md](./endpoints/v1/update/check.md) |
+
+### AI assistants
+
+Super Voice's MCP server, and the assistants the daemon connects to it. "Own
+clients only" is Super Voice's own settings app, applet and CLI, installed
+beside the daemon: those routes make a key or show one.
+
+| Path | Methods | Scope | Reference |
+|---|---|---|---|
+| `/v1/mcp` | `POST` (MCP, JSON-RPC) | an assistant key; `speak` and `transcribe` per tool | [mcp.md](./mcp.md) |
+| `/v1/assistants` | `GET` | `settings` | [assistants.md](./endpoints/v1/assistants.md) |
+| `/v1/assistants/{id}` | `PATCH`, `DELETE` | `settings` | [assistants.md](./endpoints/v1/assistants.md) |
+| `/v1/assistants/{id}/connect` | `POST` | `settings`, own clients only | [assistants.md](./endpoints/v1/assistants.md#post-assistantsidconnect) |
+| `/v1/assistants/{id}/key` | `GET` | `settings`, own clients only | [assistants.md](./endpoints/v1/assistants.md#get-assistantsidkey) |
+| `/v1/assistants/keys` | `POST` | `settings`, own clients only | [assistants.md](./endpoints/v1/assistants.md#post-assistantskeys) |
+| `/v1/assistants/keys/{id}` | `DELETE` | `settings` | [assistants.md](./endpoints/v1/assistants.md#delete-assistantskeysid) |
 
 ### The pipelines
 

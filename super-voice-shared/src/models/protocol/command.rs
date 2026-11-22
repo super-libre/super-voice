@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-use crate::models::contexts::DictationContext;
+use crate::models::contexts::{DictationContext, ExtraContext};
 use crate::models::read_method::ReadMethod;
 use crate::models::recording_stop_mode::RecordingStopMode;
 use crate::models::write_method::WriteMethod;
@@ -13,6 +13,8 @@ pub enum Command {
         /// Optional per-request language override (BCP-47 or `"auto"`). `None`
         /// falls back to the active model's configured language.
         language: Option<String>,
+        /// Context for this dictation alone, added to the user's.
+        context: Option<ExtraContext>,
     },
     Ping {
         client_id: Option<String>,
@@ -30,6 +32,8 @@ pub enum Command {
         /// follows the configured audio theme; `Some(false)` plays none;
         /// `Some(true)` plays them even when the theme is `silent`.
         audio_cues: Option<bool>,
+        /// Context for this dictation alone, added to the user's.
+        context: Option<ExtraContext>,
     },
     SetAudioTheme {
         theme: String,

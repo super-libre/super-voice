@@ -15,6 +15,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use std::time::Duration;
+use super_voice_shared::models::contexts::{DictationContext, ExtraContext};
 
 /// Static metadata about a loaded model, built from the discovered backend
 /// entry that serves it. Self-contained — there is no static registry.
@@ -111,6 +112,11 @@ pub struct BackendContext {
     /// for every subprocess backend — those run under `PrivateNetwork=yes` and
     /// can dial nothing at all.
     pub user_allowed_hosts: Vec<String>,
+    /// The user's dictation context, already in `headers`, kept whole so one
+    /// dictation's context can be added to it (see
+    /// [`ExtraContext::added_to`]). An empty one when the user has none;
+    /// `None` when the model takes no context, so nothing is added either.
+    pub context: Option<DictationContext>,
 }
 
 /// Prints the headers through [`Redacted`], so a secret's value never reaches
@@ -122,8 +128,20 @@ impl std::fmt::Debug for BackendContext {
         f.debug_struct("BackendContext")
             .field("headers", &crate::secret_headers::Redacted(&self.headers))
             .field("user_allowed_hosts", &self.user_allowed_hosts)
+            .field("context", &self.context.is_some())
             .finish()
     }
+}
+
+/// One dictation's context: the user's, `user`, with `extra` added. `None`
+/// when the model takes no context (`user` is `None`) or the dictation
+/// brought none, and the instance's own context headers then stand.
+#[must_use]
+pub fn dictation_context(
+    user: Option<&DictationContext>,
+    extra: Option<&ExtraContext>,
+) -> Option<DictationContext> {
+    Some(extra?.added_to(Some(user?)))
 }
 
 /// Common contract for any STT backend.
@@ -137,11 +155,15 @@ pub trait Transcribe: ModelState {
     ///
     /// `language` is a resolved BCP-47 tag (`"es-MX"`, `"auto"`, …) or `None`
     /// to omit the field and let the backend use its model's primary language.
+    ///
+    /// `extra` is context for this dictation alone, added to the user's for
+    /// this request, and only for a model that takes a context.
     async fn transcribe_audio(
         &mut self,
         audio: &[f32],
         sample_rate: u32,
         language: Option<&str>,
+        extra: Option<&ExtraContext>,
     ) -> Result<String>;
 
     /// Rewrite a finished transcript — filler removal, punctuation,
@@ -154,8 +176,16 @@ pub trait Transcribe: ModelState {
     /// backend does not serve the route answers with the backend's own error,
     /// and the daemon's post-processing is best-effort either way — a failure
     /// here costs the user the cleanup, never the transcript.
-    async fn process_text(&mut self, text: &str, language: Option<&str>) -> Result<String> {
-        let _ = (text, language);
+    ///
+    /// `extra` is the dictation's own context, as for
+    /// [`transcribe_audio`](Self::transcribe_audio).
+    async fn process_text(
+        &mut self,
+        text: &str,
+        language: Option<&str>,
+        extra: Option<&ExtraContext>,
+    ) -> Result<String> {
+        let _ = (text, language, extra);
         anyhow::bail!("this model does not support post-processing")
     }
 
@@ -164,11 +194,15 @@ pub trait Transcribe: ModelState {
     /// unsupported. Only WASM backends serving a `realtime` model override
     /// this.
     #[cfg(feature = "wasm-backends")]
+    ///
+    /// `extra` is the dictation's own context, sent at the session's start, as
+    /// for [`transcribe_audio`](Self::transcribe_audio).
     async fn realtime_session(
         &self,
         transport: crate::stt_models::wasm::ws_host::ConsumerStreamTransport,
+        extra: Option<&ExtraContext>,
     ) -> Result<()> {
-        let _ = transport;
+        let _ = (transport, extra);
         anyhow::bail!("this model does not support realtime streaming")
     }
 

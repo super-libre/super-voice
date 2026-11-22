@@ -1,0 +1,37 @@
+{
+  "super-voice": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "{voice} assistant-hook antigravity session-start",
+        "timeout": 10
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "{voice} assistant-hook antigravity pre-invocation",
+        "timeout": 10
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "call_mcp_tool|mcp_super-voice_.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{voice} assistant-hook antigravity pre-tool-use",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "{voice} assistant-hook antigravity stop",
+        "timeout": 30
+      }
+    ]
+  }
+}

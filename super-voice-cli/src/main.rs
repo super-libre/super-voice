@@ -4,7 +4,9 @@
 //!
 //! Each feature's commands are under its own subcommand — `voice record` for
 //! speech to text, `voice speak` for text to speech — and what the daemon has
-//! once is at the top: `ping`, `status`, `logout`.
+//! once is at the top: `ping`, `status`, `logout`. `assistant-header` is
+//! for AI assistants, which run it for the key Super Voice made them, and
+//! `assistant-hook` for an assistant's hooks that can only run a command.
 //!
 //! Auth flow is delegated to `super_voice_shared::daemon::session`, the
 //! shared client-side session helper. Each client (CLI, settings app,
@@ -26,8 +28,11 @@ use std::io::Read;
 use std::path::PathBuf;
 use super_voice_shared::daemon::http_client::{self, TranscribeOptions};
 use super_voice_shared::daemon::session::{self, AppId};
+use super_voice_shared::models::assistants::AssistantId;
+use super_voice_shared::models::contexts::ExtraContext;
 use super_voice_shared::validation::get_http_socket_path;
 
+mod assistant_hook;
 #[cfg(target_os = "macos")]
 mod hotkey;
 #[cfg(target_os = "macos")]
@@ -37,6 +42,11 @@ const APP_ID: AppId = super_voice_shared::daemon::session::app_id("super-voice-c
 const APP_NAME: &str = "Super Voice CLI";
 /// Both features' commands run on one token, so it asks for both.
 const SCOPES: &[&str] = &["transcribe", "speak", "status"];
+/// `assistant-header` reads an assistant's key, which takes `settings` too.
+/// Only for that command, so a CLI that is not the one installed beside the
+/// daemon asks the user for `settings` only when it needs it. The token it
+/// gets covers the other commands as well.
+const ASSISTANT_HEADER_SCOPES: &[&str] = &["transcribe", "speak", "status", "settings"];
 
 fn main() -> Result<()> {
     // The CLI previously had no logging at all; initialize it like the other
@@ -97,8 +107,16 @@ async fn dispatch(matches: &ArgMatches, socket_path: PathBuf) -> Result<()> {
             let write = sub.get_flag("write");
             let wait = sub.get_flag("wait");
             let stop_mode = sub.get_one::<String>("stop-mode").cloned();
+            let context = record_context(sub);
             run_with_token(socket_path.clone(), |t| {
-                cmd_record(socket_path.clone(), t, write, wait, stop_mode.clone())
+                cmd_record(
+                    socket_path.clone(),
+                    t,
+                    write,
+                    wait,
+                    stop_mode.clone(),
+                    context.clone(),
+                )
             })
             .await
             .context("record failed")
@@ -125,6 +143,24 @@ async fn dispatch(matches: &ArgMatches, socket_path: PathBuf) -> Result<()> {
             .context("speak failed")
         }
         Some(("logout", _)) => cmd_logout(),
+        Some(("assistant-header", sub)) => {
+            let assistant = sub
+                .get_one::<String>("assistant")
+                .and_then(|id| id.parse::<AssistantId>().ok())
+                .context("an assistant is required")?;
+            cmd_assistant_header(socket_path, assistant).await
+        }
+        Some(("assistant-hook", sub)) => {
+            let assistant = sub
+                .get_one::<String>("assistant")
+                .and_then(|id| id.parse::<AssistantId>().ok())
+                .context("an assistant is required")?;
+            let event = sub
+                .get_one::<String>("event")
+                .context("an event is required")?;
+            assistant_hook::run(socket_path, assistant, event).await;
+            Ok(())
+        }
         _ => {
             println!("Run with --help for usage.");
             Ok(())
@@ -177,6 +213,25 @@ fn build_cli() -> Command {
                                 .iter()
                                 .copied(),
                         )),
+                )
+                .arg(
+                    Arg::new("prompt")
+                        .long("prompt")
+                        .value_name("TEXT")
+                        .help(
+                            "Context for this recording, added to your selected context: \
+                             what you are about to talk about",
+                        ),
+                )
+                .arg(
+                    Arg::new("term")
+                        .long("term")
+                        .value_name("WORD")
+                        .help(
+                            "A word or name you may say, added to your selected context's \
+                             vocabulary for this recording. Repeat it for more",
+                        )
+                        .action(ArgAction::Append),
                 ),
         )
         .subcommand(read_arg(
@@ -197,7 +252,25 @@ fn build_cli() -> Command {
         .subcommand(
             Command::new("logout")
                 .about("Forget the cached session token (forces re-consent next call)"),
-        ),
+        )
+        .subcommand(
+            Command::new("assistant-header")
+                .about("Print the header an AI assistant sends Super Voice, with its key")
+                .long_about(
+                    "Print the header an AI assistant sends Super Voice's MCP server, with the key \
+                     Super Voice made it, as {\"Authorization\":\"Bearer <key>\"}. The assistant \
+                     runs this itself, once it is connected on the Assistants page of the app.",
+                )
+                .arg(
+                    Arg::new("assistant")
+                        .help("The assistant")
+                        .required(true)
+                        .value_parser(clap::builder::PossibleValuesParser::new(
+                            AssistantId::WIRE_VARIANTS.iter().copied(),
+                        )),
+                ),
+        )
+        .subcommand(assistant_hook::command()),
     )
 }
 
@@ -320,12 +393,25 @@ fn model_line(part: &super_voice_shared::models::status::FeatureStatus) -> Strin
     }
 }
 
+/// The context `voice record --prompt` and `--term` add to the user's for
+/// this recording, if they add any.
+fn record_context(sub: &clap::ArgMatches) -> Option<ExtraContext> {
+    let context = ExtraContext {
+        prompt: sub.get_one::<String>("prompt").cloned().unwrap_or_default(),
+        vocabulary: sub
+            .get_many::<String>("term")
+            .map_or_else(Vec::new, |terms| terms.cloned().collect()),
+    };
+    (!context.is_empty()).then_some(context)
+}
+
 async fn cmd_record(
     socket_path: PathBuf,
     token: String,
     write_mode: bool,
     wait: bool,
     stop_mode: Option<String>,
+    context: Option<ExtraContext>,
 ) -> super_voice_shared::daemon::http_client::HttpResult<()> {
     // Toggle behavior: probe `/v1/status` first. If a daemon-mic
     // capture is already in progress, this invocation acts as a stop
@@ -349,6 +435,7 @@ async fn cmd_record(
             // The CLI prints the final result (or fire-and-forgets); it does not
             // render incremental preview, so it never asks to stream it.
             stream_realtime: false,
+            context,
         },
     )
     .await?;
@@ -479,6 +566,80 @@ async fn cmd_speak_stop(
     Ok(())
 }
 
+/// The key the daemon made `assistant`, and where it reaches Super Voice's
+/// MCP server with it.
+///
+/// # Errors
+///
+/// What the daemon answered instead, such as `not_connected`.
+pub(crate) async fn assistant_access(
+    socket_path: PathBuf,
+    assistant: AssistantId,
+) -> Result<(String, String), String> {
+    let body = assistant_key_body(socket_path, assistant)
+        .await
+        .map_err(|e| e.to_string())?;
+    match (body["key"].as_str(), body["address"].as_str()) {
+        (Some(key), Some(address)) => Ok((key.to_string(), address.to_string())),
+        _ => Err("Super Voice sent no key".to_string()),
+    }
+}
+
+/// `GET /assistants/{assistant}/key`, as the daemon answers it.
+async fn assistant_key_body(
+    socket_path: PathBuf,
+    assistant: AssistantId,
+) -> super_voice_shared::daemon::http_client::HttpResult<serde_json::Value> {
+    let path = format!("/assistants/{assistant}/key");
+    session::with_token(
+        socket_path.clone(),
+        APP_ID,
+        APP_NAME,
+        ASSISTANT_HEADER_SCOPES,
+        |token| {
+            let socket_path = socket_path.clone();
+            let path = path.clone();
+            async move {
+                http_client::transport::get_json::<serde_json::Value>(socket_path, &token, &path)
+                    .await
+            }
+        },
+    )
+    .await
+}
+
+/// `voice assistant-header <assistant>`: print
+/// `{"Authorization":"Bearer <key>"}`, with the key the daemon made the
+/// assistant, and nothing else on stdout, since the assistant reads it as
+/// JSON. When there is no key to print, say why on stderr and exit with 1.
+async fn cmd_assistant_header(socket_path: PathBuf, assistant: AssistantId) -> Result<()> {
+    let answer = assistant_key_body(socket_path, assistant).await;
+    let key = answer.as_ref().ok().and_then(|body| body["key"].as_str());
+    if let Some(key) = key {
+        println!("{}", authorization_header(key));
+        return Ok(());
+    }
+    let name = assistant.display_name();
+    let reason = match &answer {
+        Err(e) if e.to_string().contains("not_connected") => format!(
+            "Super Voice has not connected {name}. Connect it on the Assistants page of the Super Voice app."
+        ),
+        Err(e) if e.to_string().contains("auth_denied") => {
+            "Super Voice shows a key only to the voice command installed beside its daemon."
+                .to_string()
+        }
+        Err(e) => format!("Could not get {name}'s key from Super Voice: {e}"),
+        Ok(_) => format!("Super Voice sent no key for {name}."),
+    };
+    eprintln!("{reason}");
+    std::process::exit(1);
+}
+
+/// The headers an assistant sends, as the JSON object it reads.
+fn authorization_header(key: &str) -> String {
+    serde_json::json!({ "Authorization": format!("Bearer {key}") }).to_string()
+}
+
 fn cmd_logout() -> Result<()> {
     session::forget(APP_ID).map_err(|e| anyhow!(e))?;
     println!("Cached session token removed. Next invocation will trigger re-consent.");
@@ -555,12 +716,60 @@ mod tests {
     /// the consent binary's `scope_conformance` guard (audit 2 Tier 3 #33).
     #[test]
     fn requested_scopes_are_known() {
-        for scope in SCOPES {
+        for scope in SCOPES.iter().chain(super::ASSISTANT_HEADER_SCOPES) {
             assert!(
                 is_known_scope(scope),
                 "CLI requests scope `{scope}` that is not in scopes::known_scopes"
             );
         }
+    }
+
+    /// `assistant-header` asks for what every other command does, so its
+    /// token serves them too, and `settings`, which the key's route takes.
+    #[test]
+    fn assistant_header_asks_for_settings_as_well() {
+        let header = super::ASSISTANT_HEADER_SCOPES;
+        assert!(
+            SCOPES.iter().all(|scope| header.contains(scope)),
+            "{header:?}"
+        );
+        assert!(header.contains(&"settings"));
+        assert!(
+            !SCOPES.contains(&"settings"),
+            "only that command asks for it"
+        );
+    }
+
+    /// Exactly the JSON object an assistant reads its headers from.
+    #[test]
+    fn the_header_is_one_json_object() {
+        assert_eq!(
+            super::authorization_header("sva_0123abcd"),
+            r#"{"Authorization":"Bearer sva_0123abcd"}"#
+        );
+    }
+
+    #[test]
+    fn assistant_header_takes_only_an_assistant_super_voice_knows() {
+        let matches = super::build_cli()
+            .try_get_matches_from(["voice", "assistant-header", "claude-code"])
+            .expect("parses");
+        let (name, sub) = matches.subcommand().expect("a subcommand");
+        assert_eq!(name, "assistant-header");
+        assert_eq!(
+            sub.get_one::<String>("assistant").map(String::as_str),
+            Some("claude-code")
+        );
+        assert!(
+            super::build_cli()
+                .try_get_matches_from(["voice", "assistant-header", "robot"])
+                .is_err()
+        );
+        assert!(
+            super::build_cli()
+                .try_get_matches_from(["voice", "assistant-header"])
+                .is_err()
+        );
     }
 
     /// `stop` belongs to a feature: `voice record stop` and `voice speak stop`.
@@ -644,6 +853,35 @@ mod tests {
                 .try_get_matches_from(["voice", "record", "--write", "stop"])
                 .is_err()
         );
+    }
+
+    /// `--prompt` and each `--term` make the recording's own context, and
+    /// a recording without them has none.
+    #[test]
+    fn record_takes_a_context_of_its_own() {
+        let matches = super::build_cli()
+            .try_get_matches_from([
+                "voice",
+                "record",
+                "--wait",
+                "--prompt",
+                "About the release.",
+                "--term",
+                "agy",
+                "--term",
+                "Antigravity",
+            ])
+            .expect("the context flags parse");
+        let (_, sub) = matches.subcommand().expect("record");
+        let context = super::record_context(sub).expect("a context");
+        assert_eq!(context.prompt, "About the release.");
+        assert_eq!(context.vocabulary, ["agy", "Antigravity"]);
+
+        let matches = super::build_cli()
+            .try_get_matches_from(["voice", "record"])
+            .expect("a bare record parses");
+        let (_, sub) = matches.subcommand().expect("record");
+        assert_eq!(super::record_context(sub), None);
     }
 
     /// The hotkey `LaunchAgent`'s arguments must parse. launchd restarts the

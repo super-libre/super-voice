@@ -146,6 +146,7 @@ impl SuperSTTDaemon {
             )),
             self_update: Arc::new(crate::self_update::checker()),
             shortcuts: Arc::new(crate::shortcuts::Shortcuts::default()),
+            assistants: Arc::new(crate::assistants::Assistants::default()),
             secrets,
             tts,
         };
@@ -229,6 +230,26 @@ impl SuperSTTDaemon {
                     }
                     if bg.config.read().await.update.check_enabled {
                         let _ = bg.run_self_update_check_and_notify().await;
+                    }
+                }
+            });
+        }
+
+        // Forget the assistants' sessions gone quiet.
+        {
+            let sessions = std::sync::Arc::clone(&self.assistants.sessions);
+            let mut shutdown = self.shutdown_tx.subscribe();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tokio::select! {
+                        _ = interval.tick() => {}
+                        _ = shutdown.recv() => return,
+                    }
+                    let gone = sessions.sweep(std::time::Instant::now());
+                    if gone > 0 {
+                        log::info!("Forgot {gone} assistant sessions gone quiet");
                     }
                 }
             });

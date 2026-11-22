@@ -57,6 +57,7 @@ pub fn record_command_stream() -> impl futures_util::Stream<Item = RecordEvent> 
                     // The test panel renders live preview text, so it asks the
                     // daemon to stream incremental `preview` frames.
                     stream_realtime: true,
+                    context: None,
                 };
 
                 // Try to open the stream with the cached token; on

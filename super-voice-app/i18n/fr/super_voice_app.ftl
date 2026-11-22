@@ -730,3 +730,66 @@ the-clip-could-not-be-made = L'extrait n'a pas pu être créé : { $error }
 the-clip-could-not-play = L'extrait n'a pas pu être lu : { $error }
 the-clip-could-not-be-exported = L'extrait n'a pas pu être exporté : { $error }
 the-clip-could-not-be-deleted = L'extrait n'a pas pu être supprimé : { $error }
+
+# Assistants
+assistants = Assistants
+assistants-intro = Laissez les assistants IA de cet ordinateur parler et écouter grâce à Super Voice.
+assistants-intro-caption = Chaque assistant a son propre accès. Le déconnecter le lui retire.
+on-this-computer = Sur cet ordinateur
+assistant-reads-replies = Parle, écoute et lit ses réponses à voix haute.
+assistant-reads-dictated-replies = Parle, écoute et lit à voix haute ses réponses à ce que vous dictez.
+assistant-not-found = Introuvable sur cet ordinateur.
+assistant-restart-to-use = Redémarrez { $name } pour commencer à l’utiliser.
+assistant-connected = Connecté
+show-talk-above-prompt = Afficher Talk au-dessus de l'invite
+show-talk-above-prompt-description = 0 lance Talk tant que l'invite est vide. Désactivé, rien ne s'affiche au-dessus de l'invite.
+announce-when-needed = Annoncer quand il a besoin de vous
+announce-when-needed-description = Annonce à voix haute quand { $name } demande une autorisation ou une réponse.
+use-conversation-as-context-description = Vous entend avec les noms et les termes de votre conversation avec lui.
+all-assistants = Tous les assistants
+sessions = Sessions
+sessions-open = { $count ->
+    [0] Aucune session ouverte
+    [one] 1 session ouverte
+   *[other] { $count } sessions ouvertes
+}
+disconnect-assistant = Déconnecter { $name }
+disconnect-assistant-description = Retire de { $name } le plugin et la clé de Super Voice.
+use-conversation-as-context = Utiliser la conversation comme contexte
+session-unnamed = Session
+session-speaking = Parle
+session-listening = Écoute
+session-agents = { $count ->
+        [one] { $count } agent
+       *[other] { $count } agents
+    }
+used-now = Maintenant
+used-minutes-ago = il y a { $minutes } min
+used-hours-ago = il y a { $hours } h
+connect = Connecter
+connecting-assistant = Connexion…
+disconnect = Déconnecter
+connect-assistant-question = Connecter { $name } ?
+assistant-will-be-able-to = { $name } pourra :
+assistant-can-speak = 1. Parler sur vos haut-parleurs.
+assistant-can-listen = 2. Enregistrer depuis votre micro pendant que vous lui parlez.
+connect-plugin-caption = Super Voice installe son plugin dans { $name }, avec une clé que seul { $name } possède. Vous pouvez le déconnecter sur cette page à tout moment.
+connect-codex-caption = Super Voice installe son plugin dans Codex, avec une clé que seul Codex possède. Codex lance le plugin une fois que vous faites confiance à ses hooks, avec /hooks. Vous pouvez le déconnecter sur cette page à tout moment.
+another-assistant = Un autre assistant
+any-mcp-assistant = Tout assistant compatible avec MCP
+any-mcp-assistant-description = Donnez-lui l’adresse de Super Voice et une clé rien qu’à lui.
+create-key = Créer une clé
+key-for-another-assistant = Une clé pour un autre assistant
+key-name-caption = Affiché sur cette page, pour savoir quelle clé est laquelle.
+create = Créer
+creating-key = Création…
+address = Adresse
+key = Clé
+key-shown-only-now = Mettez les deux dans les paramètres MCP de l’assistant, la clé comme jeton Bearer. La clé n’est affichée que maintenant.
+done = Terminé
+assistants-load-failed = Impossible de lire les assistants : { $error }
+assistant-connect-failed = Impossible de connecter { $name } : { $error }
+assistant-disconnect-failed = Impossible de déconnecter { $name } : { $error }
+assistant-change-failed = Impossible de modifier { $name } : { $error }
+key-create-failed = Impossible de créer la clé : { $error }
+key-remove-failed = Impossible de retirer la clé : { $error }

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "super-voice",
+  "displayName": "Super Voice",
+  "version": "0.1.0",
+  "description": "Hear the Antigravity CLI answer what you dictate to it, with Super Voice on your own machine.",
+  "homepage": "https://github.com/super-libre/super-voice",
+  "license": "GPL-3.0-only"
+}

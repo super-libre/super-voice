@@ -44,7 +44,7 @@ async fn wasm_orchestration_against_mock() {
     assert_eq!(status["state"], "ready");
 
     let text = backend
-        .transcribe_audio(&[0.0_f32; 1600], 16000, None)
+        .transcribe_audio(&[0.0_f32; 1600], 16000, None, None)
         .await
         .expect("transcription should succeed");
     assert_eq!(text, "mock transcription");
@@ -65,7 +65,7 @@ async fn wasm_process_route_against_mock() {
         .expect("load mock backend");
 
     let processed = backend
-        .process_text("um so hello there", Some("en"))
+        .process_text("um so hello there", Some("en"), None)
         .await
         .expect("post-processing should succeed");
     assert_eq!(processed, "processed: um so hello there");
@@ -85,7 +85,7 @@ async fn wasm_process_surfaces_a_backend_refusal() {
         .expect("load mock backend");
 
     let err = backend
-        .process_text("", None)
+        .process_text("", None, None)
         .await
         .expect_err("an empty text is refused by the backend");
     assert!(

@@ -3930,6 +3930,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonc-parser"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ecded084f9b9a718d39668a42657c32253663d1f6afb3fbb9134f0305f73f48"
+
+[[package]]
 name = "jsonschema"
 version = "0.49.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6934,7 +6940,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "super-engine-client"
 version = "0.1.0"
-source = "git+https://github.com/super-libre/super-engine?rev=58bfe8a8acef6851294c8528bb6e32897a13bebb#58bfe8a8acef6851294c8528bb6e32897a13bebb"
+source = "git+https://github.com/super-libre/super-engine?rev=b565b31a1b8770ebda283a5e7ca899c86ff75070#b565b31a1b8770ebda283a5e7ca899c86ff75070"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -6953,7 +6959,7 @@ dependencies = [
 [[package]]
 name = "super-engine-daemon"
 version = "0.1.0"
-source = "git+https://github.com/super-libre/super-engine?rev=58bfe8a8acef6851294c8528bb6e32897a13bebb#58bfe8a8acef6851294c8528bb6e32897a13bebb"
+source = "git+https://github.com/super-libre/super-engine?rev=b565b31a1b8770ebda283a5e7ca899c86ff75070#b565b31a1b8770ebda283a5e7ca899c86ff75070"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6998,7 +7004,7 @@ dependencies = [
 [[package]]
 name = "super-engine-forge"
 version = "0.1.0"
-source = "git+https://github.com/super-libre/super-engine?rev=58bfe8a8acef6851294c8528bb6e32897a13bebb#58bfe8a8acef6851294c8528bb6e32897a13bebb"
+source = "git+https://github.com/super-libre/super-engine?rev=b565b31a1b8770ebda283a5e7ca899c86ff75070#b565b31a1b8770ebda283a5e7ca899c86ff75070"
 dependencies = [
  "async-trait",
  "log",
@@ -7012,7 +7018,7 @@ dependencies = [
 [[package]]
 name = "super-engine-indexer"
 version = "0.1.0"
-source = "git+https://github.com/super-libre/super-engine?rev=58bfe8a8acef6851294c8528bb6e32897a13bebb#58bfe8a8acef6851294c8528bb6e32897a13bebb"
+source = "git+https://github.com/super-libre/super-engine?rev=b565b31a1b8770ebda283a5e7ca899c86ff75070#b565b31a1b8770ebda283a5e7ca899c86ff75070"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7037,7 +7043,7 @@ dependencies = [
 [[package]]
 name = "super-engine-installer"
 version = "0.1.0"
-source = "git+https://github.com/super-libre/super-engine?rev=58bfe8a8acef6851294c8528bb6e32897a13bebb#58bfe8a8acef6851294c8528bb6e32897a13bebb"
+source = "git+https://github.com/super-libre/super-engine?rev=b565b31a1b8770ebda283a5e7ca899c86ff75070#b565b31a1b8770ebda283a5e7ca899c86ff75070"
 dependencies = [
  "clap",
  "dirs 6.0.0",
@@ -7058,7 +7064,7 @@ dependencies = [
 [[package]]
 name = "super-engine-protocol"
 version = "0.1.0"
-source = "git+https://github.com/super-libre/super-engine?rev=58bfe8a8acef6851294c8528bb6e32897a13bebb#58bfe8a8acef6851294c8528bb6e32897a13bebb"
+source = "git+https://github.com/super-libre/super-engine?rev=b565b31a1b8770ebda283a5e7ca899c86ff75070#b565b31a1b8770ebda283a5e7ca899c86ff75070"
 dependencies = [
  "dirs 6.0.0",
  "env_logger",
@@ -7075,7 +7081,7 @@ dependencies = [
 [[package]]
 name = "super-engine-spec"
 version = "0.1.0"
-source = "git+https://github.com/super-libre/super-engine?rev=58bfe8a8acef6851294c8528bb6e32897a13bebb#58bfe8a8acef6851294c8528bb6e32897a13bebb"
+source = "git+https://github.com/super-libre/super-engine?rev=b565b31a1b8770ebda283a5e7ca899c86ff75070#b565b31a1b8770ebda283a5e7ca899c86ff75070"
 dependencies = [
  "hex",
  "ring",
@@ -7093,7 +7099,7 @@ dependencies = [
 [[package]]
 name = "super-engine-test-daemon"
 version = "0.1.0"
-source = "git+https://github.com/super-libre/super-engine?rev=58bfe8a8acef6851294c8528bb6e32897a13bebb#58bfe8a8acef6851294c8528bb6e32897a13bebb"
+source = "git+https://github.com/super-libre/super-engine?rev=b565b31a1b8770ebda283a5e7ca899c86ff75070#b565b31a1b8770ebda283a5e7ca899c86ff75070"
 dependencies = [
  "http-body-util",
  "hyper",
@@ -7163,6 +7169,7 @@ dependencies = [
  "log",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
+ "serde_json",
  "super-engine-test-daemon",
  "super-voice-shared",
  "tempfile",
@@ -7226,6 +7233,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
+ "tokio-util",
  "urlencoding",
  "utoipa",
  "utoipa-axum",
@@ -7291,6 +7299,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "jsonc-parser",
  "log",
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
@@ -7303,8 +7312,10 @@ dependencies = [
  "super-engine-protocol",
  "super-engine-spec",
  "super-voice-registry-types",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "toml_edit",
  "utoipa",
  "uuid",
 ]
@@ -7722,6 +7733,7 @@ dependencies = [
  "indexmap",
  "toml_datetime 1.1.0+spec-1.1.0",
  "toml_parser",
+ "toml_writer",
  "winnow 1.0.0",
 ]
 

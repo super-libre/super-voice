@@ -730,3 +730,66 @@ the-clip-could-not-be-made = The clip could not be made: { $error }
 the-clip-could-not-play = The clip could not play: { $error }
 the-clip-could-not-be-exported = The clip could not be exported: { $error }
 the-clip-could-not-be-deleted = The clip could not be deleted: { $error }
+
+# Assistants
+assistants = Assistants
+assistants-intro = Let AI assistants on this computer speak and listen through Super Voice.
+assistants-intro-caption = Each assistant gets its own access. Disconnect takes it away.
+on-this-computer = On this computer
+assistant-reads-replies = Speaks, listens and reads its replies aloud.
+assistant-reads-dictated-replies = Speaks, listens and reads its replies to what you dictate aloud.
+assistant-not-found = Not found on this computer.
+assistant-restart-to-use = Restart { $name } to start using it.
+assistant-connected = Connected
+show-talk-above-prompt = Show Talk above the prompt
+show-talk-above-prompt-description = 0 starts Talk while the prompt is empty. Off, nothing shows above the prompt.
+announce-when-needed = Announce when it needs you
+announce-when-needed-description = Says aloud when { $name } asks for a permission or an answer.
+use-conversation-as-context-description = Hears you with the names and terms of your conversation with it.
+all-assistants = All assistants
+sessions = Sessions
+sessions-open = { $count ->
+    [0] No session open
+    [one] 1 session open
+   *[other] { $count } sessions open
+}
+disconnect-assistant = Disconnect { $name }
+disconnect-assistant-description = Removes Super Voice's plugin and key from { $name }.
+use-conversation-as-context = Use the conversation as context
+session-unnamed = Session
+session-speaking = Speaking
+session-listening = Listening
+session-agents = { $count ->
+        [one] { $count } agent
+       *[other] { $count } agents
+    }
+used-now = Now
+used-minutes-ago = { $minutes } min ago
+used-hours-ago = { $hours } h ago
+connect = Connect
+connecting-assistant = Connecting…
+disconnect = Disconnect
+connect-assistant-question = Connect { $name }?
+assistant-will-be-able-to = { $name } will be able to:
+assistant-can-speak = 1. Speak on your speakers.
+assistant-can-listen = 2. Record from your microphone while you talk to it.
+connect-plugin-caption = Super Voice installs its plugin in { $name }, with a key only { $name } has. You can disconnect it on this page at any time.
+connect-codex-caption = Super Voice installs its plugin in Codex, with a key only Codex has. Codex runs the plugin once you trust its hooks, with /hooks. You can disconnect it on this page at any time.
+another-assistant = Another assistant
+any-mcp-assistant = Any assistant that supports MCP
+any-mcp-assistant-description = Give it Super Voice's address and a key of its own.
+create-key = Create key
+key-for-another-assistant = A key for another assistant
+key-name-caption = Shown on this page, so you know which key is which.
+create = Create
+creating-key = Creating…
+address = Address
+key = Key
+key-shown-only-now = Put both in the assistant's MCP settings, the key as a bearer token. The key is shown only now.
+done = Done
+assistants-load-failed = Couldn't read the assistants: { $error }
+assistant-connect-failed = Couldn't connect { $name }: { $error }
+assistant-disconnect-failed = Couldn't disconnect { $name }: { $error }
+assistant-change-failed = Couldn't change { $name }: { $error }
+key-create-failed = Couldn't create the key: { $error }
+key-remove-failed = Couldn't remove the key: { $error }

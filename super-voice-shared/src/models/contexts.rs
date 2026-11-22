@@ -167,37 +167,209 @@ impl DictationContext {
         if self.name.trim().is_empty() {
             return Err("A context needs a name.".to_string());
         }
-        let prompt_chars = self.prompt.chars().count();
-        if prompt_chars > MAX_PROMPT_CHARS {
-            return Err(format!(
-                "The prompt is {prompt_chars} characters; the most that can be sent is \
-                 {MAX_PROMPT_CHARS}."
-            ));
+        check_limits(&self.prompt, &self.vocabulary)
+    }
+}
+
+/// Whether a prompt and a vocabulary fit in the headers they are sent as.
+fn check_limits(prompt: &str, vocabulary: &[String]) -> Result<(), String> {
+    let prompt_chars = prompt.chars().count();
+    if prompt_chars > MAX_PROMPT_CHARS {
+        return Err(format!(
+            "The prompt is {prompt_chars} characters; the most that can be sent is \
+             {MAX_PROMPT_CHARS}."
+        ));
+    }
+    let terms = DictationContext::clean_vocabulary(vocabulary);
+    if terms.len() > MAX_VOCABULARY_TERMS {
+        return Err(format!(
+            "That is {} terms; the most that can be sent is {MAX_VOCABULARY_TERMS}.",
+            terms.len()
+        ));
+    }
+    let vocabulary_chars: usize = terms.iter().map(|t| t.chars().count()).sum();
+    if vocabulary_chars > MAX_VOCABULARY_CHARS {
+        return Err(format!(
+            "The vocabulary is {vocabulary_chars} characters; the most that can be sent is \
+             {MAX_VOCABULARY_CHARS}."
+        ));
+    }
+    Ok(())
+}
+
+/// Context for one dictation, added to the user's own: what the app or the
+/// conversation the user is in knows about what they are about to say, like
+/// the names and terms an assistant has just used. It comes with the request
+/// that starts the dictation and is used for that dictation alone; nothing is
+/// stored.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExtraContext {
+    /// Instructions or a topic, for a model that follows them. Goes after the
+    /// user's own prompt.
+    #[serde(default)]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "The user is answering a question about the release notes.")
+    )]
+    pub prompt: String,
+    /// Terms the user may say. Go after the user's own terms.
+    #[serde(default)]
+    #[cfg_attr(feature = "openapi", schema(example = json!(["agy", "Antigravity"])))]
+    pub vocabulary: Vec<String>,
+}
+
+impl ExtraContext {
+    /// Whether it would add anything.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.prompt.trim().is_empty()
+            && DictationContext::clean_vocabulary(&self.vocabulary).is_empty()
+    }
+
+    /// Whether it fits the limits a context does, on its own.
+    ///
+    /// # Errors
+    /// The user-facing sentence naming what is too long.
+    pub fn check(&self) -> Result<(), String> {
+        check_limits(&self.prompt, &self.vocabulary)
+    }
+
+    /// The user's context, `user`, with this one added.
+    ///
+    /// The prompt is the user's, a blank line, then this one's; the
+    /// vocabulary is the user's terms, then this one's that it does not have
+    /// yet, compared without regard to case. The user's own always fits:
+    /// what this one adds is cut to the room left within the limits, the
+    /// prompt where it runs out and the terms from the end.
+    #[must_use]
+    pub fn added_to(&self, user: Option<&DictationContext>) -> DictationContext {
+        let mut merged = user.cloned().unwrap_or_default();
+        let prompt = self.prompt.trim();
+        if !prompt.is_empty() {
+            let own = merged.prompt.trim();
+            let separator = if own.is_empty() { "" } else { "\n\n" };
+            let room =
+                MAX_PROMPT_CHARS.saturating_sub(own.chars().count() + separator.chars().count());
+            let added: String = prompt.chars().take(room).collect();
+            if !added.is_empty() {
+                merged.prompt = format!("{own}{separator}{added}");
+            }
         }
-        let terms = Self::clean_vocabulary(&self.vocabulary);
-        if terms.len() > MAX_VOCABULARY_TERMS {
-            return Err(format!(
-                "That is {} terms; the most that can be sent is {MAX_VOCABULARY_TERMS}.",
-                terms.len()
-            ));
+        let mut terms = DictationContext::clean_vocabulary(&merged.vocabulary);
+        let mut chars: usize = terms.iter().map(|term| term.chars().count()).sum();
+        for term in DictationContext::clean_vocabulary(&self.vocabulary) {
+            let known = terms
+                .iter()
+                .any(|own| own.to_lowercase() == term.to_lowercase());
+            if known {
+                continue;
+            }
+            let length = term.chars().count();
+            if terms.len() >= MAX_VOCABULARY_TERMS || chars + length > MAX_VOCABULARY_CHARS {
+                break;
+            }
+            chars += length;
+            terms.push(term);
         }
-        let vocabulary_chars: usize = terms.iter().map(|t| t.chars().count()).sum();
-        if vocabulary_chars > MAX_VOCABULARY_CHARS {
-            return Err(format!(
-                "The vocabulary is {vocabulary_chars} characters; the most that can be sent is \
-                 {MAX_VOCABULARY_CHARS}."
-            ));
-        }
-        Ok(())
+        merged.vocabulary = terms;
+        merged
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DictationContext, MAX_PROMPT_CHARS, MAX_VOCABULARY_CHARS, MAX_VOCABULARY_TERMS,
-        RESERVED_IDS,
+        DictationContext, ExtraContext, MAX_PROMPT_CHARS, MAX_VOCABULARY_CHARS,
+        MAX_VOCABULARY_TERMS, RESERVED_IDS,
     };
+
+    fn terms(words: &[&str]) -> Vec<String> {
+        words.iter().map(ToString::to_string).collect()
+    }
+
+    /// One dictation's context goes after the user's own: its prompt after a
+    /// blank line, its terms after the user's, without the ones the user has.
+    #[test]
+    fn extra_context_goes_after_the_users_own() {
+        let user = ctx("coding");
+        let extra = ExtraContext {
+            prompt: " The user is answering a question. ".to_string(),
+            vocabulary: terms(&["agy", "Rebase", " ", "Antigravity"]),
+        };
+        let merged = extra.added_to(Some(&user));
+        assert_eq!(
+            merged.prompt,
+            "I dictate code.\n\nThe user is answering a question."
+        );
+        assert_eq!(
+            merged.vocabulary,
+            terms(&["main branch", "rebase", "agy", "Antigravity"])
+        );
+        assert_eq!(
+            (merged.id.as_str(), merged.name.as_str()),
+            ("coding", "Coding")
+        );
+
+        // With no context of the user's, it stands alone.
+        let alone = extra.added_to(None);
+        assert_eq!(alone.prompt, "The user is answering a question.");
+        assert_eq!(alone.vocabulary, terms(&["agy", "Rebase", "Antigravity"]));
+
+        // An empty one changes nothing.
+        assert_eq!(ExtraContext::default().added_to(Some(&user)), user);
+        assert!(ExtraContext::default().is_empty());
+        assert!(!extra.is_empty());
+    }
+
+    /// The user's own context always fits whole; one dictation's is cut to
+    /// the room left.
+    #[test]
+    fn extra_context_is_cut_to_the_room_the_users_leaves() {
+        let mut user = ctx("coding");
+        user.prompt = "a".repeat(MAX_PROMPT_CHARS - 5);
+        user.vocabulary = (0..MAX_VOCABULARY_TERMS - 1)
+            .map(|n| format!("t{n}"))
+            .collect();
+        let extra = ExtraContext {
+            prompt: "bcdefgh".to_string(),
+            vocabulary: terms(&["one", "two"]),
+        };
+        let merged = extra.added_to(Some(&user));
+        assert_eq!(merged.prompt.chars().count(), MAX_PROMPT_CHARS);
+        assert!(
+            merged.prompt.ends_with("\n\nbcd"),
+            "{}",
+            &merged.prompt[3990..]
+        );
+        assert_eq!(merged.vocabulary.len(), MAX_VOCABULARY_TERMS);
+        assert_eq!(merged.vocabulary.last().map(String::as_str), Some("one"));
+
+        // A full prompt takes nothing more.
+        user.prompt = "a".repeat(MAX_PROMPT_CHARS);
+        assert_eq!(extra.added_to(Some(&user)).prompt, user.prompt);
+
+        // Nor a vocabulary full by length.
+        let long = ctx("long");
+        let mut full = long.clone();
+        full.vocabulary = vec!["x".repeat(MAX_VOCABULARY_CHARS)];
+        assert_eq!(extra.added_to(Some(&full)).vocabulary, full.vocabulary);
+    }
+
+    /// One dictation's context is held to the limits a stored one is.
+    #[test]
+    fn extra_context_is_held_to_the_limits() {
+        let mut extra = ExtraContext {
+            prompt: "a".repeat(MAX_PROMPT_CHARS),
+            vocabulary: Vec::new(),
+        };
+        assert!(extra.check().is_ok());
+        extra.prompt.push('a');
+        assert!(extra.check().is_err());
+        extra.prompt.clear();
+        extra.vocabulary = (0..=MAX_VOCABULARY_TERMS).map(|n| n.to_string()).collect();
+        assert!(extra.check().is_err());
+    }
 
     fn ctx(id: &str) -> DictationContext {
         DictationContext {

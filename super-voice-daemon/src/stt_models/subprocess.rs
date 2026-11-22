@@ -25,7 +25,10 @@ use super_voice_shared::utils::audio::{ResampleQuality, resample};
 use crate::backend_headers::{self, Feature};
 use crate::stt_models::backends::manifest::{FileSpec, Manifest};
 use crate::stt_models::download::DownloadItem;
-use crate::stt_models::transcribe::{ModelInfo, ModelInfoData, ModelState, Transcribe};
+use crate::stt_models::transcribe::{
+    ModelInfo, ModelInfoData, ModelState, Transcribe, dictation_context,
+};
+use super_voice_shared::models::contexts::{DictationContext, ExtraContext};
 
 const SAMPLE_RATE: u32 = 16000;
 
@@ -34,6 +37,10 @@ pub struct SubprocessBackend {
     backend: engine::SubprocessBackend,
     model_id: String,
     info: ModelInfoData,
+    /// The user's dictation context, whose headers the engine adds to every
+    /// request, kept whole so a dictation's own can be added to it. `None`
+    /// when the model takes no context.
+    user_context: parking_lot::RwLock<Option<DictationContext>>,
 }
 
 impl SubprocessBackend {
@@ -162,12 +169,25 @@ impl SubprocessBackend {
             backend,
             model_id: model_name.to_string(),
             info,
+            user_context: parking_lot::RwLock::new(None),
         })
     }
 
-    /// The headers a model request carries: the JSON body, and which model
-    /// it is for.
-    fn model_headers(&self) -> Vec<(String, String)> {
+    /// The user's dictation context the model was loaded with, which a
+    /// dictation's own is added to. See [`BackendContext::context`].
+    ///
+    /// [`BackendContext::context`]: crate::stt_models::transcribe::BackendContext::context
+    #[must_use]
+    pub fn with_user_context(self, context: Option<DictationContext>) -> Self {
+        *self.user_context.write() = context;
+        self
+    }
+
+    /// The headers a model request carries: the JSON body, which model it is
+    /// for, and a dictation's own context when it brought one. The engine
+    /// sends a header the request names in place of the instance's, so that
+    /// context replaces the user's for this request alone.
+    fn model_headers(&self, extra: Option<&ExtraContext>) -> Vec<(String, String)> {
         let mut headers = json_headers();
         backend_headers::push(
             &mut headers,
@@ -175,6 +195,9 @@ impl SubprocessBackend {
             "model",
             self.model_id.clone(),
         );
+        if let Some(context) = dictation_context(self.user_context.read().as_ref(), extra) {
+            backend_headers::push_context(&mut headers, &context);
+        }
         headers
     }
 }
@@ -215,6 +238,7 @@ impl Transcribe for SubprocessBackend {
     /// egress to authorize and `base_url` means nothing to it.
     fn reconfigure(&self, context: crate::stt_models::transcribe::BackendContext) {
         self.backend.set_context_headers(context.headers);
+        *self.user_context.write() = context.context;
     }
 
     /// Stop the sandboxed backend asynchronously and remove the socket file.
@@ -233,22 +257,28 @@ impl Transcribe for SubprocessBackend {
         audio: &[f32],
         sample_rate: u32,
         language: Option<&str>,
+        extra: Option<&ExtraContext>,
     ) -> Result<String> {
         // The daemon owns resampling; backends receive 16 kHz.
         let audio16 = resample(audio, sample_rate, SAMPLE_RATE, ResampleQuality::Fast)?;
         let body = crate::stt_models::v1::build_transcribe_body(&audio16, SAMPLE_RATE, language)?;
         let (status, resp) = self
             .backend
-            .request("POST", "/v1/transcribe", &self.model_headers(), body)
+            .request("POST", "/v1/transcribe", &self.model_headers(extra), body)
             .await?;
         crate::stt_models::v1::parse_transcribe_response(status, &resp)
     }
 
-    async fn process_text(&mut self, text: &str, language: Option<&str>) -> Result<String> {
+    async fn process_text(
+        &mut self,
+        text: &str,
+        language: Option<&str>,
+        extra: Option<&ExtraContext>,
+    ) -> Result<String> {
         let body = crate::stt_models::v1::build_process_body(text, language)?;
         let (status, resp) = self
             .backend
-            .request("POST", "/v1/process", &self.model_headers(), body)
+            .request("POST", "/v1/process", &self.model_headers(extra), body)
             .await?;
         crate::stt_models::v1::parse_process_response(status, &resp)
     }

@@ -314,6 +314,7 @@ impl Transcribe for RecordingStage {
         _audio: &[f32],
         _sample_rate: u32,
         _language: Option<&str>,
+        _extra: Option<&super_voice_shared::models::contexts::ExtraContext>,
     ) -> anyhow::Result<String> {
         Ok(String::new())
     }

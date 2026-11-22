@@ -5,6 +5,7 @@
 #[cfg(test)]
 mod error_envelope_contract;
 mod internal;
+mod mcp;
 mod openapi;
 #[cfg(test)]
 mod openapi_contract;

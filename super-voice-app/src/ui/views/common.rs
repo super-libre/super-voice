@@ -31,6 +31,29 @@ pub fn error_banner(message: &str) -> Element<'static, Message> {
     .into()
 }
 
+/// A round dot of `size` in the theme color `color` picks: the indicator a
+/// state is drawn with, beside the words or glyph that name it, on a neutral
+/// surface. A tinted surface reads as a button.
+pub fn status_dot<'a>(
+    color: fn(&cosmic::Theme) -> cosmic::iced::Color,
+    size: f32,
+) -> Element<'a, Message> {
+    widget::container(widget::text(""))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+        .class(cosmic::theme::Container::custom(move |theme| {
+            cosmic::iced::widget::container::Style {
+                background: Some(cosmic::iced::Background::Color(color(theme))),
+                border: cosmic::iced::Border {
+                    radius: (size / 2.0).into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        }))
+        .into()
+}
+
 /// Dim a secondary line so it reads as a caption rather than as body text.
 pub fn muted<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
     widget::container(content.into())

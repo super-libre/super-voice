@@ -12,6 +12,7 @@
 //! coverage run excludes `tests/` — test code counting itself as covered
 //! product code is how a suite flatters its own numbers.
 
+mod assistants;
 mod backends;
 mod fake_daemon;
 mod gpu_info;

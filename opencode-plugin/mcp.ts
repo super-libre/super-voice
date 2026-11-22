@@ -1,0 +1,118 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// A small client for Super Voice's MCP server, for the calls this plugin
+// makes itself. OpenCode has no way for a plugin to call an MCP tool through
+// its own connection, so the plugin keeps one of its own, with the address
+// and key OpenCode's entry for Super Voice holds.
+
+/** Where Super Voice is, and the headers that let the plugin in. */
+export type Target = { url: string; headers: Record<string, string> }
+
+/** A tool's answer: its text, and whether it failed. */
+export type Answer = { text: string; isError: boolean }
+
+type Message = {
+  id?: number
+  result?: { content?: Array<{ type?: string; text?: string }>; isError?: boolean }
+  error?: { message?: string }
+}
+
+export class SuperVoice {
+  private connection: string | undefined
+  private next = 0
+
+  constructor(private readonly target: () => Target | undefined) {}
+
+  /** Call `tool` with `args`. Undefined when Super Voice can't be reached. */
+  async call(tool: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Answer | undefined> {
+    const target = this.target()
+    if (!target) {
+      return undefined
+    }
+    try {
+      if (this.connection === undefined) {
+        await this.initialize(target, signal)
+      }
+      let message = await this.post(target, 'tools/call', { name: tool, arguments: args }, signal)
+      // A daemon that restarted has forgotten the connection: start another.
+      if (message === 'gone') {
+        await this.initialize(target, signal)
+        message = await this.post(target, 'tools/call', { name: tool, arguments: args }, signal)
+      }
+      if (message === 'gone' || message.error) {
+        return { text: message === 'gone' ? 'Super Voice is not reachable.' : (message.error?.message ?? ''), isError: true }
+      }
+      const text = (message.result?.content ?? []).map(block => (block.type === 'text' ? (block.text ?? '') : '')).join('')
+      return { text, isError: message.result?.isError === true }
+    } catch {
+      return undefined
+    }
+  }
+
+  private async initialize(target: Target, signal?: AbortSignal) {
+    this.connection = undefined
+    const response = await fetch(target.url, {
+      method: 'POST',
+      headers: this.headers(target),
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: ++this.next,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'super-voice-opencode', version: '1' },
+        },
+      }),
+      signal,
+    })
+    this.connection = response.headers.get('mcp-session-id') ?? ''
+    await response.text()
+  }
+
+  /** One request's answer, or `gone` when Super Voice no longer knows the
+   * connection. */
+  private async post(target: Target, method: string, params: unknown, signal?: AbortSignal): Promise<Message | 'gone'> {
+    const id = ++this.next
+    const response = await fetch(target.url, {
+      method: 'POST',
+      headers: this.headers(target),
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+      signal,
+    })
+    if (response.status === 404) {
+      await response.text()
+      return 'gone'
+    }
+    const body = await response.text()
+    const type = response.headers.get('content-type') ?? ''
+    if (!type.includes('text/event-stream')) {
+      return JSON.parse(body) as Message
+    }
+    // A stream: the answer is the event carrying this request's id.
+    for (const event of body.split(/\r?\n\r?\n/)) {
+      const data = event
+        .split(/\r?\n/)
+        .filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).trimStart())
+        .join('\n')
+      if (!data) {
+        continue
+      }
+      const message = JSON.parse(data) as Message
+      if (message.id === id) {
+        return message
+      }
+    }
+    return { error: { message: 'Super Voice gave no answer.' } }
+  }
+
+  private headers(target: Target): Record<string, string> {
+    return {
+      ...target.headers,
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      ...(this.connection ? { 'mcp-session-id': this.connection } : {}),
+    }
+  }
+}

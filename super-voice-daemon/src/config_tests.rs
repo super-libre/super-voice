@@ -770,3 +770,70 @@ fn portal_shortcuts_are_kept_by_desktop() {
     assert!(before.shortcuts.portal.is_empty());
     assert_eq!(before.transcription.preferred_model, "whisper-tiny");
 }
+
+/// Super Voice announces when each assistant needs the user until the user
+/// turns it off, and turning it back on leaves nothing behind. An id this
+/// daemon does not know is kept for a newer one, and a stored value it cannot
+/// read is none, with the rest of the config still loaded.
+#[test]
+fn assistants_are_announced_until_turned_off() {
+    use super_voice_shared::models::assistants::AssistantId::{ClaudeCode, Codex, OpenCode};
+    let mut config = DaemonConfig::default();
+    assert!(config.assistants.announces_when_needed(ClaudeCode));
+    config
+        .assistants
+        .set_announces_when_needed(ClaudeCode, false);
+    let back = round_trip(&config);
+    assert!(!back.assistants.announces_when_needed(ClaudeCode));
+    assert!(back.assistants.announces_when_needed(Codex));
+
+    config
+        .assistants
+        .set_announces_when_needed(ClaudeCode, true);
+    assert!(config.assistants.announce_when_needed.is_empty());
+
+    // The conversation's context is used until turned off, kept the same way.
+    assert!(config.assistants.uses_conversation_context(Codex));
+    config
+        .assistants
+        .set_uses_conversation_context(Codex, false);
+    let back = round_trip(&config);
+    assert!(!back.assistants.uses_conversation_context(Codex));
+    assert!(back.assistants.uses_conversation_context(ClaudeCode));
+    config.assistants.set_uses_conversation_context(Codex, true);
+    assert!(config.assistants.conversation_context.is_empty());
+
+    // Talk shows until turned off, kept the same way.
+    assert!(config.assistants.shows_talk(OpenCode));
+    config.assistants.set_shows_talk(OpenCode, false);
+    let back = round_trip(&config);
+    assert!(!back.assistants.shows_talk(OpenCode));
+    assert!(back.assistants.shows_talk(ClaudeCode));
+    config.assistants.set_shows_talk(OpenCode, true);
+    assert!(config.assistants.show_talk.is_empty());
+
+    let newer = from_ron(
+        r#"(
+    audio: (theme: "classic", volume: 100),
+    transcription: (preferred_model: "whisper-tiny"),
+    assistants: (announce_when_needed: {"codex": false, "some-later-assistant": false}),
+)"#,
+    );
+    assert!(!newer.assistants.announces_when_needed(Codex));
+    assert!(
+        round_trip(&newer)
+            .assistants
+            .announce_when_needed
+            .contains_key("some-later-assistant")
+    );
+
+    let unreadable = from_ron(
+        r#"(
+    audio: (theme: "classic", volume: 100),
+    transcription: (preferred_model: "whisper-tiny"),
+    assistants: (announce_when_needed: ["codex"]),
+)"#,
+    );
+    assert!(unreadable.assistants.announce_when_needed.is_empty());
+    assert_eq!(unreadable.transcription.preferred_model, "whisper-tiny");
+}

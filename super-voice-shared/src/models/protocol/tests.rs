@@ -135,6 +135,53 @@ fn record_command_invalid_audio_cues_is_rejected() {
     }
 }
 
+fn record_context(data: Value) -> Result<Option<crate::models::contexts::ExtraContext>, String> {
+    match Command::try_from(make_request("record", Some(data)))? {
+        Command::Record { context, .. } => Ok(context),
+        _ => panic!("expected Command::Record"),
+    }
+}
+
+/// A dictation's own context comes with the request that starts it.
+#[test]
+fn record_command_reads_a_dictations_context() {
+    let context = record_context(json!({
+        "context": { "prompt": "About the release.", "vocabulary": ["agy", " "] }
+    }))
+    .expect("a context parses")
+    .expect("and is kept");
+    assert_eq!(context.prompt, "About the release.");
+    assert_eq!(context.vocabulary, ["agy", " "]);
+    // Either half alone is a context.
+    let terms = record_context(json!({ "context": { "vocabulary": ["agy"] } }));
+    assert!(matches!(terms, Ok(Some(_))));
+    // Absent, null, and one that adds nothing are no context.
+    assert_eq!(record_context(json!({})), Ok(None));
+    assert_eq!(record_context(json!({ "context": null })), Ok(None));
+    assert_eq!(
+        record_context(json!({ "context": { "prompt": "  " } })),
+        Ok(None)
+    );
+}
+
+/// A context of the wrong shape, or too long to send, is a bad request, not
+/// a dictation without it.
+#[test]
+fn record_command_invalid_context_is_rejected() {
+    let too_long = "a".repeat(crate::models::contexts::MAX_PROMPT_CHARS + 1);
+    for bad in [
+        json!("agy"),
+        json!({ "vocabulary": "agy" }),
+        json!({ "prompt": 3 }),
+        json!({ "prompt": too_long }),
+    ] {
+        assert!(
+            record_context(json!({ "context": bad })).is_err(),
+            "context {bad} must be rejected"
+        );
+    }
+}
+
 #[test]
 fn set_recording_stop_mode_invalid_is_rejected() {
     // Tier 1 #26: an unknown mode returns an error and leaves the stored
@@ -547,6 +594,21 @@ fn transcribe_command_carries_audio_sample_rate_and_language() {
             assert_eq!(audio_data.len(), 3);
             assert_eq!(sample_rate, 16000);
             assert_eq!(language.as_deref(), Some("en"));
+        }
+        _ => panic!("expected Command::Transcribe"),
+    }
+}
+
+#[test]
+fn transcribe_command_carries_a_dictations_context() {
+    let mut request = make_request(
+        "transcribe",
+        Some(json!({ "context": { "vocabulary": ["agy"] } })),
+    );
+    request.audio_data = Some(vec![0.1, -0.1, 0.2]);
+    match Command::try_from(request).expect("transcribe command should parse") {
+        Command::Transcribe { context, .. } => {
+            assert_eq!(context.map(|c| c.vocabulary), Some(vec!["agy".to_string()]));
         }
         _ => panic!("expected Command::Transcribe"),
     }

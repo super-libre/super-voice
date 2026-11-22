@@ -1,0 +1,11 @@
+{
+  "name": "super-voice",
+  "owner": { "name": "Jorge Menjivar" },
+  "plugins": [
+    {
+      "name": "super-voice",
+      "source": "./claude-code-plugin",
+      "description": "Talk to Claude Code and hear its answers, with Super Voice on your own machine."
+    }
+  ]
+}
