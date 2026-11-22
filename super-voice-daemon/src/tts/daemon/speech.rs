@@ -1032,6 +1032,27 @@ impl SpeechEngine {
         voice: Option<&str>,
         language: Option<&str>,
     ) -> Result<Utterance, SpeakError> {
+        self.speak_noting(ticket, model, text, voice, language, |_| {})
+            .await
+    }
+
+    /// [`speak_with`](Self::speak_with), telling `begun` the utterance's id
+    /// the moment it claims the slot, before its text is produced. Speaking
+    /// returns only once every chunk is made, which for a long text is well
+    /// into its playing: a caller that must find its speech while it plays,
+    /// as an assistant's `stop` must, learns it here instead.
+    ///
+    /// # Errors
+    /// See [`SpeakError`].
+    pub async fn speak_noting(
+        &self,
+        ticket: u64,
+        model: &SharedLoadedModel,
+        text: &str,
+        voice: Option<&str>,
+        language: Option<&str>,
+        begun: impl FnOnce(&str),
+    ) -> Result<Utterance, SpeakError> {
         check_text(text)?;
         // Checked before claiming the utterance slot, so a request that cannot
         // be served never interrupts what is already playing.
@@ -1041,6 +1062,7 @@ impl SpeechEngine {
 
         let options = SpeakOptions { voice, language };
         let mut session = self.begin_with(ticket, model, options).await?;
+        begun(session.id());
         session.push(text).await?;
         session.end().await
     }
@@ -1888,6 +1910,16 @@ impl crate::tts::daemon::types::SuperTTSDaemon {
         &self,
         text: String,
     ) -> super_voice_shared::tts::models::protocol::DaemonResponse {
+        self.handle_speak_noting(text, |_| {}).await
+    }
+
+    /// [`handle_speak`](Self::handle_speak), telling `begun` the utterance's
+    /// id as soon as it starts: see [`Speech::speak_noting`].
+    pub async fn handle_speak_noting(
+        &self,
+        text: String,
+        begun: impl FnOnce(&str) + Send,
+    ) -> super_voice_shared::tts::models::protocol::DaemonResponse {
         use crate::tts::output::notice::Failure;
         use super_voice_shared::tts::models::protocol::{DaemonResponse, ErrorCode};
 
@@ -1941,12 +1973,13 @@ impl crate::tts::daemon::types::SuperTTSDaemon {
         // request that cannot be served never interrupts what is playing.
         let result = self
             .speech
-            .speak_with(
+            .speak_noting(
                 ticket,
                 &self.model,
                 &text,
                 voice.as_deref(),
                 language.as_deref(),
+                begun,
             )
             .await;
 

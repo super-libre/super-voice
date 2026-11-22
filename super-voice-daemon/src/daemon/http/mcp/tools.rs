@@ -177,7 +177,7 @@ async fn speak(
     text: String,
     cancel: &CancellationToken,
 ) -> Option<Result<String, String>> {
-    let mut spoken = start_speaking(daemon, text);
+    let mut spoken = start_speaking(daemon, who, text);
     tokio::select! {
         biased;
         joined = &mut spoken => Some(spoken_outcome(joined).map(|utterance| {
@@ -234,10 +234,23 @@ fn status(daemon: &SuperSTTDaemon, who: &Who, shows_talk: bool) -> String {
 }
 
 /// `text` spoken on a task of its own, so it is never dropped midway: a
-/// speech dropped while it is produced stops speaking.
-fn start_speaking(daemon: &Arc<SuperSTTDaemon>, text: String) -> JoinHandle<SpeechResponse> {
+/// speech dropped while it is produced stops speaking. The speech is `who`'s
+/// from the moment it starts, so its `stop` finds it while the rest of a long
+/// text is still being made.
+fn start_speaking(
+    daemon: &Arc<SuperSTTDaemon>,
+    who: &Who,
+    text: String,
+) -> JoinHandle<SpeechResponse> {
     let tts = daemon.tts.clone();
-    tokio::spawn(async move { tts.handle_speak(text).await })
+    let owner = Arc::clone(daemon);
+    let who = who.clone();
+    tokio::spawn(async move {
+        tts.handle_speak_noting(text, move |utterance| {
+            owner.assistants.sessions.spoke(&who, utterance.to_string());
+        })
+        .await
+    })
 }
 
 /// The utterance a finished speech is speaking, or what the model is told
@@ -384,7 +397,7 @@ async fn ask(
 ) -> Asked {
     // Before speaking, so the question's end is never missed.
     let mut states = daemon.events.subscribe(Topic::SpeakingState);
-    let mut spoken = start_speaking(daemon, question);
+    let mut spoken = start_speaking(daemon, who, question);
     let utterance = tokio::select! {
         biased;
         joined = &mut spoken => match spoken_outcome(joined) {
