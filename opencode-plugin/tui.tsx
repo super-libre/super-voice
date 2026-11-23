@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Super Voice's OpenCode plugin, the TUI part: one row above the prompt and
-// one key, 0. While the prompt is empty, 0 is Talk: it records the user and
-// sends what they said as a spoken prompt. While Super Voice speaks, 0 stops
-// it, and in a spoken conversation starts Talk. While Talk records, 0 ends
-// the recording, which is still sent. Once a spoken prompt's reply has been
+// one key, 0, while the prompt is empty; in a prompt with text, 0 is typed.
+// 0 is Talk: it records the user and sends what they said as a spoken
+// prompt. While Super Voice speaks, 0 stops it, and in a spoken conversation
+// starts Talk. While Talk records, 0 ends the recording, which is still sent. Once a spoken prompt's reply has been
 // read aloud, Talk starts again by itself, unless the user has typed.
 //
 // With Talk turned off on Super Voice's Assistants page, there is no row and
@@ -70,7 +70,8 @@ export default Plugin.define({
 
     const press = () => {
       const sessionID = currentSession()
-      if (!sessionID || !shown()) {
+      // A 0 typed into a prompt is the user's, whatever plays or records.
+      if (!sessionID || !shown() || !promptIsEmpty()) {
         return false
       }
       if (phase() === 'listening') {
@@ -86,8 +87,7 @@ export default Plugin.define({
         })
         return
       }
-      // A 0 typed into a prompt is the user's.
-      if (!promptIsEmpty() || phase() !== 'idle') {
+      if (phase() !== 'idle') {
         return false
       }
       void talk(sessionID)
