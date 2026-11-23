@@ -13,23 +13,14 @@ import { Plugin } from '@opencode/plugin'
 import { SuperVoice, type Target } from './mcp'
 import { Voice } from './rpc'
 import { pickTerms } from './terms'
+import { MODEL_TOOL_NAMES, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE } from './voice'
 
 /** Super Voice's entry in OpenCode's config, which names its tools. */
 const SERVER = 'super-voice'
 /** The tools the model calls, as OpenCode names them. */
-const VOICE_TOOLS: ReadonlySet<string> = new Set([`${SERVER}_speak`, `${SERVER}_listen`])
+const VOICE_TOOLS: ReadonlySet<string> = new Set(MODEL_TOOL_NAMES.map(tool => `${SERVER}_${tool}`))
 /** The tools this plugin calls itself, kept from the model. */
-const PLUGIN_TOOLS = ['stop', 'status', 'announce', 'session', 'turn'].map(tool => `${SERVER}_${tool}`)
-/** What the model is told beside a spoken prompt. */
-const SPOKEN_NOTE =
-  'The user said this aloud, through Super Voice. Your reply will be read aloud to them, ' +
-  'and the microphone opens after it so they can answer by voice: keep the reply short ' +
-  'and plain to listen to, end with any question you have, and do not call `listen` ' +
-  'to hear their answer.'
-/** Why the model's call to a Super Voice tool is refused in a typed turn. */
-const NOT_SPOKEN_TO =
-  'The user typed this prompt, so answer in writing. Super Voice speaks and listens only ' +
-  'while the user is talking to you by voice, which they start with Talk.'
+const PLUGIN_TOOLS = PLUGIN_TOOL_NAMES.map(tool => `${SERVER}_${tool}`)
 
 /** Whether a stored user message was sent by Talk. */
 function isSpoken(metadata: unknown): boolean {

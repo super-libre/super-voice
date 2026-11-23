@@ -1,0 +1,1 @@
+../claude-code-plugin/hooks/voice.ts

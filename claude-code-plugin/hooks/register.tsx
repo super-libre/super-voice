@@ -15,6 +15,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { SuperVoiceTalk } from '../types'
 import { pickTerms } from './terms'
+import { NO_SPEECH, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE } from './voice'
 
 const speaking = atom({ plugin: 'super-voice', key: 'isSpeaking' } as const, false)
 const claudeListening = atom(
@@ -63,7 +64,7 @@ const OPEN_RETRY_MS = 5_000
 const OPEN_TRIES = 12
 /** The tools this plugin calls itself, kept from the model. */
 const PLUGIN_TOOLS: ReadonlySet<string> = new Set(
-  ['stop', 'status', 'announce', 'session', 'turn'].map(tool => `mcp__plugin_super-voice_voice__${tool}`),
+  PLUGIN_TOOL_NAMES.map(tool => `mcp__plugin_super-voice_voice__${tool}`),
 )
 /** The Super Voice tools that speak. `listen` asks its question aloud. */
 const LISTEN_TOOL = 'mcp__plugin_super-voice_voice__listen'
@@ -71,19 +72,6 @@ const SPEAKING_TOOLS: ReadonlySet<string> = new Set([
   'mcp__plugin_super-voice_voice__speak',
   LISTEN_TOOL,
 ])
-/** What `voice record --wait` prints when it heard nothing. */
-const NO_SPEECH = '(no speech detected)'
-/** What Claude reads beside a spoken prompt, so it answers for listening. */
-const VOICE_NOTE =
-  'The user said this aloud, through Super Voice. Your reply will be read aloud to them, ' +
-  'and the microphone opens after it so they can answer by voice: keep the reply short ' +
-  'and plain to listen to, end with any question you have, and do not call `listen` ' +
-  'to hear their answer.'
-/** Why Claude's call to a Super Voice tool is refused in a turn the user
- * typed. */
-const NOT_SPOKEN_TO =
-  'The user typed this prompt, so answer in writing. Super Voice speaks and listens only ' +
-  'while the user is talking to you by voice, which they start with Talk.'
 
 // Watching for speech.
 let speechTimer: Timer | undefined
@@ -706,14 +694,14 @@ export const register: Register = on => {
       listenAfterReply = isSpoken
       talked = undefined
       await setArmed($, false)
-      return next(isSpoken ? { ...e, context: [...(e.context ?? []), VOICE_NOTE] } : e)
+      return next(isSpoken ? { ...e, context: [...(e.context ?? []), SPOKEN_NOTE] } : e)
     }
     if (isOwn) {
       await promptWasSpoken($, e.text, true)
       lastPrompt = e.text
       listenAfterReply = true
       talked = undefined
-      return next({ ...e, context: [...(e.context ?? []), VOICE_NOTE] })
+      return next({ ...e, context: [...(e.context ?? []), SPOKEN_NOTE] })
     }
     return next(e)
   })

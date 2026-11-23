@@ -70,7 +70,7 @@ const CODEX_MARKETPLACE: &str = "super-voice";
 /// Super Voice's plugin for `OpenCode`, by each file's name in its folder:
 /// the server part, which holds the connection to Super Voice, and the TUI
 /// part, Talk.
-const OPENCODE_PLUGIN_FILES: [(&str, &str); 5] = [
+const OPENCODE_PLUGIN_FILES: [(&str, &str); 6] = [
     (
         "server.ts",
         include_str!("../../../opencode-plugin/server.ts"),
@@ -81,6 +81,10 @@ const OPENCODE_PLUGIN_FILES: [(&str, &str); 5] = [
     (
         "terms.ts",
         include_str!("../../../opencode-plugin/terms.ts"),
+    ),
+    (
+        "voice.ts",
+        include_str!("../../../opencode-plugin/voice.ts"),
     ),
 ];
 

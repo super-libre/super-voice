@@ -17,9 +17,8 @@ import { Plugin } from '@opencode/plugin/tui'
 import { Show, createSignal } from 'solid-js'
 
 import { Voice } from './rpc'
+import { NO_SPEECH } from './voice'
 
-/** What `listen` says when the user said nothing. */
-const NO_SPEECH = '(no speech detected)'
 /** How often the row asks Super Voice what this session's speech is doing
  * while something goes on: speech, Talk, a spoken conversation, or a reply
  * about to be read. */
