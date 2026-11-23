@@ -299,10 +299,19 @@ async fn speak(
 async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     let sessions = &daemon.assistants.sessions;
     let mut stopped = Vec::new();
-    if let Some(utterance) = sessions.utterance(who)
-        && daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
-    {
-        silence_if_speaking(daemon, &utterance).await;
+    // Its speech still waiting for the model, or still being made, is called
+    // off; what of it already plays is silenced.
+    let making = sessions.speaking(who);
+    if let Some(task) = &making {
+        task.abort();
+    }
+    let playing = sessions
+        .utterance(who)
+        .filter(|utterance| daemon.tts.speech.current().as_deref() == Some(utterance.as_str()));
+    if let Some(utterance) = &playing {
+        silence_if_speaking(daemon, utterance).await;
+    }
+    if making.is_some() || playing.is_some() {
         stopped.push("speech");
     }
     if sessions.is_recording(who)
@@ -320,13 +329,14 @@ async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     }
 }
 
-/// Whether `who`'s own speech plays.
+/// Whether `who`'s own speech plays, or is on its way: waiting for the
+/// model, or being made.
 fn is_speaking(daemon: &SuperSTTDaemon, who: &Who) -> bool {
-    daemon
-        .assistants
-        .sessions
-        .utterance(who)
-        .is_some_and(|utterance| daemon.tts.speech.current().as_deref() == Some(utterance.as_str()))
+    let sessions = &daemon.assistants.sessions;
+    sessions.speaking(who).is_some()
+        || sessions.utterance(who).is_some_and(|utterance| {
+            daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
+        })
 }
 
 /// Whether `who`'s own speech plays and whether it records, and whether the
@@ -341,9 +351,10 @@ fn status(daemon: &SuperSTTDaemon, who: &Who, shows_talk: bool) -> String {
 }
 
 /// `text` spoken on a task of its own, so it is never dropped midway: a
-/// speech dropped while it is produced stops speaking. The speech is `who`'s
-/// from the moment it starts, so its `stop` finds it while the rest of a long
-/// text is still being made.
+/// speech dropped while it is produced stops speaking. The task is `who`'s
+/// from the moment it is asked for, and its utterance from the moment it
+/// starts, so `who`'s `stop` finds the speech while it waits for the model
+/// and while the rest of a long text is still being made.
 fn start_speaking(
     daemon: &Arc<SuperSTTDaemon>,
     who: &Who,
@@ -351,19 +362,32 @@ fn start_speaking(
 ) -> JoinHandle<SpeechResponse> {
     let tts = daemon.tts.clone();
     let owner = Arc::clone(daemon);
-    let who = who.clone();
-    tokio::spawn(async move {
+    let speaker = who.clone();
+    let task = tokio::spawn(async move {
         tts.handle_speak_noting(text, move |utterance| {
-            owner.assistants.sessions.spoke(&who, utterance.to_string());
+            owner
+                .assistants
+                .sessions
+                .spoke(&speaker, utterance.to_string());
         })
         .await
-    })
+    });
+    daemon
+        .assistants
+        .sessions
+        .asked_to_speak(who, task.abort_handle());
+    task
 }
 
 /// The utterance a finished speech is speaking, or what the model is told
-/// when it could not speak.
+/// when it could not speak. A speech stopped before it played has none.
 fn spoken_outcome(joined: Result<SpeechResponse, JoinError>) -> Result<Option<String>, String> {
-    let response = joined.map_err(|e| format!("Super Voice could not speak: {e}"))?;
+    let response = match joined {
+        Ok(response) => response,
+        // Stopped before anything of it played: nothing of it is playing.
+        Err(e) if e.is_cancelled() => return Ok(None),
+        Err(e) => return Err(format!("Super Voice could not speak: {e}")),
+    };
     if response.status == "success" {
         return Ok(response.utterance_id);
     }
@@ -687,6 +711,44 @@ mod tests {
             Some(Ok(
                 "Nothing of this session's was playing or recording.".to_string()
             ))
+        );
+    }
+
+    /// A session's speech is its own from the moment it is asked for:
+    /// `status` and `stop` see it while it still waits for the model.
+    #[tokio::test]
+    async fn stop_reaches_speech_still_waiting_to_start() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = caller();
+        let waiting = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, waiting.abort_handle());
+        assert!(is_speaking(&daemon, &mine.who));
+        assert!(!is_speaking(
+            &daemon,
+            &Who {
+                named: Named {
+                    id: Some("other".into()),
+                    ..Named::default()
+                },
+                ..caller().who
+            }
+        ));
+
+        assert_eq!(stop(&daemon, &mine.who).await, "Stopped its speech.");
+        let joined = waiting.await;
+        assert!(joined.as_ref().is_err_and(JoinError::is_cancelled));
+        assert_eq!(
+            spoken_outcome(joined),
+            Ok(None),
+            "a stopped speech has nothing playing"
+        );
+        assert!(!is_speaking(&daemon, &mine.who));
+        assert_eq!(
+            stop(&daemon, &mine.who).await,
+            "Nothing of this session's was playing or recording."
         );
     }
 

@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::task::AbortHandle;
 
 /// How long a session its plugin opened may go without a request. The plugin
 /// checks in every minute while the session is open.
@@ -78,6 +79,10 @@ struct Entry {
     /// Its plugin said it started, so it checks in while it is open.
     opened: bool,
     utterance: Option<String>,
+    /// The task making its last speech, from the moment it was asked for:
+    /// its speech while it waits for the model and is made, before any
+    /// utterance plays.
+    speaking: Option<AbortHandle>,
     recordings: usize,
     /// Whether the turn under way was spoken, once its plugin has said.
     spoken: Option<bool>,
@@ -277,6 +282,22 @@ impl Sessions {
         });
     }
 
+    /// `who` asked to speak, on `task`.
+    pub fn asked_to_speak(&self, who: &Who, task: AbortHandle) {
+        self.with(who, |entry| entry.speaking = Some(task));
+    }
+
+    /// The task making `who`'s last speech, while it is still at it.
+    #[must_use]
+    pub fn speaking(&self, who: &Who) -> Option<AbortHandle> {
+        self.entries
+            .lock()
+            .iter()
+            .find(|entry| entry.is(who))
+            .and_then(|entry| entry.speaking.clone())
+            .filter(|task| !task.is_finished())
+    }
+
     /// The utterance `who` started last, whether or not it still plays.
     #[must_use]
     pub fn utterance(&self, who: &Who) -> Option<String> {
@@ -437,6 +458,7 @@ impl Sessions {
                 used_at: None,
                 opened: false,
                 utterance: None,
+                speaking: None,
                 recordings: 0,
                 spoken: None,
                 prompt: None,
