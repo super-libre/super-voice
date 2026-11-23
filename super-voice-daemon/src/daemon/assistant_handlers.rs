@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! `/assistants`' work: connecting and disconnecting an assistant, the keys
-//! made by hand, and what each assistant is told about asking aloud. What the
-//! assistants are and how Super Voice gets into their configs is
+//! `/assistants`' work: connecting and disconnecting an assistant, its
+//! switches, and the keys made by hand. What the assistants are and how
+//! Super Voice gets into their configs and installs their plugins is
 //! [`crate::assistants`].
 
 use crate::assistants::calls::Caller;

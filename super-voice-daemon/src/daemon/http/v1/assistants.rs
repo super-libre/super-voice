@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! `/assistants` — the AI assistants Super Voice connects to: list, connect,
-//! disconnect, whether each asks its questions aloud, and the keys made by
-//! hand for other MCP clients. What they are and how Super Voice gets into
+//! disconnect, each one's three switches, and the keys made by hand for
+//! other MCP clients. What they are and how Super Voice gets into
 //! their configs is [`crate::assistants`]; the work is
 //! `daemon::assistant_handlers`.
 //!
@@ -27,7 +27,7 @@ use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
-/// The body of `PATCH /assistants/{id}`: either switch, or both.
+/// The body of `PATCH /assistants/{id}`: any of the three switches.
 #[derive(Deserialize, ToSchema)]
 pub(crate) struct AssistantChange {
     /// Whether Super Voice says aloud when the assistant needs the user.
@@ -146,11 +146,11 @@ pub(crate) async fn list_assistants(State(state): State<AppState>) -> Response {
     summary = "Connect an AI assistant",
     description = "\
 Makes the assistant a key of its own, or uses the one it has, and writes Super Voice \
-into its config. For Claude Code the daemon installs Super Voice's plugin, with \
-`claude plugin install`, and the plugin gets its key from `voice assistant-header \
-claude-code`. Codex gets its key the same way, from `voice assistant-header codex`. \
-`OpenCode` and the Antigravity CLI have the key written into their configs. Connecting one that \
-is connected already writes its entry again. Answers the whole list, as `GET \
+into its config, and installs Super Voice's plugin in the assistant: for Claude Code \
+with `claude plugin install`, whose plugin is its entry. Claude Code's plugin and Codex \
+get their key from `voice assistant-header`; `OpenCode` and the Antigravity CLI have the key \
+written into their configs. Connecting one that is connected already writes its entry \
+and plugin again. Answers the whole list, as `GET \
 /assistants` does.
 
 The assistant reads its config when it starts, so one already running is connected \
@@ -191,8 +191,8 @@ pub(crate) async fn connect_assistant(
     summary = "Disconnect an AI assistant",
     description = "\
 Takes Super Voice out of the assistant's config, revokes its key, and cancels its \
-calls in flight. For Claude Code the daemon uninstalls Super Voice's plugin, with \
-`claude plugin uninstall`. Disconnecting one that is not connected changes nothing. \
+calls in flight, and uninstalls Super Voice's plugin from the assistant. Disconnecting \
+one that is not connected changes nothing. \
 Answers the whole list, as `GET /assistants` does.
 
 The key is revoked even when the config cannot be changed, which is `500`: the entry \
