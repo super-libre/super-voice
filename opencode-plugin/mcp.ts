@@ -54,14 +54,9 @@ export class SuperVoice {
       if (this.connection === undefined) {
         await this.initialize(target, signal)
       }
-      let message = await this.post(target, 'tools/call', { name: tool, arguments: args }, signal)
-      // A daemon that restarted has forgotten the connection: start another.
-      if (message === 'gone') {
-        await this.initialize(target, signal)
-        message = await this.post(target, 'tools/call', { name: tool, arguments: args }, signal)
-      }
-      if (message === 'gone' || message.error) {
-        return { text: message === 'gone' ? 'Super Voice is not reachable.' : (message.error?.message ?? ''), isError: true }
+      const message = await this.post(target, 'tools/call', { name: tool, arguments: args }, signal)
+      if (message.error) {
+        return { text: message.error.message ?? '', isError: true }
       }
       const text = (message.result?.content ?? []).map(block => (block.type === 'text' ? (block.text ?? '') : '')).join('')
       return { text, isError: message.result?.isError === true }
@@ -92,9 +87,9 @@ export class SuperVoice {
     await response.text()
   }
 
-  /** One request's answer, or `gone` when Super Voice no longer knows the
-   * connection. */
-  private async post(target: Target, method: string, params: unknown, signal?: AbortSignal): Promise<Message | 'gone'> {
+  /** One request's answer. Super Voice serves a connection it does not know,
+   * as after it restarted, all the same. */
+  private async post(target: Target, method: string, params: unknown, signal?: AbortSignal): Promise<Message> {
     const id = ++this.next
     const response = await fetch(target.url, {
       method: 'POST',
@@ -102,10 +97,6 @@ export class SuperVoice {
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
       signal,
     })
-    if (response.status === 404) {
-      await response.text()
-      return 'gone'
-    }
     const body = await response.text()
     if (!response.ok) {
       return { error: { message: refusal(response.status, body) } }
