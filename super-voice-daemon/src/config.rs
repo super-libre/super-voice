@@ -165,61 +165,51 @@ impl AssistantsConfig {
     /// Whether `id`'s plugin shows Talk above its prompt.
     #[must_use]
     pub fn shows_talk(&self, id: AssistantId) -> bool {
-        self.show_talk
-            .get(id.as_wire_str())
-            .copied()
-            .unwrap_or(true)
+        is_on(&self.show_talk, id)
     }
 
-    /// Keep whether `id`'s plugin shows Talk above its prompt. Yes is kept as
-    /// nothing.
+    /// Keep whether `id`'s plugin shows Talk above its prompt.
     pub fn set_shows_talk(&mut self, id: AssistantId, on: bool) {
-        if on {
-            self.show_talk.remove(id.as_wire_str());
-        } else {
-            self.show_talk.insert(id.as_wire_str().to_string(), false);
-        }
+        set_on(&mut self.show_talk, id, on);
     }
 
     /// Whether `id`'s `listen` calls are heard with the context they bring
     /// from the conversation.
     #[must_use]
     pub fn uses_conversation_context(&self, id: AssistantId) -> bool {
-        self.conversation_context
-            .get(id.as_wire_str())
-            .copied()
-            .unwrap_or(true)
+        is_on(&self.conversation_context, id)
     }
 
     /// Keep whether `id`'s `listen` calls are heard with the context they
-    /// bring. Yes is kept as nothing.
+    /// bring.
     pub fn set_uses_conversation_context(&mut self, id: AssistantId, on: bool) {
-        if on {
-            self.conversation_context.remove(id.as_wire_str());
-        } else {
-            self.conversation_context
-                .insert(id.as_wire_str().to_string(), false);
-        }
+        set_on(&mut self.conversation_context, id, on);
     }
 
     /// Whether Super Voice says aloud when `id` needs the user.
     #[must_use]
     pub fn announces_when_needed(&self, id: AssistantId) -> bool {
-        self.announce_when_needed
-            .get(id.as_wire_str())
-            .copied()
-            .unwrap_or(true)
+        is_on(&self.announce_when_needed, id)
     }
 
-    /// Keep whether Super Voice says aloud when `id` needs the user. Yes is
-    /// kept as nothing.
+    /// Keep whether Super Voice says aloud when `id` needs the user.
     pub fn set_announces_when_needed(&mut self, id: AssistantId, on: bool) {
-        if on {
-            self.announce_when_needed.remove(id.as_wire_str());
-        } else {
-            self.announce_when_needed
-                .insert(id.as_wire_str().to_string(), false);
-        }
+        set_on(&mut self.announce_when_needed, id, on);
+    }
+}
+
+/// Whether a switch kept in `switch` is on for `id`: it is until turned off.
+fn is_on(switch: &BTreeMap<String, bool>, id: AssistantId) -> bool {
+    switch.get(id.as_wire_str()).copied().unwrap_or(true)
+}
+
+/// Keep a switch in `switch` on or off for `id`. On is kept as nothing, so
+/// only a `false` is written.
+fn set_on(switch: &mut BTreeMap<String, bool>, id: AssistantId, on: bool) {
+    if on {
+        switch.remove(id.as_wire_str());
+    } else {
+        switch.insert(id.as_wire_str().to_string(), false);
     }
 }
 

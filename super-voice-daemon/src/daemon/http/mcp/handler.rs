@@ -58,6 +58,46 @@ fn connection_of(headers: &HeaderMap) -> Option<&str> {
         .and_then(|value| value.to_str().ok())
 }
 
+/// What a call by `caller` needs to know: its session, named as the call
+/// and its connection say, and marked active; the switches the user set for
+/// `assistant`; and the hook that made the call, if one did.
+async fn call_context(
+    state: &AppState,
+    caller: &Caller,
+    assistant: Option<AssistantId>,
+    params: &Value,
+    headers: &HeaderMap,
+) -> tools::CallContext {
+    let sessions = &state.daemon.assistants.sessions;
+    let connection = connection_of(headers);
+    let named = sessions.resolve(caller, identity(params), connection);
+    let who = Who {
+        caller: caller.clone(),
+        named,
+        connection: connection.map(str::to_string),
+    };
+    sessions.touch(&who);
+    // A key made by hand, and the user's own client, have no switches.
+    let (announces, uses_context, shows_talk) = match assistant {
+        Some(id) => {
+            let config = state.daemon.config.read().await;
+            (
+                config.assistants.announces_when_needed(id),
+                config.assistants.uses_conversation_context(id),
+                config.assistants.shows_talk(id),
+            )
+        }
+        None => (true, true, true),
+    };
+    tools::CallContext {
+        who,
+        announces,
+        uses_context,
+        shows_talk,
+        hook: protocol::hook_of(params),
+    }
+}
+
 /// `POST /v1/mcp`: one JSON-RPC message.
 pub(crate) async fn post(
     State(state): State<AppState>,
@@ -129,38 +169,8 @@ pub(crate) async fn post(
             StatusCode::ACCEPTED.into_response()
         }
         Handled::Call { id, tool } => {
-            let connection = connection_of(&headers);
-            let named = state.daemon.assistants.sessions.resolve(
-                &caller,
-                identity(&message["params"]),
-                connection,
-            );
-            let who = Who {
-                caller: caller.clone(),
-                named,
-                connection: connection.map(str::to_string),
-            };
-            state.daemon.assistants.sessions.touch(&who);
-            // A key made by hand, and the user's own client, have no switches.
-            let (announces, uses_context, shows_talk) = match assistant {
-                Some(id) => {
-                    let config = state.daemon.config.read().await;
-                    (
-                        config.assistants.announces_when_needed(id),
-                        config.assistants.uses_conversation_context(id),
-                        config.assistants.shows_talk(id),
-                    )
-                }
-                None => (true, true, true),
-            };
-            let for_tool = tools::Caller {
-                who,
-                announces,
-                uses_context,
-                shows_talk,
-                hook: protocol::hook_of(&message["params"]),
-            };
-            stream_call(Arc::clone(&state.daemon), caller, for_tool, id, tool)
+            let call = call_context(&state, &caller, assistant, &message["params"], &headers).await;
+            stream_call(Arc::clone(&state.daemon), caller, call, id, tool)
         }
     }
 }
@@ -199,7 +209,7 @@ fn json(status: StatusCode, message: &Value) -> Response {
 fn stream_call(
     daemon: Arc<SuperSTTDaemon>,
     caller: Caller,
-    for_tool: tools::Caller,
+    call: tools::CallContext,
     id: Value,
     tool: Tool,
 ) -> Response {
@@ -211,7 +221,7 @@ fn stream_call(
     let in_flight = daemon
         .assistants
         .calls
-        .begin(caller, for_tool.who.connection.clone(), &id);
+        .begin(caller, call.who.connection.clone(), &id);
     let cancel = in_flight.token();
 
     let (frames, body) = tokio::sync::mpsc::unbounded_channel::<Result<Bytes, std::io::Error>>();
@@ -222,7 +232,7 @@ fn stream_call(
     let call = tokio::spawn({
         let cancel = cancel.clone();
         async move {
-            let outcome = tools::run(&daemon, tool, &for_tool, &cancel).await;
+            let outcome = tools::run(&daemon, tool, &call, &cancel).await;
             // Forgotten once it ends, however it ends.
             drop(in_flight);
             outcome

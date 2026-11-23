@@ -8,8 +8,10 @@
 /** Where Super Voice is, and the headers that let the plugin in. */
 export type Target = { url: string; headers: Record<string, string> }
 
-/** A tool's answer: its text, and whether it failed. */
-export type Answer = { text: string; isError: boolean }
+import type { Answer } from './voice'
+
+/** The answer to a call that never reached Super Voice. */
+const UNREACHABLE: Answer = { text: 'Super Voice is not reachable.', isError: true }
 
 type Message = {
   id?: number
@@ -41,29 +43,24 @@ export class SuperVoice {
 
   constructor(private readonly target: () => Target | undefined) {}
 
-  /** Call `tool` with `args`. Undefined when Super Voice can't be reached. */
-  async call(tool: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Answer | undefined> {
+  /** Call `tool` with `args`: its answer, an error when the call failed. */
+  async call(tool: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Answer> {
     const target = this.target()
     if (!target) {
-      return undefined
+      return UNREACHABLE
     }
     try {
       if (this.connection === undefined) {
         await this.initialize(target, signal)
       }
-      let message = await this.post(target, 'tools/call', { name: tool, arguments: args }, signal)
-      // A daemon that restarted has forgotten the connection: start another.
-      if (message === 'gone') {
-        await this.initialize(target, signal)
-        message = await this.post(target, 'tools/call', { name: tool, arguments: args }, signal)
-      }
-      if (message === 'gone' || message.error) {
-        return { text: message === 'gone' ? 'Super Voice is not reachable.' : (message.error?.message ?? ''), isError: true }
+      const message = await this.post(target, 'tools/call', { name: tool, arguments: args }, signal)
+      if (message.error) {
+        return { text: message.error.message ?? '', isError: true }
       }
       const text = (message.result?.content ?? []).map(block => (block.type === 'text' ? (block.text ?? '') : '')).join('')
       return { text, isError: message.result?.isError === true }
     } catch {
-      return undefined
+      return UNREACHABLE
     }
   }
 
@@ -89,9 +86,9 @@ export class SuperVoice {
     await response.text()
   }
 
-  /** One request's answer, or `gone` when Super Voice no longer knows the
-   * connection. */
-  private async post(target: Target, method: string, params: unknown, signal?: AbortSignal): Promise<Message | 'gone'> {
+  /** One request's answer. Super Voice serves a connection it does not know,
+   * as after it restarted, all the same. */
+  private async post(target: Target, method: string, params: unknown, signal?: AbortSignal): Promise<Message> {
     const id = ++this.next
     const response = await fetch(target.url, {
       method: 'POST',
@@ -99,10 +96,6 @@ export class SuperVoice {
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
       signal,
     })
-    if (response.status === 404) {
-      await response.text()
-      return 'gone'
-    }
     const body = await response.text()
     if (!response.ok) {
       return { error: { message: refusal(response.status, body) } }

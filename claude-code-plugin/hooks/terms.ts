@@ -13,6 +13,17 @@ const MAX_TERM_CHARS = 64
 const NOT_ACRONYMS = new Set(['OK', 'TODO', 'NOTE'])
 
 /**
+ * The arguments of Talk's `listen` call, after the conversation's last
+ * `prompt` and `reply`: no question, so it records until the user stops
+ * talking; asked for by the user, so a typed turn does not refuse it; and
+ * the names and terms of the conversation, so Super Voice hears them.
+ */
+export function talkArgs(prompt: string, reply: string): Record<string, unknown> {
+  const vocabulary = pickTerms(`${reply}\n${prompt}`)
+  return { asked: true, ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}) }
+}
+
+/**
  * The names and terms the user may say next, picked from `text`, the last
  * reply and prompt: what was quoted as code, file and folder names,
  * identifiers, acronyms and names. In the order they first appear, without

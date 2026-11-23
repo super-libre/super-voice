@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The tools: `speak` and `listen`, and the plugin's `stop`, `status`,
-//! `announce` and `session`, run on the daemon itself.
+//! `announce`, `session` and `turn`, run on the daemon itself.
 //!
-//! What a session speaks and records is its own ([`Sessions`]): `stop` and
-//! `status` see only the caller's.
+//! What a session speaks and records is its own
+//! ([`crate::assistants::sessions::Sessions`]): `stop` and `status` see only
+//! the caller's.
 //!
 //! A tool runs on a task of its own, so it ends as the daemon's work does,
 //! never midway because its client went away. It is cancelled through its
@@ -18,7 +19,8 @@
 //!    the same, so the microphone is freed as at any other stop.
 
 use super::protocol::{Hook, SessionEvent, Tool, TurnEvent};
-use crate::assistants::sessions::{Sessions, Who, holds_what_was_said};
+use crate::assistants::dictation::holds_what_was_said;
+use crate::assistants::sessions::Who;
 use crate::daemon::events::Topic;
 use crate::daemon::recording::{Stopped, TakeSettings};
 use crate::daemon::types::SuperSTTDaemon;
@@ -42,7 +44,7 @@ const TICK: Duration = Duration::from_millis(100);
 /// announce, whether its `listen` calls are heard with the context they
 /// bring, whether its plugin shows Talk, and the hook that made the call, if
 /// one did.
-pub(crate) struct Caller {
+pub(crate) struct CallContext {
     pub(crate) who: Who,
     pub(crate) announces: bool,
     pub(crate) uses_context: bool,
@@ -58,15 +60,15 @@ const NOT_SPOKEN_TO: &str = "The user typed this prompt, so answer in writing. S
 const SPOKEN_NOTE: &str = "The user said this aloud, through Super Voice. Your reply will be \
     read aloud to them: keep it short and plain to listen to, and end with any question you have.";
 
-/// The refusal for `who`, when its plugin said the turn under way was typed.
-fn not_spoken_to(daemon: &SuperSTTDaemon, who: &Who) -> Option<String> {
-    (daemon.assistants.sessions.spoken(who) == Some(false)).then(|| NOT_SPOKEN_TO.to_string())
+/// Whether `who`'s plugin said the turn under way was typed.
+fn is_typed_turn(daemon: &SuperSTTDaemon, who: &Who) -> bool {
+    daemon.assistants.sessions.spoken(who) == Some(false)
 }
 
 /// `answer`, or for a hook, which reads the text as its own output,
 /// nothing.
-fn for_caller(caller: &Caller, answer: String) -> String {
-    if caller.hook.is_some() {
+fn for_caller(call: &CallContext, answer: String) -> String {
+    if call.hook.is_some() {
         String::new()
     } else {
         answer
@@ -78,35 +80,35 @@ fn for_caller(caller: &Caller, answer: String) -> String {
 pub(crate) async fn run(
     daemon: &Arc<SuperSTTDaemon>,
     tool: Tool,
-    caller: &Caller,
+    call: &CallContext,
     cancel: &CancellationToken,
 ) -> Option<Result<String, String>> {
-    let who = &caller.who;
+    let who = &call.who;
     let sessions = &daemon.assistants.sessions;
     match tool {
         Tool::Speak { asked: false, .. } | Tool::Listen { asked: false, .. }
-            if not_spoken_to(daemon, who).is_some() =>
+            if is_typed_turn(daemon, who) =>
         {
-            not_spoken_to(daemon, who).map(Err)
+            Some(Err(NOT_SPOKEN_TO.to_string()))
         }
         Tool::Speak { text, .. } => speak(daemon, who, text, cancel).await,
         Tool::Listen {
             question, context, ..
         } => {
-            let extra = take_context(question.as_deref(), context, caller.uses_context);
+            let extra = take_context(question.as_deref(), context, call.uses_context);
             listen(daemon, who, question, extra, cancel).await
         }
         Tool::Stop => Some(Ok(stop(daemon, who).await)),
-        Tool::Status => Some(Ok(status(daemon, who, caller.shows_talk))),
-        Tool::Announce { text } if caller.announces => speak(daemon, who, text, cancel)
+        Tool::Status => Some(Ok(status(daemon, who, call.shows_talk))),
+        Tool::Announce { text } if call.announces => speak(daemon, who, text, cancel)
             .await
-            .map(|said| said.map(|answer| for_caller(caller, answer))),
+            .map(|said| said.map(|answer| for_caller(call, answer))),
         Tool::Announce { .. } => Some(Ok(for_caller(
-            caller,
+            call,
             "Not said: the user turned announcing off for this assistant.".to_string(),
         ))),
         Tool::Session(event) => Some(Ok(for_caller(
-            caller,
+            call,
             match event {
                 SessionEvent::Start => {
                     sessions.open(who);
@@ -123,29 +125,30 @@ pub(crate) async fn run(
             }
             .to_string(),
         ))),
-        Tool::Turn(TurnEvent::Prompt { text, .. }) if read_request(&text).is_some() => {
-            let request = read_request(&text)?;
-            // A turn of its own, typed, that ends before the assistant runs.
-            sessions.set_spoken(who, false);
-            let outcome = read_again(daemon, who, request).await;
-            Some(Ok(read_answer(caller.hook, outcome)))
-        }
         Tool::Turn(TurnEvent::Prompt {
             text,
             spoken,
             heard,
             again,
-        }) => {
+        }) => Some(Ok(if let Some(request) = read_request(&text) {
+            // A turn of its own, typed, that ends before the assistant runs.
+            sessions.set_spoken(who, false);
+            let outcome = read_again(daemon, who, request).await;
+            read_answer(call.hook, outcome)
+        } else {
             // The same prompt said again keeps its turn: its dictation is
             // used up by now.
             let again = sessions.prompted(who, &text, again);
             let spoken = spoken.or(again).unwrap_or_else(|| {
                 heard.is_some_and(|heard| holds_what_was_said(&text, &heard))
-                    || sessions.was_dictated(&text, std::time::Instant::now())
+                    || daemon
+                        .assistants
+                        .dictation
+                        .matches(&text, std::time::Instant::now())
             });
             sessions.set_spoken(who, spoken);
-            Some(Ok(prompt_answer(caller.hook, spoken, again.is_none())))
-        }
+            prompt_answer(call.hook, spoken, again.is_none())
+        })),
         Tool::Turn(TurnEvent::Reply { text }) => {
             sessions.replied(who, &text);
             let read = sessions.spoken(who) == Some(true) && !text.trim().is_empty();
@@ -156,7 +159,7 @@ pub(crate) async fn run(
                 }
             }
             Some(Ok(for_caller(
-                caller,
+                call,
                 serde_json::json!({ "read": read }).to_string(),
             )))
         }
@@ -313,7 +316,7 @@ async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     }
     let playing = sessions
         .utterance(who)
-        .filter(|utterance| daemon.tts.speech.current().as_deref() == Some(utterance.as_str()));
+        .filter(|utterance| is_playing(daemon, utterance));
     if let Some(utterance) = &playing {
         silence_if_speaking(daemon, utterance).await;
     }
@@ -335,14 +338,19 @@ async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     }
 }
 
+/// Whether `utterance` is the speech playing.
+fn is_playing(daemon: &SuperSTTDaemon, utterance: &str) -> bool {
+    daemon.tts.speech.current().as_deref() == Some(utterance)
+}
+
 /// Whether `who`'s own speech plays, or is on its way: waiting for the
 /// model, or being made.
 fn is_speaking(daemon: &SuperSTTDaemon, who: &Who) -> bool {
     let sessions = &daemon.assistants.sessions;
     sessions.speaking(who).is_some()
-        || sessions.utterance(who).is_some_and(|utterance| {
-            daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
-        })
+        || sessions
+            .utterance(who)
+            .is_some_and(|utterance| is_playing(daemon, &utterance))
 }
 
 /// Whether `who`'s own speech plays and whether it records, and whether the
@@ -470,7 +478,7 @@ async fn listen(
     }
     // Never the toggling `record` command: that would stop someone else's
     // recording. This one reserves the microphone or is refused.
-    let _recording = Sessions::recording(&daemon.assistants.sessions, who);
+    let _recording = daemon.assistants.sessions.recording(who);
     let mut typer = Typer::without_keyboard();
     let take = daemon.handle_record_internal(
         &mut typer,
@@ -553,7 +561,7 @@ async fn ask(
     };
     let mut listening = true;
     loop {
-        if daemon.tts.speech.current().as_deref() != Some(utterance.as_str()) {
+        if !is_playing(daemon, &utterance) {
             return Asked::Done;
         }
         tokio::select! {
@@ -576,7 +584,7 @@ async fn ask(
 /// Stop `utterance`, if it is still the one speaking. Speech the user or
 /// another client started since is left alone.
 async fn silence_if_speaking(daemon: &SuperSTTDaemon, utterance: &str) {
-    if daemon.tts.speech.current().as_deref() == Some(utterance) {
+    if is_playing(daemon, utterance) {
         let _ = daemon.tts.stop_speaking().await;
     }
 }
@@ -595,14 +603,14 @@ async fn call_off(daemon: &SuperSTTDaemon, spoken: JoinHandle<SpeechResponse>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assistants::calls::Caller as By;
+    use crate::assistants::calls::Caller;
     use crate::assistants::sessions::Named;
     use crate::daemon::types::test_daemon;
 
-    fn caller() -> Caller {
-        Caller {
+    fn call() -> CallContext {
+        CallContext {
             who: Who {
-                caller: By::Key("k".to_string()),
+                caller: Caller::Key("k".to_string()),
                 named: Named::default(),
                 connection: None,
             },
@@ -645,7 +653,7 @@ mod tests {
                 context: None,
                 asked: false,
             },
-            &caller(),
+            &call(),
             &CancellationToken::new(),
         )
         .await;
@@ -665,7 +673,7 @@ mod tests {
                 text: "Hello.".to_string(),
                 asked: false,
             },
-            &caller(),
+            &call(),
             &CancellationToken::new(),
         )
         .await;
@@ -686,7 +694,7 @@ mod tests {
                 context: None,
                 asked: false,
             },
-            &caller(),
+            &call(),
             &cancel,
         )
         .await;
@@ -698,7 +706,7 @@ mod tests {
     #[tokio::test]
     async fn stop_and_status_see_only_the_callers_own() {
         let daemon = Arc::new(test_daemon().await);
-        let mine = caller();
+        let mine = call();
         let cancel = CancellationToken::new();
         let Some(Ok(status)) = run(&daemon, Tool::Status, &mine, &cancel).await else {
             panic!("status answers");
@@ -726,7 +734,7 @@ mod tests {
     #[tokio::test]
     async fn stop_reaches_speech_still_waiting_to_start() {
         let daemon = Arc::new(test_daemon().await);
-        let mine = caller();
+        let mine = call();
         let waiting = tokio::spawn(std::future::pending::<SpeechResponse>());
         daemon
             .assistants
@@ -740,7 +748,7 @@ mod tests {
                     id: Some("other".into()),
                     ..Named::default()
                 },
-                ..caller().who
+                ..call().who
             }
         ));
 
@@ -774,9 +782,9 @@ mod tests {
     #[tokio::test]
     async fn announce_says_nothing_when_announcing_is_off() {
         let daemon = Arc::new(test_daemon().await);
-        let quiet = Caller {
+        let quiet = CallContext {
             announces: false,
-            ..caller()
+            ..call()
         };
         let outcome = run(
             &daemon,
@@ -802,26 +810,14 @@ mod tests {
         run(
             &daemon,
             Tool::Session(SessionEvent::Start),
-            &caller(),
+            &call(),
             &cancel,
         )
         .await;
         assert_eq!(daemon.assistants.sessions.list().len(), 1);
-        run(
-            &daemon,
-            Tool::Session(SessionEvent::End),
-            &caller(),
-            &cancel,
-        )
-        .await;
+        run(&daemon, Tool::Session(SessionEvent::End), &call(), &cancel).await;
         assert!(daemon.assistants.sessions.list().is_empty());
-        run(
-            &daemon,
-            Tool::Session(SessionEvent::Seen),
-            &caller(),
-            &cancel,
-        )
-        .await;
+        run(&daemon, Tool::Session(SessionEvent::Seen), &call(), &cancel).await;
         assert_eq!(daemon.assistants.sessions.list().len(), 1);
     }
 
@@ -840,7 +836,7 @@ mod tests {
                 again: false,
             })
         };
-        let typed = run(&daemon, prompt("Hi.", Some(false)), &caller(), &cancel)
+        let typed = run(&daemon, prompt("Hi.", Some(false)), &call(), &cancel)
             .await
             .unwrap()
             .unwrap();
@@ -854,14 +850,14 @@ mod tests {
                 text: "Hello.".to_string(),
                 asked: false,
             },
-            &caller(),
+            &call(),
             &cancel,
         )
         .await;
         assert_eq!(refused, Some(Err(NOT_SPOKEN_TO.to_string())));
 
-        daemon.assistants.sessions.dictated("Open the notes");
-        let spoken = run(&daemon, prompt("open the notes.", None), &caller(), &cancel)
+        daemon.assistants.dictation.remember("Open the notes");
+        let spoken = run(&daemon, prompt("open the notes.", None), &call(), &cancel)
             .await
             .unwrap()
             .unwrap();
@@ -869,7 +865,7 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&spoken).unwrap(),
             serde_json::json!({ "spoken": true, "note": SPOKEN_NOTE })
         );
-        assert_eq!(daemon.assistants.sessions.spoken(&caller().who), Some(true));
+        assert_eq!(daemon.assistants.sessions.spoken(&call().who), Some(true));
         // Said again before each model call, it stays spoken, and the note
         // is added once.
         let said_again = Tool::Turn(TurnEvent::Prompt {
@@ -878,7 +874,7 @@ mod tests {
             heard: None,
             again: true,
         });
-        let again = run(&daemon, said_again, &caller(), &cancel)
+        let again = run(&daemon, said_again, &call(), &cancel)
             .await
             .unwrap()
             .unwrap();
@@ -888,7 +884,7 @@ mod tests {
         );
         // The same words in a new turn are a new turn: typed, they are
         // answered in writing.
-        let retyped = run(&daemon, prompt("open the notes.", None), &caller(), &cancel)
+        let retyped = run(&daemon, prompt("open the notes.", None), &call(), &cancel)
             .await
             .unwrap()
             .unwrap();
@@ -911,7 +907,7 @@ mod tests {
             ("Rename the super voice folder", true),
             ("What does this function do?", false),
         ] {
-            let answer = run(&daemon, with_talk(text), &caller(), &cancel)
+            let answer = run(&daemon, with_talk(text), &call(), &cancel)
                 .await
                 .unwrap()
                 .unwrap();
@@ -926,9 +922,9 @@ mod tests {
     async fn a_hook_gets_its_own_output() {
         let daemon = Arc::new(test_daemon().await);
         let cancel = CancellationToken::new();
-        let hook = Caller {
+        let hook = CallContext {
             hook: Some(Hook::Codex),
-            ..caller()
+            ..call()
         };
         let prompt = |spoken| {
             Tool::Turn(TurnEvent::Prompt {
@@ -997,43 +993,40 @@ mod tests {
     async fn a_read_prompt_is_answered_without_the_assistant() {
         let daemon = Arc::new(test_daemon().await);
         let cancel = CancellationToken::new();
-        let codex = Caller {
+        let codex = CallContext {
             hook: Some(Hook::Codex),
-            ..caller()
+            ..call()
         };
-        let ask = async |text: &str, caller: &Caller| {
+        let ask = async |text: &str, call: &CallContext| {
             let prompt = Tool::Turn(TurnEvent::Prompt {
                 text: text.to_string(),
                 spoken: None,
                 heard: None,
                 again: false,
             });
-            let answer = run(&daemon, prompt, caller, &cancel)
-                .await
-                .unwrap()
-                .unwrap();
+            let answer = run(&daemon, prompt, call, &cancel).await.unwrap().unwrap();
             serde_json::from_str::<serde_json::Value>(&answer).unwrap()
         };
         let answered =
             |said: &str| serde_json::json!({ "spoken": false, "answered": said, "failed": true });
 
         assert_eq!(
-            ask("/read", &caller()).await,
+            ask("/read", &call()).await,
             answered("There is no reply to read yet.")
         );
         for text in ["First.", "Second."] {
             let reply = Tool::Turn(TurnEvent::Reply {
                 text: text.to_string(),
             });
-            run(&daemon, reply, &caller(), &cancel).await;
+            run(&daemon, reply, &call(), &cancel).await;
         }
         assert_eq!(
-            ask("/read 5", &caller()).await,
+            ask("/read 5", &call()).await,
             answered("There are 2 replies to read: 0 to 1.")
         );
-        assert_eq!(ask("/read x", &caller()).await, answered(READ_USAGE));
+        assert_eq!(ask("/read x", &call()).await, answered(READ_USAGE));
         // The test daemon has no model to read it with.
-        let unread = ask("/read 1", &caller()).await;
+        let unread = ask("/read 1", &call()).await;
         assert!(
             unread["answered"]
                 .as_str()
@@ -1041,10 +1034,7 @@ mod tests {
             "{unread}"
         );
         assert_eq!(unread["failed"], true);
-        assert_eq!(
-            daemon.assistants.sessions.spoken(&caller().who),
-            Some(false)
-        );
+        assert_eq!(daemon.assistants.sessions.spoken(&call().who), Some(false));
 
         assert_eq!(
             ask("$read 9", &codex).await,
@@ -1055,7 +1045,7 @@ mod tests {
         );
         // A prompt that only starts like it goes to the assistant.
         assert_eq!(
-            ask("/readme is out of date", &caller()).await,
+            ask("/readme is out of date", &call()).await,
             serde_json::json!({ "spoken": false, "note": null })
         );
     }

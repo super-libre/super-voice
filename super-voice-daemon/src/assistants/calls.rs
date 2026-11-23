@@ -111,14 +111,14 @@ impl Calls {
     }
 
     /// How many calls are in flight.
-    #[must_use]
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    fn len(&self) -> usize {
         self.entries.lock().len()
     }
 
     /// Whether no call is in flight.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
         self.len() == 0
     }
 

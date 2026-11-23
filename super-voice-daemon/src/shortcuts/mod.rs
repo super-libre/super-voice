@@ -556,14 +556,19 @@ fn cosmic(id: ShortcutId) -> &'static cosmic_shortcuts::Shortcut {
     }
 }
 
-/// The `voice` a shortcut the daemon adds runs: the one installed beside the
-/// daemon, or the one on `PATH` when there is none, as in a development
-/// build. Codex runs it too, for Super Voice's key.
+/// The `voice` a shortcut the daemon adds runs, and an assistant's key helper
+/// and hooks: the one beside the daemon, under either name, since a build
+/// tree names it as its crate does, or the one on `PATH` when there is none.
 pub(crate) fn voice_program() -> String {
     std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("voice")))
-        .filter(|voice| voice.is_file())
+        .and_then(|exe| {
+            let dir = exe.parent()?.to_path_buf();
+            ["voice", "super-voice-cli"]
+                .into_iter()
+                .map(|name| dir.join(name))
+                .find(|voice| voice.is_file())
+        })
         .map_or_else(|| "voice".to_string(), |voice| voice.display().to_string())
 }
 

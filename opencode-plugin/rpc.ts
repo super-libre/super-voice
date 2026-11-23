@@ -5,6 +5,18 @@
 
 import { Rpc } from '@opencode/plugin/rpc'
 
+/** A call about one session, by its id. */
+export type SessionInput = { sessionID: string }
+/** `read`'s input: the session, and how far back from its last reply. */
+export type ReadInput = SessionInput & { back: number }
+/** What Talk heard, or why it heard nothing. */
+export type Heard = { text?: string; error?: string }
+/** What a call that answers nothing on success came to: why it failed. */
+export type Outcome = { error?: string }
+/** What this session's speech is doing, whether its turn under way was
+ * spoken, and whether the user shows Talk. */
+export type Status = { speaking: boolean; conversation: boolean; talk: boolean }
+
 const session = {
   type: 'object',
   properties: { sessionID: { type: 'string' } },
@@ -44,19 +56,18 @@ export const Voice = Rpc.define({
     },
     /** Stop the session's own speech, and end its recording. */
     stop: { input: session, output: { type: 'object', additionalProperties: false } },
-    /** Whether the session's speech plays or it records, whether its turn
-     * under way was spoken, and whether the user shows Talk. */
+    /** Whether the session's speech plays, whether its turn under way was
+     * spoken, and whether the user shows Talk. */
     status: {
       input: session,
       output: {
         type: 'object',
         properties: {
           speaking: { type: 'boolean' },
-          listening: { type: 'boolean' },
           conversation: { type: 'boolean' },
           talk: { type: 'boolean' },
         },
-        required: ['speaking', 'listening', 'conversation', 'talk'],
+        required: ['speaking', 'conversation', 'talk'],
         additionalProperties: false,
       },
     },

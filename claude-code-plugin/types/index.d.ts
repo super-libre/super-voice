@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The state the plugin's hooks module keeps, by name.
 
-/** Whether Super Voice is speaking, as `voice status` last said. */
+/** Whether this session's speech plays, as Super Voice's `status` tool last
+ * said. */
 export type SuperVoiceIsSpeaking = boolean
 
 /** Whether Claude is recording the user through the `listen` tool. */
@@ -9,7 +10,7 @@ export type SuperVoiceIsClaudeListening = boolean
 
 /** Whether the reply being read answers a spoken prompt, so the microphone
  * opens after it, and stopping it starts the user talking. */
-export type SuperVoiceListensAfterReply = boolean
+export type SuperVoiceOpensMicAfterReply = boolean
 
 /** Which reply block a 🔊 is reading aloud again, by its button's key; empty
  * when none is. */
@@ -36,7 +37,7 @@ declare module 'claude-code' {
     'super-voice': {
       isSpeaking: SuperVoiceIsSpeaking
       isClaudeListening: SuperVoiceIsClaudeListening
-      listensAfterReply: SuperVoiceListensAfterReply
+      opensMicAfterReply: SuperVoiceOpensMicAfterReply
       isClaudeWorking: SuperVoiceIsClaudeWorking
       readingAgain: SuperVoiceReadingAgain
       talk: SuperVoiceTalk

@@ -144,17 +144,10 @@ async fn dispatch(matches: &ArgMatches, socket_path: PathBuf) -> Result<()> {
         }
         Some(("logout", _)) => cmd_logout(),
         Some(("assistant-header", sub)) => {
-            let assistant = sub
-                .get_one::<String>("assistant")
-                .and_then(|id| id.parse::<AssistantId>().ok())
-                .context("an assistant is required")?;
-            cmd_assistant_header(socket_path, assistant).await
+            cmd_assistant_header(socket_path, assistant_of(sub)?).await
         }
         Some(("assistant-hook", sub)) => {
-            let assistant = sub
-                .get_one::<String>("assistant")
-                .and_then(|id| id.parse::<AssistantId>().ok())
-                .context("an assistant is required")?;
+            let assistant = assistant_of(sub)?;
             let event = sub
                 .get_one::<String>("event")
                 .context("an event is required")?;
@@ -261,14 +254,7 @@ fn build_cli() -> Command {
                      Super Voice made it, as {\"Authorization\":\"Bearer <key>\"}. The assistant \
                      runs this itself, once it is connected on the Assistants page of the app.",
                 )
-                .arg(
-                    Arg::new("assistant")
-                        .help("The assistant")
-                        .required(true)
-                        .value_parser(clap::builder::PossibleValuesParser::new(
-                            AssistantId::WIRE_VARIANTS.iter().copied(),
-                        )),
-                ),
+                .arg(assistant_arg(AssistantId::WIRE_VARIANTS)),
         )
         .subcommand(assistant_hook::command()),
     )
@@ -567,22 +553,17 @@ async fn cmd_speak_stop(
 }
 
 /// The key the daemon made `assistant`, and where it reaches Super Voice's
-/// MCP server with it.
-///
-/// # Errors
-///
-/// What the daemon answered instead, such as `not_connected`.
+/// MCP server with it. `None` when the daemon gave none, as for an assistant
+/// not connected.
 pub(crate) async fn assistant_access(
     socket_path: PathBuf,
     assistant: AssistantId,
-) -> Result<(String, String), String> {
-    let body = assistant_key_body(socket_path, assistant)
-        .await
-        .map_err(|e| e.to_string())?;
-    match (body["key"].as_str(), body["address"].as_str()) {
-        (Some(key), Some(address)) => Ok((key.to_string(), address.to_string())),
-        _ => Err("Super Voice sent no key".to_string()),
-    }
+) -> Option<(String, String)> {
+    let body = assistant_key_body(socket_path, assistant).await.ok()?;
+    Some((
+        body["key"].as_str()?.to_string(),
+        body["address"].as_str()?.to_string(),
+    ))
 }
 
 /// `GET /assistants/{assistant}/key`, as the daemon answers it.
@@ -624,7 +605,7 @@ async fn cmd_assistant_header(socket_path: PathBuf, assistant: AssistantId) -> R
         Err(e) if e.to_string().contains("not_connected") => format!(
             "Super Voice has not connected {name}. Connect it on the Assistants page of the Super Voice app."
         ),
-        Err(e) if e.to_string().contains("auth_denied") => {
+        Err(http_client::HttpError::AuthDenied { .. }) => {
             "Super Voice shows a key only to the voice command installed beside its daemon."
                 .to_string()
         }
@@ -633,6 +614,23 @@ async fn cmd_assistant_header(socket_path: PathBuf, assistant: AssistantId) -> R
     };
     eprintln!("{reason}");
     std::process::exit(1);
+}
+
+/// The `assistant` argument of the assistant commands: one of `ids`.
+pub(crate) fn assistant_arg(ids: &[&'static str]) -> Arg {
+    Arg::new("assistant")
+        .help("The assistant")
+        .required(true)
+        .value_parser(clap::builder::PossibleValuesParser::new(
+            ids.iter().copied(),
+        ))
+}
+
+/// The assistant an assistant command names.
+fn assistant_of(sub: &clap::ArgMatches) -> Result<AssistantId> {
+    sub.get_one::<String>("assistant")
+        .and_then(|id| id.parse::<AssistantId>().ok())
+        .context("an assistant is required")
 }
 
 /// The headers an assistant sends, as the JSON object it reads.

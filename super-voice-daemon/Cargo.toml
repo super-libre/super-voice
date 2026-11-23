@@ -45,6 +45,9 @@
     http-body = { version = "1.0.1", optional = true }
     http-body-util = "0.1"
     hyper = { version = "1", features = ["http1", "server"] }
+    # OpenCode's `opencode.jsonc`, edited in place with its comments and
+    # trailing commas kept.
+    jsonc-parser = { version = "0.34.0", features = ["cst"] }
     hyper-util = {
         version = "0.1",
         features = ["http1", "server", "server-auto", "tokio"]
@@ -61,7 +64,11 @@
         features = ["ring", "std", "tls12"]
     }
     serde.workspace = true
-    serde_json.workspace = true
+    # `preserve_order` keeps the keys of a JSON file in the order they were
+    # written, so an assistant's config that `assistants::configs` rewrites
+    # keeps its layout. libcosmic turns it on wherever the app is in the
+    # build, so without it here the order would depend on what is built.
+    serde_json = { workspace = true, features = ["preserve_order"] }
     strum.workspace = true
     strum_macros.workspace = true
     super-engine-daemon = { workspace = true, features = ["beeper"] }
@@ -82,6 +89,8 @@
         ]
     }
     thiserror.workspace = true
+    # Codex's `config.toml`, rewritten with its comments and layout kept.
+    toml_edit = "0.25.8"
     tokio = {
         workspace = true,
         features = [

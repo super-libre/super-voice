@@ -2,27 +2,39 @@
 // The plugin's voice, a Claude Code hooks module. It works through Claude
 // Code's own connection to Super Voice's MCP server, and names this session
 // on every call, so what it speaks and records is this session's own.
+//
 // Claude speaks only after being spoken to: a reply to a spoken prompt is
 // read aloud and the microphone opens after it, and Super Voice's tools are
-// refused in a turn the user typed. One row above the prompt and one key, 0: `Talk` records the user and
-// puts their words in the prompt box, sent after a short countdown unless they
-// edit them; while speech plays, 0 stops it, and opens the microphone only in
-// a spoken conversation. What `listen` hears goes through the box the same
-// way. A 🔊 under each reply block reads it again.
+// refused in a turn the user typed.
+//
+// One row above the prompt and one key, 0: `Talk` records the user and puts
+// their words in the prompt box, sent after a short countdown unless they
+// edit them; while speech plays, 0 stops it, and opens the microphone only
+// in a spoken conversation. What `listen` hears goes through the box the
+// same way. A 🔊 under each reply block reads it again.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { SuperVoiceTalk } from '../types'
-import { pickTerms } from './terms'
+import { talkArgs } from './terms'
+import {
+  type Answer,
+  MODEL_TOOL_NAMES,
+  NO_SPEECH,
+  NOT_SPOKEN_TO,
+  PLUGIN_TOOL_NAMES,
+  SPOKEN_NOTE,
+  fieldsOf,
+} from './voice'
 
 const speaking = atom({ plugin: 'super-voice', key: 'isSpeaking' } as const, false)
 const claudeListening = atom(
   { plugin: 'super-voice', key: 'isClaudeListening' } as const,
   false,
 )
-const listensAfter = atom(
-  { plugin: 'super-voice', key: 'listensAfterReply' } as const,
+const opensMicAfter = atom(
+  { plugin: 'super-voice', key: 'opensMicAfterReply' } as const,
   false,
 )
 const claudeWorking = atom(
@@ -51,46 +63,26 @@ const SEND_AFTER_MS = 5_000
 const COUNTDOWN_TICK_MS = 500
 /** Super Voice's MCP server, by its key in this plugin's `.mcp.json`. */
 const SERVER_KEY = 'voice'
-/** How often an open session checks in, so Super Voice keeps listing it. */
-const HEARTBEAT_MS = 60_000
-/** How often to ask whether the user shows Talk, so the switch on the
- * Assistants page takes effect soon after it moves. */
-const SWITCH_POLL_MS = 5_000
-/** How long to wait between tries to say a session started, while Claude
- * Code may still be connecting to Super Voice. */
-const OPEN_RETRY_MS = 5_000
-/** How many times to try before leaving it to the heartbeat. */
-const OPEN_TRIES = 12
+/** How often the session checks in: until Super Voice has heard it started,
+ * which waits on Claude Code connecting; so Super Voice keeps listing it; and
+ * to learn whether the user shows Talk, so the switch on the Assistants page
+ * takes effect soon after it moves. */
+const CHECK_IN_MS = 5_000
+/** A Super Voice tool, as Claude Code names it. */
+const toolName = (tool: string) => `mcp__plugin_${NAME}_${SERVER_KEY}__${tool}`
 /** The tools this plugin calls itself, kept from the model. */
-const PLUGIN_TOOLS: ReadonlySet<string> = new Set(
-  ['stop', 'status', 'announce', 'session', 'turn'].map(tool => `mcp__plugin_super-voice_voice__${tool}`),
-)
-/** The Super Voice tools that speak. `listen` asks its question aloud. */
-const LISTEN_TOOL = 'mcp__plugin_super-voice_voice__listen'
-const SPEAKING_TOOLS: ReadonlySet<string> = new Set([
-  'mcp__plugin_super-voice_voice__speak',
-  LISTEN_TOOL,
-])
-/** What `voice record --wait` prints when it heard nothing. */
-const NO_SPEECH = '(no speech detected)'
-/** What Claude reads beside a spoken prompt, so it answers for listening. */
-const VOICE_NOTE =
-  'The user said this aloud, through Super Voice. Your reply will be read aloud to them, ' +
-  'and the microphone opens after it so they can answer by voice: keep the reply short ' +
-  'and plain to listen to, end with any question you have, and do not call `listen` ' +
-  'to hear their answer.'
-/** Why Claude's call to a Super Voice tool is refused in a turn the user
- * typed. */
-const NOT_SPOKEN_TO =
-  'The user typed this prompt, so answer in writing. Super Voice speaks and listens only ' +
-  'while the user is talking to you by voice, which they start with Talk.'
+const PLUGIN_TOOLS: ReadonlySet<string> = new Set(PLUGIN_TOOL_NAMES.map(toolName))
+/** The tools Claude calls, which speak or record: refused in a typed turn.
+ * `listen` asks its question aloud. */
+const MODEL_TOOLS: ReadonlySet<string> = new Set(MODEL_TOOL_NAMES.map(toolName))
+const LISTEN_TOOL = toolName('listen')
 
 // Watching for speech.
 let speechTimer: Timer | undefined
 let isChecking = false
 /** What the row last showed. Unknown after a reload, so the first check writes
  * whatever it finds. */
-let shown: boolean | undefined
+let shownSpeaking: boolean | undefined
 /** Until when to keep asking while no speech has been seen. Zero once speech
  * was seen, so the first silence after it ends the watch. */
 let waitUntil = 0
@@ -107,8 +99,6 @@ let filled: { text: string; cursor: number } | undefined
 /** Claude's `listen` call waiting on the user's answer, which they can check
  * in the prompt box first: what to hand it once it is sent. */
 let pendingAnswer: ((text: string | undefined) => void) | undefined
-/** Whether Claude's `listen` call has the microphone. */
-let isClaudeListening = false
 /** Claude's running main turn, which sending the user's words stops first,
  * as their Ctrl+Enter does: a plugin's prompt otherwise waits for it to end. */
 let runningTurnId: string | undefined
@@ -116,8 +106,9 @@ let runningTurnId: string | undefined
 // Listening after a spoken reply.
 /** The words Talk put in the box since the last prompt was sent. */
 let talked: string | undefined
-/** The prompt now being answered was spoken, so its reply should be too. */
-let listenAfterReply = false
+/** The prompt now being answered was spoken, so its reply is read aloud, and
+ * Claude may speak and listen. */
+let isTurnSpoken = false
 /** The main agent's last prompt and reply, which Talk picks the names and
  * terms of the conversation from. */
 let lastPrompt = ''
@@ -132,13 +123,19 @@ let armed = false
 let folder: string | undefined
 /** The session id Super Voice was last told started. */
 let openedId: string | undefined
-let heartbeat: Timer | undefined
-let switchPoll: Timer | undefined
-/** Whether the user shows Talk, as Super Voice last said. */
-let isTalkShown = true
+let checkInTimer: Timer | undefined
+/** A check-in is under way: one waiting on Claude Code's connection can
+ * outlast the timer's beat. */
+let isCheckingIn = false
 
 /** Super Voice's MCP server as Claude Code names it, once connected. */
-let server = 'plugin:super-voice:voice'
+let server = `plugin:${NAME}:${SERVER_KEY}`
+
+/** Whether `origin`, the one that changed or sent the prompt, is this
+ * plugin. */
+function isOwnOrigin(origin: { kind: string }): boolean {
+  return origin.kind === 'plugin' && (origin as { name?: string }).name === NAME
+}
 
 /** This session as Super Voice's tools take it: `id` when given, else the
  * session's own. */
@@ -149,22 +146,21 @@ async function sessionOf($: EngineInterface, id?: string) {
   return { id: id ?? (await $.session.id()), ...(folder ? { folder } : {}) }
 }
 
-type Answer = { text: string; isError: boolean }
-
 /** Call one of Super Voice's tools for this session, or for session `id`,
- * through Claude Code's own connection. Nothing when the call fails. */
+ * through Claude Code's own connection: its answer, an error with no text
+ * when the call failed. */
 async function call(
   $: EngineInterface,
   tool: string,
   args: Record<string, unknown> = {},
   id?: string,
-): Promise<Answer | undefined> {
+): Promise<Answer> {
   try {
     const result = await $.mcp.call(server, tool, { ...args, session: await sessionOf($, id) })
     const text = result.content.map(block => (block.type === 'text' ? block.text : '')).join('')
     return { text, isError: result.isError }
   } catch {
-    return undefined
+    return { text: '', isError: true }
   }
 }
 
@@ -185,14 +181,7 @@ async function promptWasSpoken(
     ...(isTalk ? { spoken: true } : {}),
     ...(heard ? { heard } : {}),
   })
-  if (isTalk || answer === undefined || answer.isError) {
-    return isTalk
-  }
-  try {
-    return (JSON.parse(answer.text) as { spoken?: unknown }).spoken === true
-  } catch {
-    return false
-  }
+  return isTalk || fieldsOf(answer).spoken === true
 }
 
 type VoiceStatus = { isSpeaking: boolean; isListening: boolean }
@@ -201,27 +190,35 @@ type VoiceStatus = { isSpeaking: boolean; isListening: boolean }
  * when Super Voice can't say. */
 async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined> {
   const answer = await call($, 'status')
-  if (answer === undefined || answer.isError) {
+  if (answer.isError) {
     return undefined
   }
+  const { speaking: isSpeaking, listening: isListening, talk: isShown } = fieldsOf(answer)
+  if (typeof isShown === 'boolean' && isShown !== (await read($, showsTalk))) {
+    await update($, showsTalk, () => isShown)
+  }
+  return { isSpeaking: isSpeaking === true, isListening: isListening === true }
+}
+
+/** Tell Super Voice this session is open, and check in while it is, which
+ * also learns whether the user shows Talk. A new session id, as after
+ * `/clear`, ends the one before. */
+async function checkIn($: EngineInterface) {
+  if (isCheckingIn) {
+    return
+  }
+  isCheckingIn = true
   try {
-    const status = JSON.parse(answer.text) as { speaking?: unknown; listening?: unknown; talk?: unknown }
-    if (typeof status.talk === 'boolean' && status.talk !== isTalkShown) {
-      isTalkShown = status.talk
-      await update($, showsTalk, () => status.talk === true)
-    }
-    return { isSpeaking: status.speaking === true, isListening: status.listening === true }
-  } catch {
-    return undefined
+    await checkInOnce($)
+  } finally {
+    isCheckingIn = false
   }
 }
 
-/** Tell Super Voice this session is open, and check in while it is. A new
- * session id, as after `/clear`, ends the one before. */
-async function checkIn($: EngineInterface) {
+async function checkInOnce($: EngineInterface) {
   const id = await $.session.id()
   if (openedId === id) {
-    await call($, 'status')
+    await voiceStatus($)
     return
   }
   // Claude Code may still be connecting to Super Voice as the session starts.
@@ -238,33 +235,21 @@ async function checkIn($: EngineInterface) {
   }
   const started = await call($, 'session', { event: 'start' })
   // Not yet: the next check-in tries again.
-  if (started !== undefined && !started.isError) {
+  if (!started.isError) {
     openedId = id
-  }
-}
-
-/** Say the session started as soon as Super Voice can be reached, trying a
- * few times while Claude Code connects; the heartbeat goes on after. */
-async function openSession($: EngineInterface) {
-  for (let tries = 0; tries < OPEN_TRIES; tries++) {
-    await checkIn($)
-    if (openedId === (await $.session.id())) {
-      return
-    }
-    await $.clock.sleep(OPEN_RETRY_MS)
   }
 }
 
 async function setArmed($: EngineInterface, isArmed: boolean) {
   if (armed !== isArmed) {
     armed = isArmed
-    await update($, listensAfter, () => isArmed)
+    await update($, opensMicAfter, () => isArmed)
   }
 }
 
 async function showSpeaking($: EngineInterface, isOn: boolean) {
-  if (shown !== isOn) {
-    shown = isOn
+  if (shownSpeaking !== isOn) {
+    shownSpeaking = isOn
     await update($, speaking, () => isOn)
   }
 }
@@ -289,7 +274,7 @@ async function checkSpeech($: EngineInterface) {
       // Whatever a 🔊 was reading has ended, or never started.
       await update($, readingAgain, () => '')
       // With Talk not shown, nothing records without a row to say so.
-      if (isReplyRead && isTalkShown) {
+      if (isReplyRead && (await read($, showsTalk))) {
         void startTalk($)
       }
     }
@@ -321,24 +306,24 @@ async function pressStopSpeaking($: EngineInterface) {
   const isConversation = armed
   // The stop comes first, whatever else is going on.
   await stopSpeaking($)
-  if (isConversation && !isClaudeListening && phase === 'idle') {
+  if (isConversation && !(await read($, claudeListening)) && phase === 'idle') {
     await startTalk($)
   }
 }
 
-/** Read Claude's reply to a spoken prompt aloud, and open the microphone once
- * it has been read. */
-async function readReply($: EngineInterface, answer: string) {
-  if (!answer.trim()) {
+/** Tell Super Voice Claude answered the turn with `answer`. Super Voice reads
+ * the reply to a spoken prompt aloud; once it has been read, the microphone
+ * opens. */
+async function replied($: EngineInterface, answer: string) {
+  const turn = await call($, 'turn', { event: 'reply', text: answer })
+  if (turn.isError) {
+    $.ui.toast(turn.text || 'Could not read the reply aloud.')
     return
   }
-  const spoken = await call($, 'speak', { text: answer })
-  if (spoken === undefined || spoken.isError) {
-    $.ui.toast(spoken?.text || 'Could not read the reply aloud.')
-    return
+  if (fieldsOf(turn).read === true) {
+    await setArmed($, true)
+    await watchSpeech($)
   }
-  await setArmed($, true)
-  await watchSpeech($)
 }
 
 /** Read one of Claude's reply blocks aloud again, or stop it when it is the
@@ -353,9 +338,9 @@ async function readAgain($: EngineInterface, key: string, text: string) {
   await update($, readingAgain, () => key)
   // The user asked for it: a typed turn does not refuse it.
   const spoken = await call($, 'speak', { text, asked: true })
-  if (spoken === undefined || spoken.isError) {
+  if (spoken.isError) {
     await update($, readingAgain, () => '')
-    $.ui.toast(spoken?.text || 'Could not read it aloud.')
+    $.ui.toast(spoken.text || 'Could not read it aloud.')
     return
   }
   await watchSpeech($)
@@ -384,17 +369,8 @@ async function startTalk($: EngineInterface) {
 
 async function recordAndFill($: EngineInterface) {
   let words = ''
-  // `listen` without a question: it records until the user stops talking.
-  // The names and terms of the conversation help Super Voice hear them.
-  const vocabulary = pickTerms(`${lastReply}\n${lastPrompt}`)
-  // Talk is the user's own asking: a typed turn does not refuse it.
-  const heard = await call($, 'listen', {
-    asked: true,
-    ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}),
-  })
-  if (heard === undefined) {
-    $.ui.toast('Could not record.')
-  } else if (heard.isError) {
+  const heard = await call($, 'listen', talkArgs(lastPrompt, lastReply))
+  if (heard.isError) {
     $.ui.toast(heard.text || 'Could not record.')
   } else {
     words = heard.text.trim()
@@ -510,10 +486,6 @@ async function tick($: EngineInterface) {
     // Said while Claude works: it should hear it now, not when it is done.
     await $.turn.abort({ turnId: runningTurnId }).catch(() => undefined)
   }
-  // Set here too, in case this mod's own `prompt.submit` hook is not told of
-  // its own prompt.
-  listenAfterReply = true
-  talked = undefined
   // The words are the user's own, so Claude reads them bare. Hooks and
   // permission checks still see this mod as the sender.
   await $.prompt.submit({ text: box.text, asUser: true }).catch(() => {
@@ -536,26 +508,21 @@ export const register: Register = on => {
     await update($, talk, () => ({ phase: 'idle' }))
     await update($, speaking, () => false)
     await update($, claudeListening, () => false)
-    await update($, listensAfter, () => false)
+    await update($, opensMicAfter, () => false)
     await update($, claudeWorking, () => false)
     await update($, readingAgain, () => '')
-    // A reload starts the session's check-ins over too.
+    // A reload starts the session's check-ins over too. The Talk switch is
+    // kept as last seen until Super Voice says.
     openedId = undefined
-    heartbeat?.cancel()
-    heartbeat = $.clock.every(HEARTBEAT_MS, () => void checkIn($))
-    // The switch as last seen, kept across a reload, until Super Voice says.
-    isTalkShown = await read($, showsTalk)
-    switchPoll?.cancel()
-    switchPoll = $.clock.every(SWITCH_POLL_MS, () => void voiceStatus($))
-    void openSession($)
+    checkInTimer?.cancel()
+    checkInTimer = $.clock.every(CHECK_IN_MS, () => void checkIn($))
+    void checkIn($)
     return next(e)
   })
 
   on('session.end', async ($, e, next) => {
-    heartbeat?.cancel()
-    heartbeat = undefined
-    switchPoll?.cancel()
-    switchPoll = undefined
+    checkInTimer?.cancel()
+    checkInTimer = undefined
     await call($, 'session', { event: 'end' }, e.sessionId)
     openedId = undefined
     return next(e)
@@ -586,16 +553,16 @@ export const register: Register = on => {
       if (e.isAborted) {
         // A spoken prompt that stopped this turn is still to be answered.
         await setArmed($, false)
-      } else if (listenAfterReply) {
-        listenAfterReply = false
-        await readReply($, e.answer)
+      } else {
+        isTurnSpoken = false
+        await replied($, e.answer)
       }
     }
     return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
-    if (!SPEAKING_TOOLS.has(e.tool)) {
+    if (!MODEL_TOOLS.has(e.tool)) {
       return next(e)
     }
     // This plugin's own calls, as Talk and reading a reply make them, name
@@ -606,7 +573,7 @@ export const register: Register = on => {
       return next(e)
     }
     // Claude speaks only after being spoken to.
-    if (!listenAfterReply) {
+    if (!isTurnSpoken) {
       return { deny: NOT_SPOKEN_TO }
     }
     // Named as this session, as the plugin's own calls are.
@@ -616,12 +583,10 @@ export const register: Register = on => {
       return next(named)
     }
     // Claude has the microphone: no Talk button until it is done.
-    isClaudeListening = true
     await update($, claudeListening, () => true)
     try {
       return await next(named)
     } finally {
-      isClaudeListening = false
       await update($, claudeListening, () => false)
     }
   })
@@ -674,8 +639,7 @@ export const register: Register = on => {
 
   // A recalled history entry, a clear, another plugin's fill.
   on('prompt.change', async ($, e, next) => {
-    const isOwnFill = e.origin.kind === 'plugin' && e.origin.name === NAME
-    if (phase === 'countdown' && !isOwnFill) {
+    if (phase === 'countdown' && !isOwnOrigin(e.origin)) {
       await stopCountdown($)
     }
     return next(e)
@@ -686,36 +650,31 @@ export const register: Register = on => {
     if (await read($, speaking)) {
       void stopSpeaking($)
     }
-    const isOwn = e.origin.kind === 'plugin' && e.origin.name === NAME
     if (e.origin.kind === 'composer' && pendingAnswer !== undefined) {
       // Enter on an answer to Claude's question: it goes to the waiting
       // `listen` call, not into the queue as a prompt.
       await finishAnswer($, e.text)
       return { drop: "Sent as the answer to Claude's question." }
     }
-    if (e.origin.kind === 'composer') {
-      // Enter before the countdown ended: the prompt is the user's, and still
-      // spoken, so the talk goes on after the reply. Sent while Claude works,
-      // it is delivered into that turn, whose reply answers it.
-      if (phase === 'countdown') {
-        await stopCountdown($)
-      }
-      // Talk's words, or ones the user dictated with Super Voice's shortcut.
-      const isSpoken = await promptWasSpoken($, e.text, false, talked)
-      lastPrompt = e.text
-      listenAfterReply = isSpoken
-      talked = undefined
-      await setArmed($, false)
-      return next(isSpoken ? { ...e, context: [...(e.context ?? []), VOICE_NOTE] } : e)
+    const isOwn = isOwnOrigin(e.origin)
+    // Another plugin's prompt is neither the user's nor Talk's.
+    if (e.origin.kind !== 'composer' && !isOwn) {
+      return next(e)
     }
-    if (isOwn) {
-      await promptWasSpoken($, e.text, true)
-      lastPrompt = e.text
-      listenAfterReply = true
-      talked = undefined
-      return next({ ...e, context: [...(e.context ?? []), VOICE_NOTE] })
+    // Enter before the countdown ended: the prompt is the user's, and still
+    // spoken, so the talk goes on after the reply. Sent while Claude works,
+    // it is delivered into that turn, whose reply answers it.
+    if (phase === 'countdown') {
+      await stopCountdown($)
     }
-    return next(e)
+    // Talk's own prompt is spoken; the user's when it holds Talk's words, or
+    // ones they dictated with Super Voice's shortcut.
+    const isSpoken = await promptWasSpoken($, e.text, isOwn, talked)
+    lastPrompt = e.text
+    isTurnSpoken = isSpoken
+    talked = undefined
+    await setArmed($, false)
+    return next(isSpoken ? { ...e, context: [...(e.context ?? []), SPOKEN_NOTE] } : e)
   })
 
   // A speaker under each block of Claude's replies reads that block aloud
@@ -785,7 +744,7 @@ export const register: Register = on => {
     }
     const isListening = await read($, claudeListening)
     if (await read($, speaking)) {
-      const talksAfter = isListening || (await read($, listensAfter))
+      const talksAfter = isListening || (await read($, opensMicAfter))
       return (
         <Button
           key="stop-speaking"

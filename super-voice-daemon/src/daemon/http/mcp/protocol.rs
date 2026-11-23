@@ -621,12 +621,14 @@ mod tests {
             plugin: Plugin::HidesItsTools,
             ..both()
         };
-        assert_eq!(
-            names(plugin),
-            [
-                "speak", "listen", "stop", "status", "session", "turn", "announce"
-            ]
-        );
+        // The plugin's own are the ones an assistant's config keeps from
+        // its model.
+        let mut plugin_names = names(plugin);
+        assert_eq!(plugin_names[..2], ["speak", "listen"]);
+        let mut kept = crate::assistants::PLUGIN_TOOLS.to_vec();
+        plugin_names[2..].sort_unstable();
+        kept.sort_unstable();
+        assert_eq!(plugin_names[2..], kept);
         // Claude Code's are not marked: it would refuse its plugin's calls.
         let tools = reply(&list, plugin)["result"]["tools"].clone();
         assert_eq!(tools[0].get("_meta"), None, "the model's own tools");

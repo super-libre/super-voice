@@ -11,39 +11,21 @@
 import { Plugin } from '@opencode/plugin'
 
 import { SuperVoice, type Target } from './mcp'
-import { Voice } from './rpc'
-import { pickTerms } from './terms'
+import { type ReadInput, type SessionInput, type Status, Voice } from './rpc'
+import { talkArgs } from './terms'
+import { MODEL_TOOL_NAMES, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE, fieldsOf } from './voice'
 
 /** Super Voice's entry in OpenCode's config, which names its tools. */
 const SERVER = 'super-voice'
 /** The tools the model calls, as OpenCode names them. */
-const VOICE_TOOLS: ReadonlySet<string> = new Set([`${SERVER}_speak`, `${SERVER}_listen`])
+const VOICE_TOOLS: ReadonlySet<string> = new Set(MODEL_TOOL_NAMES.map(tool => `${SERVER}_${tool}`))
 /** The tools this plugin calls itself, kept from the model. */
-const PLUGIN_TOOLS = ['stop', 'status', 'announce', 'session', 'turn'].map(tool => `${SERVER}_${tool}`)
-/** What the model is told beside a spoken prompt. */
-const SPOKEN_NOTE =
-  'The user said this aloud, through Super Voice. Your reply will be read aloud to them, ' +
-  'and the microphone opens after it so they can answer by voice: keep the reply short ' +
-  'and plain to listen to, end with any question you have, and do not call `listen` ' +
-  'to hear their answer.'
-/** Why the model's call to a Super Voice tool is refused in a typed turn. */
-const NOT_SPOKEN_TO =
-  'The user typed this prompt, so answer in writing. Super Voice speaks and listens only ' +
-  'while the user is talking to you by voice, which they start with Talk.'
+const PLUGIN_TOOLS = PLUGIN_TOOL_NAMES.map(tool => `${SERVER}_${tool}`)
 
 /** Whether a stored user message was sent by Talk. */
 function isSpoken(metadata: unknown): boolean {
   const voice = (metadata as { superVoice?: { spoken?: unknown } } | undefined)?.superVoice
   return voice?.spoken === true
-}
-
-/** Whether Super Voice's answer to a prompt's `turn` says it was spoken. */
-function saysSpoken(text: string | undefined): boolean {
-  try {
-    return (JSON.parse(text ?? '{}') as { spoken?: unknown }).spoken === true
-  } catch {
-    return false
-  }
 }
 
 /** The text of a stored message, its text parts joined. */
@@ -98,39 +80,36 @@ export default Plugin.define({
     const call = (tool: string, sessionID: string, args: Record<string, unknown> = {}, signal?: AbortSignal) =>
       voice.call(tool, { ...args, session: session(sessionID) }, signal)
 
-    /** The last prompt and reply of a session, for what Talk listens for. */
-    const lastExchange = async (sessionID: string) => {
+    /** The session's turns, oldest first: the prompt that started each, and
+     * its reply, what the assistant last wrote in it. */
+    const turnsOf = async (sessionID: string) => {
       const messages = ((await ctx.session.context({ sessionID }).catch(() => [])) ?? []) as unknown[]
-      const last = (role: string) => textOf([...messages].reverse().find(message => roleOf(message) === role) ?? {})
-      return { prompt: last('user'), reply: last('assistant') }
-    }
-
-    /** The session's replies, the last one first: what the assistant last
-     * wrote in each turn. */
-    const replies = async (sessionID: string) => {
-      const messages = ((await ctx.session.context({ sessionID }).catch(() => [])) ?? []) as unknown[]
-      const found: string[] = []
-      let reply = ''
+      const turns: Array<{ prompt: string; reply: string }> = []
       for (const message of messages) {
         const text = textOf(message).trim()
-        if (!text) {
+        const role = roleOf(message)
+        if (!text || (role !== 'user' && role !== 'assistant')) {
           continue
         }
-        const role = roleOf(message)
-        if (role === 'user') {
-          if (reply) {
-            found.push(reply)
-          }
-          reply = ''
-        } else if (role === 'assistant') {
-          reply = text
+        if (role === 'user' || turns.length === 0) {
+          turns.push({ prompt: role === 'user' ? text : '', reply: '' })
+        }
+        if (role === 'assistant') {
+          turns[turns.length - 1].reply = text
         }
       }
-      if (reply) {
-        found.push(reply)
-      }
-      return found.reverse()
+      return turns
     }
+    /** The last turn's prompt and reply, for what Talk listens for and the
+     * reply to read. */
+    const lastExchange = async (sessionID: string) =>
+      (await turnsOf(sessionID)).at(-1) ?? { prompt: '', reply: '' }
+    /** The session's replies, the last one first. */
+    const replies = async (sessionID: string) =>
+      (await turnsOf(sessionID))
+        .map(turn => turn.reply)
+        .filter(Boolean)
+        .reverse()
 
     const hidden = await ctx.tool.transform(editor => {
       for (const tool of PLUGIN_TOOLS) {
@@ -147,7 +126,7 @@ export default Plugin.define({
         text: event.prompt.text,
         ...(isTalk ? { spoken: true } : {}),
       })
-      spoken.set(event.sessionID, isTalk || saysSpoken(answer?.isError ? undefined : answer?.text))
+      spoken.set(event.sessionID, isTalk || fieldsOf(answer).spoken === true)
     })
 
     const told = await ctx.session.hook('context', event => {
@@ -171,22 +150,13 @@ export default Plugin.define({
 
     const rpc = await ctx.rpc.register(Voice, {
       talk: async (input, context) => {
-        const { sessionID } = input as { sessionID: string }
+        const { sessionID } = input as SessionInput
         const { prompt, reply } = await lastExchange(sessionID)
-        const vocabulary = pickTerms(`${reply}\n${prompt}`)
-        const heard = await call(
-          'listen',
-          sessionID,
-          { asked: true, ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}) },
-          context.signal,
-        )
-        if (heard === undefined) {
-          return { error: 'Super Voice is not reachable.' }
-        }
+        const heard = await call('listen', sessionID, talkArgs(prompt, reply), context.signal)
         return heard.isError ? { error: heard.text } : { text: heard.text }
       },
       read: async input => {
-        const { sessionID, back } = input as { sessionID: string; back: number }
+        const { sessionID, back } = input as ReadInput
         const found = await replies(sessionID)
         const reply = found[back]
         if (reply === undefined) {
@@ -194,32 +164,23 @@ export default Plugin.define({
         }
         // The user asked for it: a typed turn does not refuse it.
         const spoke = await call('speak', sessionID, { text: reply, asked: true })
-        if (spoke === undefined) {
-          return { error: 'Super Voice is not reachable.' }
-        }
         return spoke.isError ? { error: spoke.text } : {}
       },
       stop: async input => {
-        await call('stop', (input as { sessionID: string }).sessionID)
+        await call('stop', (input as SessionInput).sessionID)
         return {}
       },
       status: async input => {
-        const { sessionID } = input as { sessionID: string }
+        const { sessionID } = input as SessionInput
         const answer = await call('status', sessionID)
-        const status = (() => {
-          try {
-            return JSON.parse(answer?.text ?? '{}') as { speaking?: unknown; listening?: unknown; talk?: unknown }
-          } catch {
-            return {}
-          }
-        })()
-        return {
+        const status = fieldsOf(answer)
+        const answered: Status = {
           speaking: status.speaking === true,
-          listening: status.listening === true,
           conversation: spoken.get(sessionID) === true,
           // Shown until Super Voice says the user turned it off.
           talk: status.talk !== false,
         }
+        return answered
       },
     })
 
@@ -229,7 +190,7 @@ export default Plugin.define({
       }
       const { reply } = await lastExchange(event.sessionID)
       const answer = await call('turn', event.sessionID, { event: 'reply', text: reply })
-      if (answer && !answer.isError && answer.text.includes('"read":true')) {
+      if (fieldsOf(answer).read === true) {
         await rpc.events.emit('replied', { sessionID: event.sessionID })
       }
     })

@@ -28,14 +28,10 @@ pub(crate) fn command() -> clap::Command {
              is connected on the Assistants page of the app. It always answers, and lets the \
              assistant go on when Super Voice can't be reached.",
         )
-        .arg(
-            Arg::new("assistant")
-                .help("The assistant")
-                .required(true)
-                .value_parser(clap::builder::PossibleValuesParser::new(
-                    AssistantId::WIRE_VARIANTS.iter().copied(),
-                )),
-        )
+        // Only the Antigravity CLI's hooks can only run a command.
+        .arg(crate::assistant_arg(&[
+            AssistantId::Antigravity.as_wire_str()
+        ]))
         .arg(
             Arg::new("event")
                 .help("The hook's event")
@@ -52,13 +48,9 @@ pub(crate) async fn run(socket_path: PathBuf, assistant: AssistantId, event: &st
     let mut input = String::new();
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
     let hook: Value = serde_json::from_str(&input).unwrap_or(Value::Null);
-    let answer = if assistant == AssistantId::Antigravity {
-        match crate::assistant_access(socket_path, assistant).await {
-            Ok((key, address)) => antigravity(&address, &key, event, &hook).await,
-            Err(_) => None,
-        }
-    } else {
-        None
+    let answer = match crate::assistant_access(socket_path, assistant).await {
+        Some((key, address)) => antigravity(&address, &key, event, &hook).await,
+        None => None,
     };
     println!("{}", answer.unwrap_or_else(|| going_on(event)));
 }
@@ -86,7 +78,13 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
     let call = |tool: &str, mut arguments: Value| {
         arguments["session"] = session.clone();
         let tool = tool.to_string();
-        async move { call_tool(address, key, &tool, arguments).await.ok() }
+        // A refused call is answered as if Super Voice could not be reached.
+        async move {
+            call_tool(address, key, &tool, arguments)
+                .await
+                .ok()
+                .filter(|answer| !answer.is_error)
+        }
     };
     match event {
         "session-start" => {

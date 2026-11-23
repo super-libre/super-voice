@@ -245,17 +245,23 @@ pub const OPENCODE_TIMEOUT_MS: i32 = 600_000;
 /// on.
 const OPENCODE_STALE_KEYS: [&str; 4] = ["command", "environment", "enabled", "disabled"];
 
-/// `OpenCode`'s global config file: the first there is of `opencode.json`,
-/// `opencode.jsonc`, `.opencode/opencode.json` and `.opencode/opencode.jsonc`
-/// in `$XDG_CONFIG_HOME/opencode`, or in `~/.config/opencode` when it is not
-/// set, on macOS too. `opencode.json` when there is none.
+/// `OpenCode`'s global config folder: `$XDG_CONFIG_HOME/opencode`, or
+/// `~/.config/opencode` when it is not set, on macOS too.
 #[must_use]
-pub fn opencode_file() -> Option<PathBuf> {
+pub fn opencode_dir() -> Option<PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|config| !config.is_empty())
         .map(PathBuf::from)
         .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
-    let dir = config.join("opencode");
+    Some(config.join("opencode"))
+}
+
+/// `OpenCode`'s global config file: the first there is of `opencode.json`,
+/// `opencode.jsonc`, `.opencode/opencode.json` and `.opencode/opencode.jsonc`
+/// in [`opencode_dir`]. `opencode.json` when there is none.
+#[must_use]
+pub fn opencode_file() -> Option<PathBuf> {
+    let dir = opencode_dir()?;
     let candidates = [
         dir.join("opencode.json"),
         dir.join("opencode.jsonc"),
@@ -525,10 +531,6 @@ mod jsonc {
 const ANTIGRAVITY_STALE_KEYS: [&str; 7] =
     ["url", "httpUrl", "type", "command", "args", "cwd", "env"];
 
-/// The tools Super Voice's plugin for the Antigravity CLI calls itself,
-/// kept from its model with `disabledTools`.
-const ANTIGRAVITY_PLUGIN_TOOLS: [&str; 5] = ["stop", "status", "announce", "session", "turn"];
-
 /// How long a tool call may run: `listen` waits for the user, often longer
 /// than the default 3 minutes.
 const ANTIGRAVITY_TIMEOUT_SECONDS: u64 = 600;
@@ -565,7 +567,7 @@ pub fn antigravity_with_super_voice(text: &str, url: &str, key: &str) -> Result<
     // The tools Super Voice's plugin calls itself, never the model.
     entry.insert(
         "disabledTools".to_string(),
-        ANTIGRAVITY_PLUGIN_TOOLS.into_iter().collect(),
+        super::PLUGIN_TOOLS.into_iter().collect(),
     );
     json_text(root, text)
 }

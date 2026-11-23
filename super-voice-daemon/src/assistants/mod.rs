@@ -11,7 +11,7 @@
 //! 1. Claude Code: the daemon runs `claude plugin install`, and the plugin
 //!    gets its key from `voice assistant-header claude-code`.
 //! 2. Codex, `OpenCode` and the Antigravity CLI: an entry in their config files
-//!    ([`super_voice_shared::assistant_configs`]).
+//!    ([`configs`]).
 //!
 //! Disconnecting takes the entry out and revokes the key, which also cancels
 //! the key's calls in flight ([`calls`]). A key made by hand, for any other
@@ -21,6 +21,8 @@
 //! `docs/protocol/endpoints/v1/assistants.md`.
 
 pub mod calls;
+pub mod configs;
+pub mod dictation;
 pub mod sessions;
 
 use log::{info, warn};
@@ -28,7 +30,6 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use super_voice_shared::SUPER_VOICE;
-use super_voice_shared::assistant_configs;
 use super_voice_shared::models::assistants::{AssistantId, AssistantState};
 
 /// Where an MCP client reaches Super Voice on the daemon's TCP listener.
@@ -36,6 +37,9 @@ pub const MCP_PATH: &str = "/v1/mcp";
 
 /// What a key made for an assistant may do: speak, and hear the user.
 pub const KEY_SCOPES: [&str; 2] = ["speak", "transcribe"];
+
+/// The MCP tools an assistant's plugin calls itself, kept from its model.
+pub const PLUGIN_TOOLS: [&str; 5] = ["stop", "status", "announce", "session", "turn"];
 
 /// The marketplace Claude Code installs Super Voice's plugin from, unless
 /// [`CLAUDE_MARKETPLACE_VAR`] names another.
@@ -66,7 +70,7 @@ const CODEX_MARKETPLACE: &str = "super-voice";
 /// Super Voice's plugin for `OpenCode`, by each file's name in its folder:
 /// the server part, which holds the connection to Super Voice, and the TUI
 /// part, Talk.
-const OPENCODE_PLUGIN_FILES: [(&str, &str); 5] = [
+const OPENCODE_PLUGIN_FILES: [(&str, &str); 6] = [
     (
         "server.ts",
         include_str!("../../../opencode-plugin/server.ts"),
@@ -77,6 +81,10 @@ const OPENCODE_PLUGIN_FILES: [(&str, &str); 5] = [
     (
         "terms.ts",
         include_str!("../../../opencode-plugin/terms.ts"),
+    ),
+    (
+        "voice.ts",
+        include_str!("../../../opencode-plugin/voice.ts"),
     ),
 ];
 
@@ -143,7 +151,8 @@ pub enum Error {
 }
 
 /// The daemon's hold on the assistants: one change at a time, the tool calls
-/// in flight on `/v1/mcp`, and the sessions they come from.
+/// in flight on `/v1/mcp`, the sessions they come from, and what the user
+/// last dictated, which tells a prompt they said from one they typed.
 #[derive(Default)]
 pub struct Assistants {
     /// Held across a whole connect or disconnect, so two at once cannot each
@@ -153,6 +162,8 @@ pub struct Assistants {
     pub calls: std::sync::Arc<calls::Calls>,
     /// The sessions the calls come from.
     pub sessions: std::sync::Arc<sessions::Sessions>,
+    /// What the user last dictated into a window.
+    pub dictation: dictation::Dictation,
 }
 
 impl Assistants {
@@ -274,16 +285,8 @@ fn claude_dir() -> Option<PathBuf> {
 fn config_dir(id: AssistantId) -> Option<PathBuf> {
     match id {
         AssistantId::ClaudeCode => claude_dir(),
-        AssistantId::Codex => assistant_configs::codex_file()?
-            .parent()
-            .map(Path::to_path_buf),
-        AssistantId::OpenCode => {
-            let config = std::env::var_os("XDG_CONFIG_HOME")
-                .filter(|config| !config.is_empty())
-                .map(PathBuf::from)
-                .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
-            Some(config.join("opencode"))
-        }
+        AssistantId::Codex => configs::codex_file()?.parent().map(Path::to_path_buf),
+        AssistantId::OpenCode => configs::opencode_dir(),
         // Its own: `~/.gemini` is the Gemini CLI's too, and the config's
         // folder the Antigravity App's.
         AssistantId::Antigravity => {
@@ -317,25 +320,15 @@ fn claude_has_plugin(text: &str) -> bool {
 /// settings the plugin, the others their entry.
 #[must_use]
 pub fn has_entry(id: AssistantId) -> bool {
-    let (file, has): (Option<PathBuf>, fn(&str) -> bool) = match id {
-        AssistantId::ClaudeCode => (
-            claude_dir().map(|dir| dir.join("settings.json")),
-            claude_has_plugin,
-        ),
-        AssistantId::Codex => (
-            assistant_configs::codex_file(),
-            assistant_configs::codex_has_super_voice,
-        ),
-        AssistantId::OpenCode => (
-            assistant_configs::opencode_file(),
-            assistant_configs::opencode_has_super_voice,
-        ),
-        AssistantId::Antigravity => (
-            assistant_configs::antigravity_file(),
-            assistant_configs::antigravity_has_super_voice,
-        ),
+    let has: fn(&str) -> bool = match id {
+        AssistantId::ClaudeCode => claude_has_plugin,
+        AssistantId::Codex => configs::codex_has_super_voice,
+        AssistantId::OpenCode => configs::opencode_has_super_voice,
+        AssistantId::Antigravity => configs::antigravity_has_super_voice,
     };
-    file.and_then(|file| assistant_configs::read(&file).ok())
+    config_file(id)
+        .ok()
+        .and_then(|file| configs::read(&file).ok())
         .is_some_and(|text| has(&text))
 }
 
@@ -363,21 +356,18 @@ pub fn write_entry(id: AssistantId, url: &str, key: &str) -> Result<(), Error> {
     let changed = match id {
         AssistantId::ClaudeCode => return Ok(()),
         AssistantId::Codex => {
-            let helper =
-                assistant_configs::codex_headers_helper(&crate::shortcuts::voice_program());
-            assistant_configs::update(&config_file(id)?, |text| {
-                assistant_configs::codex_with_super_voice(text, url, &helper)
+            let helper = configs::codex_headers_helper(&crate::shortcuts::voice_program());
+            configs::update(&config_file(id)?, |text| {
+                configs::codex_with_super_voice(text, url, &helper)
             })
         }
         // The key is in the file itself, so only its owner may read it.
-        AssistantId::OpenCode => assistant_configs::update_holding_key(&config_file(id)?, |text| {
-            assistant_configs::opencode_with_super_voice(text, url, key)
+        AssistantId::OpenCode => configs::update_holding_key(&config_file(id)?, |text| {
+            configs::opencode_with_super_voice(text, url, key)
         }),
-        AssistantId::Antigravity => {
-            assistant_configs::update_holding_key(&config_file(id)?, |text| {
-                assistant_configs::antigravity_with_super_voice(text, url, key)
-            })
-        }
+        AssistantId::Antigravity => configs::update_holding_key(&config_file(id)?, |text| {
+            configs::antigravity_with_super_voice(text, url, key)
+        }),
     };
     match changed {
         Ok(true) => info!("Wrote Super Voice into {}'s config", id.display_name()),
@@ -394,13 +384,13 @@ pub fn write_entry(id: AssistantId, url: &str, key: &str) -> Result<(), Error> {
 ///
 /// [`Error::Config`] when the file cannot be read, parsed or written.
 pub fn remove_entry(id: AssistantId) -> Result<(), Error> {
-    let without: fn(&str) -> Result<String, assistant_configs::Error> = match id {
+    let without: fn(&str) -> Result<String, configs::Error> = match id {
         AssistantId::ClaudeCode => return Ok(()),
-        AssistantId::Codex => assistant_configs::codex_without_super_voice,
-        AssistantId::OpenCode => assistant_configs::opencode_without_super_voice,
-        AssistantId::Antigravity => assistant_configs::antigravity_without_super_voice,
+        AssistantId::Codex => configs::codex_without_super_voice,
+        AssistantId::OpenCode => configs::opencode_without_super_voice,
+        AssistantId::Antigravity => configs::antigravity_without_super_voice,
     };
-    match assistant_configs::update(&config_file(id)?, without) {
+    match configs::update(&config_file(id)?, without) {
         Ok(true) => info!("Took Super Voice out of {}'s config", id.display_name()),
         Ok(false) => {}
         Err(e) => return Err(Error::Config(e.to_string())),
@@ -408,13 +398,14 @@ pub fn remove_entry(id: AssistantId) -> Result<(), Error> {
     Ok(())
 }
 
-/// The config file of `id`.
+/// The config file of `id`: for Claude Code, its user settings, which list
+/// the plugin.
 fn config_file(id: AssistantId) -> Result<PathBuf, Error> {
     let file = match id {
         AssistantId::ClaudeCode => claude_dir().map(|dir| dir.join("settings.json")),
-        AssistantId::Codex => assistant_configs::codex_file(),
-        AssistantId::OpenCode => assistant_configs::opencode_file(),
-        AssistantId::Antigravity => assistant_configs::antigravity_file(),
+        AssistantId::Codex => configs::codex_file(),
+        AssistantId::OpenCode => configs::opencode_file(),
+        AssistantId::Antigravity => configs::antigravity_file(),
     };
     file.ok_or_else(|| Error::Config("there is no home directory".to_string()))
 }
@@ -427,6 +418,50 @@ fn claude_marketplace(set: Option<String>) -> String {
         .unwrap_or_else(|| CLAUDE_MARKETPLACE.to_string())
 }
 
+/// Install Super Voice's plugin in assistant `id`, set to reach Super Voice
+/// at `address`. `program` is the assistant's own, when the daemon found it:
+/// Claude Code's, Codex's and agy's plugins are installed with it, so one of
+/// those found only by its config gets no plugin, and Claude Code, whose
+/// plugin is its entry, is not found.
+///
+/// # Errors
+///
+/// [`Error::NotFound`] for Claude Code without its program, and
+/// [`Error::Plugin`] when the files cannot be written, or a command fails or
+/// runs too long.
+pub async fn install_plugin(
+    id: AssistantId,
+    program: Option<&Path>,
+    address: &str,
+) -> Result<(), Error> {
+    match (id, program) {
+        (AssistantId::ClaudeCode, Some(claude)) => install_claude_plugin(claude, address).await,
+        (AssistantId::ClaudeCode, None) => Err(Error::NotFound),
+        (AssistantId::Codex, Some(codex)) => install_codex_plugin(codex).await,
+        (AssistantId::OpenCode, _) => install_opencode_plugin().await,
+        (AssistantId::Antigravity, Some(agy)) => install_antigravity_plugin(agy).await,
+        (AssistantId::Codex | AssistantId::Antigravity, None) => Ok(()),
+    }
+}
+
+/// Uninstall Super Voice's plugin from assistant `id`, with `program`, its
+/// own, when the daemon found it. Without it there is no plugin to
+/// uninstall, but for `OpenCode`'s, which is only files.
+///
+/// # Errors
+///
+/// [`Error::Plugin`] when a command fails or runs too long, or `OpenCode`'s
+/// plugin cannot be deleted.
+pub async fn uninstall_plugin(id: AssistantId, program: Option<&Path>) -> Result<(), Error> {
+    match (id, program) {
+        (AssistantId::ClaudeCode, Some(claude)) => uninstall_claude_plugin(claude).await,
+        (AssistantId::Codex, Some(codex)) => uninstall_codex_plugin(codex).await,
+        (AssistantId::OpenCode, _) => uninstall_opencode_plugin().await,
+        (AssistantId::Antigravity, Some(agy)) => uninstall_antigravity_plugin(agy).await,
+        (_, None) => Ok(()),
+    }
+}
+
 /// Install Super Voice's plugin in Claude Code, with `claude`, the program
 /// found: add its marketplace ([`claude_marketplace`]), then install it, for
 /// the user, set to reach Super Voice at `address`. Either already done is
@@ -435,7 +470,7 @@ fn claude_marketplace(set: Option<String>) -> String {
 /// # Errors
 ///
 /// [`Error::Plugin`] when a command fails or runs too long.
-pub async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), Error> {
+async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), Error> {
     let var = SUPER_VOICE.env(CLAUDE_MARKETPLACE_VAR);
     let marketplace = claude_marketplace(std::env::var(&var).ok());
     if marketplace != CLAUDE_MARKETPLACE {
@@ -477,7 +512,7 @@ pub async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), E
 /// # Errors
 ///
 /// [`Error::Plugin`] when the command fails or runs too long.
-pub async fn uninstall_claude_plugin(claude: &Path) -> Result<(), Error> {
+async fn uninstall_claude_plugin(claude: &Path) -> Result<(), Error> {
     run_plugin_command(
         claude,
         &["plugin", "uninstall", CLAUDE_PLUGIN, "--scope", "user"],
@@ -489,11 +524,7 @@ pub async fn uninstall_claude_plugin(claude: &Path) -> Result<(), Error> {
 /// Where `OpenCode` finds Super Voice's plugin: `plugins/super-voice` in its
 /// global config folder, which it loads plugins from by itself.
 fn opencode_plugin_dir() -> Option<PathBuf> {
-    let config = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|config| !config.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
-    Some(config.join("opencode").join("plugins").join("super-voice"))
+    configs::opencode_dir().map(|dir| dir.join("plugins").join("super-voice"))
 }
 
 /// Install Super Voice's plugin in `OpenCode`: write its files to its
@@ -504,11 +535,10 @@ fn opencode_plugin_dir() -> Option<PathBuf> {
 /// # Errors
 ///
 /// [`Error::Plugin`] when the files cannot be written.
-pub fn install_opencode_plugin() -> Result<(), Error> {
+async fn install_opencode_plugin() -> Result<(), Error> {
     let dir = opencode_plugin_dir()
         .ok_or_else(|| Error::Plugin("no home folder for OpenCode's plugin".to_string()))?;
-    write_plugin_files(&dir, &OPENCODE_PLUGIN_FILES)
-        .map_err(|e| Error::Plugin(format!("could not write OpenCode's plugin: {e}")))?;
+    write_plugin(&dir, &OPENCODE_PLUGIN_FILES, "OpenCode's plugin").await?;
     info!("Wrote Super Voice's plugin into {}", dir.display());
     Ok(())
 }
@@ -519,20 +549,15 @@ pub fn install_opencode_plugin() -> Result<(), Error> {
 /// # Errors
 ///
 /// [`Error::Plugin`] when the folder is there and cannot be deleted.
-pub fn uninstall_opencode_plugin() -> Result<(), Error> {
+async fn uninstall_opencode_plugin() -> Result<(), Error> {
     let Some(dir) = opencode_plugin_dir() else {
         return Ok(());
     };
-    match std::fs::remove_dir_all(&dir) {
-        Ok(()) => {
-            info!("Deleted Super Voice's plugin from {}", dir.display());
-            Ok(())
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(Error::Plugin(format!(
-            "could not delete OpenCode's plugin: {e}"
-        ))),
-    }
+    remove_plugin_dir(&dir)
+        .await
+        .map_err(|e| Error::Plugin(format!("could not delete OpenCode's plugin: {e}")))?;
+    info!("Deleted Super Voice's plugin from {}", dir.display());
+    Ok(())
 }
 
 /// Where Super Voice writes its plugin for the Antigravity CLI, which `agy
@@ -552,42 +577,20 @@ fn antigravity_plugin_dir() -> PathBuf {
 ///
 /// [`Error::Plugin`] when the files cannot be written, or the command fails
 /// or runs too long.
-pub async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
+async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
     let dir = antigravity_plugin_dir();
-    let voice = assistant_configs::shell_quote(&hook_program());
-    let files: Vec<(&'static str, String)> = ANTIGRAVITY_PLUGIN_FILES
+    let voice = configs::shell_quote(&crate::shortcuts::voice_program());
+    let files: Vec<(&str, String)> = ANTIGRAVITY_PLUGIN_FILES
         .iter()
         .map(|(name, text)| (*name, with_voice(text, &voice)))
         .collect();
-    let written = dir.clone();
-    tokio::task::spawn_blocking(move || {
-        let files: Vec<(&str, &str)> = files
-            .iter()
-            .map(|(name, text)| (*name, text.as_str()))
-            .collect();
-        write_plugin_files(&written, &files)
-    })
-    .await
-    .map_err(|e| Error::Plugin(e.to_string()))?
-    .map_err(|e| Error::Plugin(format!("could not write the Antigravity CLI's plugin: {e}")))?;
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(name, text)| (*name, text.as_str()))
+        .collect();
+    write_plugin(&dir, &files, "the Antigravity CLI's plugin").await?;
     let source = dir.to_string_lossy();
     run_plugin_command(agy, &["plugin", "install", &source], &[]).await
-}
-
-/// The `voice` an assistant's hook runs: the one beside the daemon, under
-/// either name, since a build tree names it as its crate does, or the one on
-/// `PATH`.
-fn hook_program() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| {
-            let dir = exe.parent()?.to_path_buf();
-            ["voice", "super-voice-cli"]
-                .into_iter()
-                .map(|name| dir.join(name))
-                .find(|voice| voice.is_file())
-        })
-        .map_or_else(|| "voice".to_string(), |voice| voice.display().to_string())
 }
 
 /// Uninstall Super Voice's plugin from the Antigravity CLI, and delete the
@@ -596,15 +599,15 @@ fn hook_program() -> String {
 /// # Errors
 ///
 /// [`Error::Plugin`] when the command fails or runs too long.
-pub async fn uninstall_antigravity_plugin(agy: &Path) -> Result<(), Error> {
+async fn uninstall_antigravity_plugin(agy: &Path) -> Result<(), Error> {
     run_plugin_command(
         agy,
         &["plugin", "uninstall", ANTIGRAVITY_PLUGIN],
         &["not installed", "not found"],
     )
     .await?;
-    let dir = antigravity_plugin_dir();
-    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+    // The copy it was installed from; what is left of it does no harm.
+    let _ = remove_plugin_dir(&antigravity_plugin_dir()).await;
     Ok(())
 }
 
@@ -632,6 +635,37 @@ fn write_plugin_files(dir: &Path, files: &[(&str, &str)]) -> std::io::Result<()>
         std::fs::write(&path, text)?;
     }
     Ok(())
+}
+
+/// Write `files` into `dir`, as [`write_plugin_files`] does, on a thread
+/// that may block. `what` names the plugin in the error.
+async fn write_plugin(dir: &Path, files: &[(&str, &str)], what: &str) -> Result<(), Error> {
+    let dir = dir.to_path_buf();
+    let files: Vec<(String, String)> = files
+        .iter()
+        .map(|(place, text)| ((*place).to_string(), (*text).to_string()))
+        .collect();
+    tokio::task::spawn_blocking(move || {
+        let files: Vec<(&str, &str)> = files
+            .iter()
+            .map(|(place, text)| (place.as_str(), text.as_str()))
+            .collect();
+        write_plugin_files(&dir, &files)
+    })
+    .await
+    .map_err(|e| Error::Plugin(e.to_string()))?
+    .map_err(|e| Error::Plugin(format!("could not write {what}: {e}")))
+}
+
+/// Delete `dir`, a plugin's folder, on a thread that may block. Not there is
+/// fine.
+async fn remove_plugin_dir(dir: &Path) -> std::io::Result<()> {
+    let dir = dir.to_path_buf();
+    match tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await {
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(removed) => removed,
+        Err(e) => Err(std::io::Error::other(e)),
+    }
 }
 
 /// A plugin file, `text`, with `{voice}` made `voice` in each of its JSON
@@ -683,13 +717,9 @@ fn with_version(text: &str, version: &str) -> String {
 ///
 /// [`Error::Plugin`] when the files cannot be written, or a command fails or
 /// runs too long.
-pub async fn install_codex_plugin(codex: &Path) -> Result<(), Error> {
+async fn install_codex_plugin(codex: &Path) -> Result<(), Error> {
     let dir = codex_marketplace_dir();
-    let written = dir.clone();
-    tokio::task::spawn_blocking(move || write_plugin_files(&written, &CODEX_MARKETPLACE_FILES))
-        .await
-        .map_err(|e| Error::Plugin(e.to_string()))?
-        .map_err(|e| Error::Plugin(format!("could not write Codex's plugin: {e}")))?;
+    write_plugin(&dir, &CODEX_MARKETPLACE_FILES, "Codex's plugin").await?;
     let source = dir.to_string_lossy();
     run_plugin_command(
         codex,
@@ -713,7 +743,7 @@ pub async fn install_codex_plugin(codex: &Path) -> Result<(), Error> {
 /// # Errors
 ///
 /// [`Error::Plugin`] when a command fails or runs too long.
-pub async fn uninstall_codex_plugin(codex: &Path) -> Result<(), Error> {
+async fn uninstall_codex_plugin(codex: &Path) -> Result<(), Error> {
     run_plugin_command(
         codex,
         &["plugin", "remove", CODEX_PLUGIN],
@@ -726,8 +756,8 @@ pub async fn uninstall_codex_plugin(codex: &Path) -> Result<(), Error> {
         &["not found", "no marketplace", "not configured"],
     )
     .await?;
-    let dir = codex_marketplace_dir();
-    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+    // The marketplace's files; what is left of them does no harm.
+    let _ = remove_plugin_dir(&codex_marketplace_dir()).await;
     Ok(())
 }
 
@@ -933,7 +963,7 @@ mod tests {
 
         // A `voice` whose path holds a quote and a backslash: the hooks stay
         // JSON, and each command is the quoted path.
-        let voice = assistant_configs::shell_quote(r#"/home/o'neil/a "b"\c/voice"#);
+        let voice = configs::shell_quote(r#"/home/o'neil/a "b"\c/voice"#);
         let filled: serde_json::Value =
             serde_json::from_str(&with_voice(ANTIGRAVITY_PLUGIN_FILES[1].1, &voice))
                 .expect("the hooks are still JSON");

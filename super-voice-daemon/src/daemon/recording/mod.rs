@@ -489,7 +489,7 @@ impl SuperSTTDaemon {
             info!("Writing transcription via {}", typer.write_method_name());
             typer.process_final_text(&transcription_result).await;
             // An assistant's prompt that holds it was spoken.
-            self.assistants.sessions.dictated(&transcription_result);
+            self.assistants.dictation.remember(&transcription_result);
         }
 
         // Phase 6: finalize the cycle.

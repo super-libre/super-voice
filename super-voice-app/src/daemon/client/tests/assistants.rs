@@ -13,12 +13,21 @@ use crate::daemon::client::v1::assistants::{
 /// What the daemon answers the list's calls with: Claude Code in `claude`'s
 /// state, and one key made by hand.
 fn list(claude: &str, announced: bool) -> serde_json::Value {
+    let assistant = |id: &str, state: &str, announce_when_needed: bool| {
+        json!({
+            "id": id,
+            "state": state,
+            "announce_when_needed": announce_when_needed,
+            "conversation_context": true,
+            "show_talk": true,
+        })
+    };
     json!({
         "assistants": [
-            { "id": "claude-code", "state": claude, "announce_when_needed": announced },
-            { "id": "codex", "state": "found", "announce_when_needed": true },
-            { "id": "opencode", "state": "not_found", "announce_when_needed": true },
-            { "id": "antigravity", "state": "not_found", "announce_when_needed": true },
+            assistant("claude-code", claude, announced),
+            assistant("codex", "found", true),
+            assistant("opencode", "not_found", true),
+            assistant("antigravity", "not_found", true),
         ],
         "custom_keys": [
             { "id": "0f3c9a1e", "name": "My editor", "created_at": "2026-11-19T20:15:00Z" },
