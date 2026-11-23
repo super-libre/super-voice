@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { expect, test } from 'claude-code/testing'
 
-import { MAX_TERMS, pickTerms } from './terms'
+import { MAX_TERMS, pickTerms, talkArgs } from './terms'
 
 test('a reply gives the names and terms the user may say back', () => {
   const reply = [
@@ -34,4 +34,12 @@ test('a term comes once, and the list stops at its limit', () => {
   expect(pickTerms('`agy` and agyCli, then `AGY` and agyCli')).toEqual(['agy', 'agyCli'])
   const many = Array.from({ length: MAX_TERMS + 10 }, (_, n) => `fieldName${n}`).join(' ')
   expect(pickTerms(many).length).toBe(MAX_TERMS)
+})
+
+test("Talk's listen is the user's asking, with the conversation's terms when it has any", () => {
+  expect(talkArgs('', '')).toEqual({ asked: true })
+  expect(talkArgs('Rename agyCli.', 'Renamed it to agyHooks.')).toEqual({
+    asked: true,
+    context: { vocabulary: ['agyHooks', 'agyCli'] },
+  })
 })

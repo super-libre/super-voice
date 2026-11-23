@@ -12,7 +12,7 @@ import { Plugin } from '@opencode/plugin'
 
 import { SuperVoice, type Target } from './mcp'
 import { Voice } from './rpc'
-import { pickTerms } from './terms'
+import { talkArgs } from './terms'
 import { MODEL_TOOL_NAMES, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE, fieldsOf } from './voice'
 
 /** Super Voice's entry in OpenCode's config, which names its tools. */
@@ -155,13 +155,7 @@ export default Plugin.define({
       talk: async (input, context) => {
         const { sessionID } = input as { sessionID: string }
         const { prompt, reply } = await lastExchange(sessionID)
-        const vocabulary = pickTerms(`${reply}\n${prompt}`)
-        const heard = await call(
-          'listen',
-          sessionID,
-          { asked: true, ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}) },
-          context.signal,
-        )
+        const heard = await call('listen', sessionID, talkArgs(prompt, reply), context.signal)
         return heard.isError ? { error: heard.text } : { text: heard.text }
       },
       read: async input => {

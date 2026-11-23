@@ -14,7 +14,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { SuperVoiceTalk } from '../types'
-import { pickTerms } from './terms'
+import { talkArgs } from './terms'
 import { type Answer, NO_SPEECH, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE, fieldsOf } from './voice'
 
 const speaking = atom({ plugin: 'super-voice', key: 'isSpeaking' } as const, false)
@@ -360,14 +360,7 @@ async function startTalk($: EngineInterface) {
 
 async function recordAndFill($: EngineInterface) {
   let words = ''
-  // `listen` without a question: it records until the user stops talking.
-  // The names and terms of the conversation help Super Voice hear them.
-  const vocabulary = pickTerms(`${lastReply}\n${lastPrompt}`)
-  // Talk is the user's own asking: a typed turn does not refuse it.
-  const heard = await call($, 'listen', {
-    asked: true,
-    ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}),
-  })
+  const heard = await call($, 'listen', talkArgs(lastPrompt, lastReply))
   if (heard.isError) {
     $.ui.toast(heard.text || 'Could not record.')
   } else {
