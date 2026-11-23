@@ -147,8 +147,9 @@ impl SuperSTTDaemon {
     ///
     /// # Errors
     ///
-    /// See [`Error`]. A key made for this connect is revoked again when the
-    /// rest fails.
+    /// See [`Error`]. When the rest fails, a key made for this connect is
+    /// revoked again, and the entry naming it taken back out: an entry left
+    /// behind would have the assistant ask for a key it no longer has.
     pub async fn connect_assistant(
         &self,
         auth: &Auth,
@@ -176,6 +177,7 @@ impl SuperSTTDaemon {
         };
         if let Err(e) = self.write_assistant_entry(id, &secret).await {
             if minted {
+                self.remove_assistant_entry(id).await;
                 self.revoke_keys(auth, &[key_id]).await;
             }
             return Err(e);
@@ -212,6 +214,23 @@ impl SuperSTTDaemon {
                 assistants::install_antigravity_plugin(&agy).await
             }
             _ => Ok(()),
+        }
+    }
+
+    /// Take the entry a connect that failed wrote back out of `id`'s config.
+    /// Claude Code's entry is its plugin, which a failed install left out.
+    async fn remove_assistant_entry(&self, id: AssistantId) {
+        if id == AssistantId::ClaudeCode {
+            return;
+        }
+        let removed = tokio::task::spawn_blocking(move || assistants::remove_entry(id))
+            .await
+            .unwrap_or_else(|e| Err(Error::Config(e.to_string())));
+        if let Err(e) = removed {
+            warn!(
+                "Could not take Super Voice back out of {}: {e:?}",
+                id.display_name()
+            );
         }
     }
 

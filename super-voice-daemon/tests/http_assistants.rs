@@ -229,6 +229,32 @@ async fn codex_is_connected_and_disconnected() {
     );
 }
 
+/// A connect whose plugin cannot be installed leaves nothing behind: not the
+/// key it made, nor the entry naming it, which would have Codex ask for a key
+/// it no longer has each time it starts.
+#[tokio::test]
+async fn a_failed_connect_takes_its_entry_back_out() {
+    let (daemon, token, home) = start("assistants-failed-connect", true).await;
+    write_program(
+        &home.join("bin/codex"),
+        "#!/bin/sh\necho 'no plugins here' >&2\nexit 1\n",
+    );
+
+    let (status, body) = call(
+        &daemon,
+        &token,
+        Method::POST,
+        "/assistants/codex/connect",
+        None,
+    )
+    .await;
+    assert!(status.is_server_error(), "{status}: {body}");
+    let left = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap_or_default();
+    assert!(!left.contains("super-voice"), "{left}");
+    let (status, body) = call(&daemon, &token, Method::GET, "/assistants/codex/key", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "the key is revoked: {body}");
+}
+
 /// Connecting Claude Code installs the plugin with the `claude` it found,
 /// after adding its marketplace; disconnecting uninstalls it.
 #[tokio::test]
