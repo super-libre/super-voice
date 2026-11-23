@@ -3,7 +3,9 @@
     "voice": {
       "type": "http",
       "url": "${user_config.address}",
-      "headersHelper": "voice assistant-header claude-code"
+      "headers": {
+        "Authorization": "Bearer ${user_config.key}"
+      }
     }
   }
 }

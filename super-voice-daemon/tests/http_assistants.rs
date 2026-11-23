@@ -24,14 +24,17 @@ use super_voice_shared::daemon::http_client;
 /// home.
 const ELSEWHERE: [&str; 2] = ["CODEX_HOME", "CLAUDE_CONFIG_DIR"];
 
-/// A fake `claude`: notes each command in `$HOME/claude-calls`, and installs
-/// and uninstalls the plugin in the settings Claude Code keeps it in.
+/// A fake `claude`: notes each command in `$HOME/claude-calls`, installs
+/// and uninstalls the plugin in the settings Claude Code keeps it in, and
+/// keeps the options it is given on stdin in `$HOME/claude-options`.
 const FAKE_CLAUDE: &str = r#"#!/bin/sh
 echo "$*" >> "$HOME/claude-calls"
 case "$*" in
-  "plugin install super-voice@super-voice --scope user --config address="*)
+  "plugin install super-voice@super-voice --scope user")
     mkdir -p "$HOME/.claude"
     printf '{"enabledPlugins": {"super-voice@super-voice": true}}' > "$HOME/.claude/settings.json" ;;
+  "plugin configure super-voice@super-voice --values-stdin")
+    cat > "$HOME/claude-options" ;;
   "plugin uninstall super-voice@super-voice --scope user")
     printf '{"enabledPlugins": {}}' > "$HOME/.claude/settings.json" ;;
 esac
@@ -183,9 +186,6 @@ async fn codex_is_connected_and_disconnected() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let key = body["key"].as_str().expect("key").to_string();
     assert!(key.starts_with("sva_"), "{body}");
-
-    // Connecting again keeps the key it has.
-    let (status, _) = call(
     assert!(
         written.contains(&format!("Authorization = \"Bearer {key}\"")),
         "Codex's config holds its key: {written}"
@@ -199,6 +199,9 @@ async fn codex_is_connected_and_disconnected() {
             .mode();
         assert_eq!(mode & 0o077, 0, "only its owner reads the key: {mode:o}");
     }
+
+    // Connecting again keeps the key it has.
+    let (status, _) = call(
         &daemon,
         &token,
         Method::POST,
@@ -301,7 +304,8 @@ async fn a_key_that_cannot_be_revoked_is_an_error() {
 }
 
 /// Connecting Claude Code installs the plugin with the `claude` it found,
-/// after adding its marketplace; disconnecting uninstalls it.
+/// after adding its marketplace, and gives it its address and key on stdin,
+/// never on a command line; disconnecting uninstalls it.
 #[tokio::test]
 async fn claude_code_gets_the_plugin_installed() {
     let (daemon, token, home) = start("assistants-claude", true).await;
@@ -322,10 +326,8 @@ async fn claude_code_gets_the_plugin_installed() {
         ran.lines().collect::<Vec<_>>(),
         [
             "plugin marketplace add super-libre/super-voice --scope user",
-            &format!(
-                "plugin install super-voice@super-voice --scope user --config address={}",
-                list["address"].as_str().expect("address")
-            ),
+            "plugin install super-voice@super-voice --scope user",
+            "plugin configure super-voice@super-voice --values-stdin",
         ]
     );
     let (status, body) = call(
@@ -337,6 +339,14 @@ async fn claude_code_gets_the_plugin_installed() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    let options: Value = serde_json::from_str(
+        &std::fs::read_to_string(home.join("claude-options")).expect("options were given"),
+    )
+    .expect("options are JSON");
+    assert_eq!(
+        options,
+        json!({ "address": list["address"], "key": body["key"] })
+    );
 
     let (status, list) = call(
         &daemon,
@@ -389,10 +399,8 @@ async fn the_variable_names_where_the_plugin_comes_from() {
         ran.lines().collect::<Vec<_>>(),
         [
             "plugin marketplace add /src/super-voice --scope user",
-            &format!(
-                "plugin install super-voice@super-voice --scope user --config address={}",
-                list["address"].as_str().expect("address")
-            ),
+            "plugin install super-voice@super-voice --scope user",
+            "plugin configure super-voice@super-voice --values-stdin",
         ]
     );
 }

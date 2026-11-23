@@ -14,8 +14,8 @@ one.
 
 | `id`          | Assistant   | How Super Voice gets in                                                                 | How it gets its key                          |
 |---------------|-------------|-----------------------------------------------------------------------------------------|----------------------------------------------|
-| `claude-code` | Claude Code | The daemon installs Super Voice's plugin, with `claude plugin install`.                 | The plugin runs `voice assistant-header claude-code`. |
-| `codex`       | Codex       | An entry in `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`, and Super Voice's plugin, from a marketplace the daemon writes to `~/.local/share/super-voice/assistants/codex`, with `codex plugin add`. Codex runs the plugin's hooks once the user trusts them in `/hooks`. | Codex runs `voice assistant-header codex`.   |
+| `claude-code` | Claude Code | The daemon installs Super Voice's plugin, with `claude plugin install`.                 | Set as the plugin's secret option `key`, with `claude plugin configure --values-stdin`, which Claude Code keeps with its credentials. |
+| `codex`       | Codex       | An entry in `$CODEX_HOME/config.toml`, or `~/.codex/config.toml`, and Super Voice's plugin, from a marketplace the daemon writes to `~/.local/share/super-voice/assistants/codex`, with `codex plugin add`. Codex runs the plugin's hooks once the user trusts them in `/hooks`. | Written into the entry, as its `http_headers`. |
 | `opencode`    | OpenCode    | An entry in its global `opencode.json`, under `$XDG_CONFIG_HOME/opencode`, or `~/.config/opencode`, and Super Voice's plugin, written to `plugins/super-voice` beside it, which OpenCode loads by itself. | Written into the entry, which the plugin reads too. |
 | `antigravity` | Antigravity CLI (`agy`) | An entry in `~/.gemini/config/mcp_config.json`, which the Antigravity App and IDE read too, and Super Voice's plugin, written to `~/.local/share/super-voice/assistants/antigravity` and installed with `agy plugin install`. Its hooks run `voice assistant-hook antigravity <event>`. | Written into the entry. The hooks get it from `voice`. |
 

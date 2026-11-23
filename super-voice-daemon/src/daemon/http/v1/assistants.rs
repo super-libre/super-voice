@@ -147,9 +147,10 @@ pub(crate) async fn list_assistants(State(state): State<AppState>) -> Response {
     description = "\
 Makes the assistant a key of its own, or uses the one it has, and writes Super Voice \
 into its config, and installs Super Voice's plugin in the assistant: for Claude Code \
-with `claude plugin install`, whose plugin is its entry. Claude Code's plugin and Codex \
-get their key from `voice assistant-header`; `OpenCode` and the Antigravity CLI have the key \
-written into their configs. Connecting one that is connected already writes its entry \
+with `claude plugin install`, whose plugin is its entry. Claude Code's plugin gets the \
+key as a secret option, which Claude Code keeps with its credentials; Codex, `OpenCode` \
+and the Antigravity CLI have it written into their configs, which only the user can \
+read. Connecting one that is connected already writes its entry \
 and plugin again. Answers the whole list, as `GET \
 /assistants` does.
 

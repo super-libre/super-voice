@@ -199,10 +199,10 @@ impl SuperSTTDaemon {
         Ok(self.list_assistants(auth).await)
     }
 
-    /// Put Super Voice in the config of `id`, with `secret`, and its plugin
-    /// in the assistant. Claude Code's plugin is its entry. Another's is
-    /// installed with its program, so one found only by its config gets the
-    /// entry alone.
+    /// Put Super Voice in the config of `id`, with `secret`, its key, and its
+    /// plugin in the assistant. Claude Code's plugin is its entry, and has
+    /// the key as an option. Another's is installed with its program, so one
+    /// found only by its config gets the entry alone.
     async fn write_assistant_entry(&self, id: AssistantId, secret: &str) -> Result<(), Error> {
         let program = tokio::task::spawn_blocking(move || assistants::find_program(id))
             .await
@@ -215,7 +215,7 @@ impl SuperSTTDaemon {
                 .await
                 .unwrap_or_else(|e| Err(Error::Config(e.to_string())))?;
         }
-        assistants::install_plugin(id, program.as_deref(), &url).await
+        assistants::install_plugin(id, program.as_deref(), &url, secret).await
     }
 
     /// Take the entry a connect that failed wrote back out of `id`'s config.
