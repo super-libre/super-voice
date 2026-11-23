@@ -309,19 +309,15 @@ fn claude_has_plugin(text: &str) -> bool {
 /// settings the plugin, the others their entry.
 #[must_use]
 pub fn has_entry(id: AssistantId) -> bool {
-    let (file, has): (Option<PathBuf>, fn(&str) -> bool) = match id {
-        AssistantId::ClaudeCode => (
-            claude_dir().map(|dir| dir.join("settings.json")),
-            claude_has_plugin,
-        ),
-        AssistantId::Codex => (configs::codex_file(), configs::codex_has_super_voice),
-        AssistantId::OpenCode => (configs::opencode_file(), configs::opencode_has_super_voice),
-        AssistantId::Antigravity => (
-            configs::antigravity_file(),
-            configs::antigravity_has_super_voice,
-        ),
+    let has: fn(&str) -> bool = match id {
+        AssistantId::ClaudeCode => claude_has_plugin,
+        AssistantId::Codex => configs::codex_has_super_voice,
+        AssistantId::OpenCode => configs::opencode_has_super_voice,
+        AssistantId::Antigravity => configs::antigravity_has_super_voice,
     };
-    file.and_then(|file| configs::read(&file).ok())
+    config_file(id)
+        .ok()
+        .and_then(|file| configs::read(&file).ok())
         .is_some_and(|text| has(&text))
 }
 
@@ -391,7 +387,8 @@ pub fn remove_entry(id: AssistantId) -> Result<(), Error> {
     Ok(())
 }
 
-/// The config file of `id`.
+/// The config file of `id`: for Claude Code, its user settings, which list
+/// the plugin.
 fn config_file(id: AssistantId) -> Result<PathBuf, Error> {
     let file = match id {
         AssistantId::ClaudeCode => claude_dir().map(|dir| dir.join("settings.json")),
