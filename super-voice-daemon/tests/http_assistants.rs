@@ -29,7 +29,7 @@ const ELSEWHERE: [&str; 2] = ["CODEX_HOME", "CLAUDE_CONFIG_DIR"];
 const FAKE_CLAUDE: &str = r#"#!/bin/sh
 echo "$*" >> "$HOME/claude-calls"
 case "$*" in
-  "plugin install super-voice@super-voice --scope user")
+  "plugin install super-voice@super-voice --scope user --config address="*)
     mkdir -p "$HOME/.claude"
     printf '{"enabledPlugins": {"super-voice@super-voice": true}}' > "$HOME/.claude/settings.json" ;;
   "plugin uninstall super-voice@super-voice --scope user")
@@ -314,7 +314,10 @@ async fn claude_code_gets_the_plugin_installed() {
         ran.lines().collect::<Vec<_>>(),
         [
             "plugin marketplace add super-libre/super-voice --scope user",
-            "plugin install super-voice@super-voice --scope user",
+            &format!(
+                "plugin install super-voice@super-voice --scope user --config address={}",
+                list["address"].as_str().expect("address")
+            ),
         ]
     );
     let (status, body) = call(
@@ -378,7 +381,10 @@ async fn the_variable_names_where_the_plugin_comes_from() {
         ran.lines().collect::<Vec<_>>(),
         [
             "plugin marketplace add /src/super-voice --scope user",
-            "plugin install super-voice@super-voice --scope user",
+            &format!(
+                "plugin install super-voice@super-voice --scope user --config address={}",
+                list["address"].as_str().expect("address")
+            ),
         ]
     );
 }

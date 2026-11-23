@@ -198,11 +198,11 @@ impl SuperSTTDaemon {
             .await
             .ok()
             .flatten();
+        let url = self.mcp_address().await;
         if id == AssistantId::ClaudeCode {
             let claude = program.ok_or(Error::NotFound)?;
-            return assistants::install_claude_plugin(&claude).await;
+            return assistants::install_claude_plugin(&claude, &url).await;
         }
-        let url = self.mcp_address().await;
         let secret = secret.to_string();
         tokio::task::spawn_blocking(move || assistants::write_entry(id, &url, &secret))
             .await

@@ -429,12 +429,13 @@ fn claude_marketplace(set: Option<String>) -> String {
 
 /// Install Super Voice's plugin in Claude Code, with `claude`, the program
 /// found: add its marketplace ([`claude_marketplace`]), then install it, for
-/// the user. Either already done is fine.
+/// the user, set to reach Super Voice at `address`. Either already done is
+/// fine: installing it again sets the address all the same.
 ///
 /// # Errors
 ///
 /// [`Error::Plugin`] when a command fails or runs too long.
-pub async fn install_claude_plugin(claude: &Path) -> Result<(), Error> {
+pub async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), Error> {
     let var = SUPER_VOICE.env(CLAUDE_MARKETPLACE_VAR);
     let marketplace = claude_marketplace(std::env::var(&var).ok());
     if marketplace != CLAUDE_MARKETPLACE {
@@ -453,9 +454,18 @@ pub async fn install_claude_plugin(claude: &Path) -> Result<(), Error> {
         &["already"],
     )
     .await?;
+    let address = format!("address={address}");
     run_plugin_command(
         claude,
-        &["plugin", "install", CLAUDE_PLUGIN, "--scope", "user"],
+        &[
+            "plugin",
+            "install",
+            CLAUDE_PLUGIN,
+            "--scope",
+            "user",
+            "--config",
+            &address,
+        ],
         &["already"],
     )
     .await

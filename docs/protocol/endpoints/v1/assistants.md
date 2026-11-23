@@ -144,10 +144,13 @@ found:
 
 ```sh
 claude plugin marketplace add super-libre/super-voice --scope user
-claude plugin install super-voice@super-voice --scope user
+claude plugin install super-voice@super-voice --scope user --config address=<address>
 ```
 
-A marketplace already added or a plugin already installed counts as done. Each
+`<address>` is the server's, as the list gives it: the plugin's `address`
+option, which its MCP entry reaches. A marketplace already added or a plugin
+already installed counts as done; installing it again sets the address all
+the same. Each
 command may run for up to two minutes, since adding the marketplace clones it.
 
 When the daemon's environment sets `SUPER_VOICE_CLAUDE_MARKETPLACE`, it adds
