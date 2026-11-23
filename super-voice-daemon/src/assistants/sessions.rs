@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use tokio::task::AbortHandle;
 
 /// How long a session its plugin opened may go without a request. The plugin
-/// checks in every minute while the session is open.
+/// checks in at least once a minute while the session is open.
 pub const OPENED_IDLE: Duration = Duration::from_mins(3);
 
 /// How long a session nothing opened may go without a request: nothing says

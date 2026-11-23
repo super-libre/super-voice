@@ -104,7 +104,7 @@ calls to the tool. A key made by hand doesn't get them.
 | `stop`     | Stops this session's own speech, even one still waiting for the model, and ends its own recording, which is still transcribed. Another session's are left alone. |
 | `status`   | Whether this session's own speech plays or is on its way, and whether it records, and whether the user shows the plugin's Talk (the assistant's `show_talk`): `{"speaking": bool, "listening": bool, "talk": bool}`. |
 | `announce` | Says `text` (or a hook's `message`) aloud, unless the user turned off **Announce when it needs you** for the assistant. Then it says nothing, and answers so. |
-| `session`  | `{"event": "start"}` or `{"event": "end"}`: the session opened or closed, so it is listed while it is open, checking in each minute. `{"event": "seen"}`: it is there, from a plugin that cannot check in, like a hook's; it is listed until it has been quiet for 30 minutes. |
+| `session`  | `{"event": "start"}` or `{"event": "end"}`: the session opened or closed, so it is listed while it is open, checking in at least once a minute. `{"event": "seen"}`: it is there, from a plugin that cannot check in, like a hook's; it is listed until it has been quiet for 30 minutes. |
 | `turn`     | `{"event": "prompt", "text", "spoken"?, "heard"?, "again"?}`: the user sent a prompt. `spoken` says whether it was said aloud. Left out, it is spoken when it holds `heard`, the words the plugin's Talk put in the prompt box, or what the user last dictated into a window, within 90 seconds. Either holds: the dictation's words in order, but for about one in four the user corrected by hand, with anything typed around them; or most of the prompt is the dictation cut down, keeping at least half of it. A dictation of three words or fewer must be there whole. In a script written without spaces between words, as Chinese, Japanese and Thai are, each character counts as a word. Answers `{"spoken": bool, "note": text}`, `note` being what the assistant is told beside a spoken prompt. Sent again with `"again": true`, as a hook that runs before each model call of a turn does, the prompt keeps its turn, and `note` is null; the same text sent without it is a new turn. A prompt of `/read`, or of the plugin's skill as agy (`/super-voice:read`) or Codex (`$read`, `$super-voice:read`) names it, alone or with a number from 0 to 9, is answered by Super Voice instead, as a typed turn the assistant never sees: it reads the session's last reply aloud again, or the one that many before it, and plain `/read` while the session's speech plays stops it. Answers `{"spoken": false, "answered": text, "failed": bool}`, `answered` being what it did, or why it could not, and `failed` saying which. `{"event": "reply", "text"}`: the assistant answered. Super Voice keeps the session's last 10 replies for `/read`, and reads a spoken turn's reply aloud. Answers `{"read": bool}`. |
 
 Once a plugin has said a turn was typed, `speak` and `listen` refuse in it, so
@@ -140,7 +140,7 @@ itself, first match wins:
 
 A session is listed from its first call, or from its plugin's `session`
 start, until its plugin says it ended, its assistant is disconnected, or it
-goes quiet: 3 minutes for one its plugin opened, which checks in every
+goes quiet: 3 minutes for one its plugin opened, which checks in at least once a
 minute, and 30 minutes for any other. One still recording stays listed. Off
 the list, a session that went quiet is remembered for a day: its turn,
 spoken or typed, and its replies, so a long task that said nothing to Super

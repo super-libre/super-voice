@@ -52,16 +52,11 @@ const SEND_AFTER_MS = 5_000
 const COUNTDOWN_TICK_MS = 500
 /** Super Voice's MCP server, by its key in this plugin's `.mcp.json`. */
 const SERVER_KEY = 'voice'
-/** How often an open session checks in, so Super Voice keeps listing it. */
-const HEARTBEAT_MS = 60_000
-/** How often to ask whether the user shows Talk, so the switch on the
- * Assistants page takes effect soon after it moves. */
-const SWITCH_POLL_MS = 5_000
-/** How long to wait between tries to say a session started, while Claude
- * Code may still be connecting to Super Voice. */
-const OPEN_RETRY_MS = 5_000
-/** How many times to try before leaving it to the heartbeat. */
-const OPEN_TRIES = 12
+/** How often the session checks in: until Super Voice has heard it started,
+ * which waits on Claude Code connecting; so Super Voice keeps listing it; and
+ * to learn whether the user shows Talk, so the switch on the Assistants page
+ * takes effect soon after it moves. */
+const CHECK_IN_MS = 5_000
 /** The tools this plugin calls itself, kept from the model. */
 const PLUGIN_TOOLS: ReadonlySet<string> = new Set(
   PLUGIN_TOOL_NAMES.map(tool => `mcp__plugin_super-voice_voice__${tool}`),
@@ -121,8 +116,10 @@ let armed = false
 let folder: string | undefined
 /** The session id Super Voice was last told started. */
 let openedId: string | undefined
-let heartbeat: Timer | undefined
-let switchPoll: Timer | undefined
+let checkInTimer: Timer | undefined
+/** A check-in is under way: one waiting on Claude Code's connection can
+ * outlast the timer's beat. */
+let isCheckingIn = false
 /** Whether the user shows Talk, as Super Voice last said. */
 let isTalkShown = true
 
@@ -193,12 +190,25 @@ async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined>
   return { isSpeaking: isSpeaking === true, isListening: isListening === true }
 }
 
-/** Tell Super Voice this session is open, and check in while it is. A new
- * session id, as after `/clear`, ends the one before. */
+/** Tell Super Voice this session is open, and check in while it is, which
+ * also learns whether the user shows Talk. A new session id, as after
+ * `/clear`, ends the one before. */
 async function checkIn($: EngineInterface) {
+  if (isCheckingIn) {
+    return
+  }
+  isCheckingIn = true
+  try {
+    await checkInOnce($)
+  } finally {
+    isCheckingIn = false
+  }
+}
+
+async function checkInOnce($: EngineInterface) {
   const id = await $.session.id()
   if (openedId === id) {
-    await call($, 'status')
+    await voiceStatus($)
     return
   }
   // Claude Code may still be connecting to Super Voice as the session starts.
@@ -217,18 +227,6 @@ async function checkIn($: EngineInterface) {
   // Not yet: the next check-in tries again.
   if (!started.isError) {
     openedId = id
-  }
-}
-
-/** Say the session started as soon as Super Voice can be reached, trying a
- * few times while Claude Code connects; the heartbeat goes on after. */
-async function openSession($: EngineInterface) {
-  for (let tries = 0; tries < OPEN_TRIES; tries++) {
-    await checkIn($)
-    if (openedId === (await $.session.id())) {
-      return
-    }
-    await $.clock.sleep(OPEN_RETRY_MS)
   }
 }
 
@@ -509,21 +507,17 @@ export const register: Register = on => {
     await update($, readingAgain, () => '')
     // A reload starts the session's check-ins over too.
     openedId = undefined
-    heartbeat?.cancel()
-    heartbeat = $.clock.every(HEARTBEAT_MS, () => void checkIn($))
     // The switch as last seen, kept across a reload, until Super Voice says.
     isTalkShown = await read($, showsTalk)
-    switchPoll?.cancel()
-    switchPoll = $.clock.every(SWITCH_POLL_MS, () => void voiceStatus($))
-    void openSession($)
+    checkInTimer?.cancel()
+    checkInTimer = $.clock.every(CHECK_IN_MS, () => void checkIn($))
+    void checkIn($)
     return next(e)
   })
 
   on('session.end', async ($, e, next) => {
-    heartbeat?.cancel()
-    heartbeat = undefined
-    switchPoll?.cancel()
-    switchPoll = undefined
+    checkInTimer?.cancel()
+    checkInTimer = undefined
     await call($, 'session', { event: 'end' }, e.sessionId)
     openedId = undefined
     return next(e)
