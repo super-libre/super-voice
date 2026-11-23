@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The state the plugin's hooks module keeps, by name.
 
-/** Whether Super Voice is speaking, as `voice status` last said. */
+/** Whether this session's speech plays, as Super Voice's `status` tool last
+ * said. */
 export type SuperVoiceIsSpeaking = boolean
 
 /** Whether Claude is recording the user through the `listen` tool. */

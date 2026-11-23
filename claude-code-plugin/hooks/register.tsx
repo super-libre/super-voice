@@ -2,13 +2,16 @@
 // The plugin's voice, a Claude Code hooks module. It works through Claude
 // Code's own connection to Super Voice's MCP server, and names this session
 // on every call, so what it speaks and records is this session's own.
+//
 // Claude speaks only after being spoken to: a reply to a spoken prompt is
 // read aloud and the microphone opens after it, and Super Voice's tools are
-// refused in a turn the user typed. One row above the prompt and one key, 0: `Talk` records the user and
-// puts their words in the prompt box, sent after a short countdown unless they
-// edit them; while speech plays, 0 stops it, and opens the microphone only in
-// a spoken conversation. What `listen` hears goes through the box the same
-// way. A 🔊 under each reply block reads it again.
+// refused in a turn the user typed.
+//
+// One row above the prompt and one key, 0: `Talk` records the user and puts
+// their words in the prompt box, sent after a short countdown unless they
+// edit them; while speech plays, 0 stops it, and opens the microphone only
+// in a spoken conversation. What `listen` hears goes through the box the
+// same way. A 🔊 under each reply block reads it again.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
