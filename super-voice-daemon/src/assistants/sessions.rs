@@ -219,22 +219,15 @@ impl Sessions {
     /// The task making `who`'s last speech, while it is still at it.
     #[must_use]
     pub fn speaking(&self, who: &Who) -> Option<AbortHandle> {
-        self.entries
-            .lock()
-            .iter()
-            .find(|entry| entry.is(who))
-            .and_then(|entry| entry.speaking.clone())
+        self.read(who, |entry| entry.speaking.clone())
+            .flatten()
             .filter(|task| !task.is_finished())
     }
 
     /// The utterance `who` started last, whether or not it still plays.
     #[must_use]
     pub fn utterance(&self, who: &Who) -> Option<String> {
-        self.entries
-            .lock()
-            .iter()
-            .find(|entry| entry.is(who))
-            .and_then(|entry| entry.utterance.clone())
+        self.read(who, |entry| entry.utterance.clone()).flatten()
     }
 
     /// `who`'s `listen` is recording until the returned guard is dropped.
@@ -252,10 +245,7 @@ impl Sessions {
     /// Whether one of `who`'s `listen` calls is recording.
     #[must_use]
     pub fn is_recording(&self, who: &Who) -> bool {
-        self.entries
-            .lock()
-            .iter()
-            .any(|entry| entry.is(who) && entry.recordings > 0)
+        self.read(who, |entry| entry.recordings > 0) == Some(true)
     }
 
     /// `who`'s turn under way was `spoken`, or typed.
@@ -302,25 +292,16 @@ impl Sessions {
     ///
     /// How many replies it has kept, when there is none that far back.
     pub fn reply(&self, who: &Who, back: usize) -> Result<String, usize> {
-        let entries = self.entries.lock();
-        let replies = entries
-            .iter()
-            .find(|entry| entry.is(who))
-            .map(|entry| &entry.replies);
-        match replies {
-            Some(replies) => replies.get(back).cloned().ok_or(replies.len()),
-            None => Err(0),
-        }
+        self.read(who, |entry| {
+            entry.replies.get(back).cloned().ok_or(entry.replies.len())
+        })
+        .unwrap_or(Err(0))
     }
 
     /// Whether `who`'s turn under way was spoken, once its plugin has said.
     #[must_use]
     pub fn spoken(&self, who: &Who) -> Option<bool> {
-        self.entries
-            .lock()
-            .iter()
-            .find(|entry| entry.is(who))
-            .and_then(|entry| entry.spoken)
+        self.read(who, |entry| entry.spoken).flatten()
     }
 
     /// Forget every session of `caller`, whose key was revoked.
@@ -353,6 +334,15 @@ impl Sessions {
             .filter(|entry| entry.is_listed(now))
             .map(Entry::view)
             .collect()
+    }
+
+    /// What `look` finds in `who`'s session, when there is one.
+    fn read<T>(&self, who: &Who, look: impl FnOnce(&Entry) -> T) -> Option<T> {
+        self.entries
+            .lock()
+            .iter()
+            .find(|entry| entry.is(who))
+            .map(look)
     }
 
     /// Run `change` on `who`'s session, made now if it is new, and mark it

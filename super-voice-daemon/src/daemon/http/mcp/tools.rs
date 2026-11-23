@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The tools: `speak` and `listen`, and the plugin's `stop`, `status`,
-//! `announce` and `session`, run on the daemon itself.
+//! `announce`, `session` and `turn`, run on the daemon itself.
 //!
-//! What a session speaks and records is its own ([`Sessions`]): `stop` and
-//! `status` see only the caller's.
+//! What a session speaks and records is its own
+//! ([`crate::assistants::sessions::Sessions`]): `stop` and `status` see only
+//! the caller's.
 //!
 //! A tool runs on a task of its own, so it ends as the daemon's work does,
 //! never midway because its client went away. It is cancelled through its
@@ -19,7 +20,7 @@
 
 use super::protocol::{Hook, SessionEvent, Tool, TurnEvent};
 use crate::assistants::dictation::holds_what_was_said;
-use crate::assistants::sessions::{Sessions, Who};
+use crate::assistants::sessions::Who;
 use crate::daemon::events::Topic;
 use crate::daemon::recording::{Stopped, TakeSettings};
 use crate::daemon::types::SuperSTTDaemon;
@@ -477,7 +478,7 @@ async fn listen(
     }
     // Never the toggling `record` command: that would stop someone else's
     // recording. This one reserves the microphone or is refused.
-    let _recording = Sessions::recording(&daemon.assistants.sessions, who);
+    let _recording = daemon.assistants.sessions.recording(who);
     let mut typer = Typer::without_keyboard();
     let take = daemon.handle_record_internal(
         &mut typer,
