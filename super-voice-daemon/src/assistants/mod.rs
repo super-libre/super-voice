@@ -275,13 +275,7 @@ fn config_dir(id: AssistantId) -> Option<PathBuf> {
     match id {
         AssistantId::ClaudeCode => claude_dir(),
         AssistantId::Codex => configs::codex_file()?.parent().map(Path::to_path_buf),
-        AssistantId::OpenCode => {
-            let config = std::env::var_os("XDG_CONFIG_HOME")
-                .filter(|config| !config.is_empty())
-                .map(PathBuf::from)
-                .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
-            Some(config.join("opencode"))
-        }
+        AssistantId::OpenCode => configs::opencode_dir(),
         // Its own: `~/.gemini` is the Gemini CLI's too, and the config's
         // folder the Antigravity App's.
         AssistantId::Antigravity => {
@@ -478,11 +472,7 @@ pub async fn uninstall_claude_plugin(claude: &Path) -> Result<(), Error> {
 /// Where `OpenCode` finds Super Voice's plugin: `plugins/super-voice` in its
 /// global config folder, which it loads plugins from by itself.
 fn opencode_plugin_dir() -> Option<PathBuf> {
-    let config = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|config| !config.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
-    Some(config.join("opencode").join("plugins").join("super-voice"))
+    configs::opencode_dir().map(|dir| dir.join("plugins").join("super-voice"))
 }
 
 /// Install Super Voice's plugin in `OpenCode`: write its files to its

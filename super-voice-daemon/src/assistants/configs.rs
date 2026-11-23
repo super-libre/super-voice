@@ -245,17 +245,23 @@ pub const OPENCODE_TIMEOUT_MS: i32 = 600_000;
 /// on.
 const OPENCODE_STALE_KEYS: [&str; 4] = ["command", "environment", "enabled", "disabled"];
 
-/// `OpenCode`'s global config file: the first there is of `opencode.json`,
-/// `opencode.jsonc`, `.opencode/opencode.json` and `.opencode/opencode.jsonc`
-/// in `$XDG_CONFIG_HOME/opencode`, or in `~/.config/opencode` when it is not
-/// set, on macOS too. `opencode.json` when there is none.
+/// `OpenCode`'s global config folder: `$XDG_CONFIG_HOME/opencode`, or
+/// `~/.config/opencode` when it is not set, on macOS too.
 #[must_use]
-pub fn opencode_file() -> Option<PathBuf> {
+pub fn opencode_dir() -> Option<PathBuf> {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|config| !config.is_empty())
         .map(PathBuf::from)
         .or_else(|| dirs::home_dir().map(|home| home.join(".config")))?;
-    let dir = config.join("opencode");
+    Some(config.join("opencode"))
+}
+
+/// `OpenCode`'s global config file: the first there is of `opencode.json`,
+/// `opencode.jsonc`, `.opencode/opencode.json` and `.opencode/opencode.jsonc`
+/// in [`opencode_dir`]. `opencode.json` when there is none.
+#[must_use]
+pub fn opencode_file() -> Option<PathBuf> {
+    let dir = opencode_dir()?;
     let candidates = [
         dir.join("opencode.json"),
         dir.join("opencode.jsonc"),
