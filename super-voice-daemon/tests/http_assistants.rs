@@ -178,11 +178,6 @@ async fn codex_is_connected_and_disconnected() {
     assert_eq!(state_of(&list, "codex"), "connected");
     let written = std::fs::read_to_string(&config).expect("Codex's config was written");
     assert!(written.contains("[mcp_servers.super-voice]"), "{written}");
-    assert!(written.contains("assistant-header codex"), "{written}");
-    assert!(
-        !written.contains("sva_"),
-        "Codex's config holds no key: {written}"
-    );
 
     let (status, body) = call(&daemon, &token, Method::GET, "/assistants/codex/key", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -191,6 +186,19 @@ async fn codex_is_connected_and_disconnected() {
 
     // Connecting again keeps the key it has.
     let (status, _) = call(
+    assert!(
+        written.contains(&format!("Authorization = \"Bearer {key}\"")),
+        "Codex's config holds its key: {written}"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&config)
+            .expect("config")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o077, 0, "only its owner reads the key: {mode:o}");
+    }
         &daemon,
         &token,
         Method::POST,

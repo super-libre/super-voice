@@ -11,7 +11,7 @@
 //! 1. Claude Code: the daemon runs `claude plugin install`, and the plugin
 //!    gets its key from `voice assistant-header claude-code`.
 //! 2. Codex, `OpenCode` and the Antigravity CLI: an entry in their config files
-//!    ([`configs`]).
+//!    ([`configs`]), with the key in it.
 //!
 //! Disconnecting takes the entry out and revokes the key, which also cancels
 //! the key's calls in flight ([`calls`]). A key made by hand, for any other
@@ -346,8 +346,8 @@ pub fn state(id: AssistantId, has_key: bool) -> AssistantState {
 }
 
 /// Write Super Voice into the config of `id`, one of the assistants with a
-/// config file: the server at `url`, with `key`, or for Codex the command
-/// that prints it.
+/// config file: the server at `url`, with `key`. The key is in the file
+/// itself, so only its owner may read it.
 ///
 /// # Errors
 ///
@@ -355,13 +355,9 @@ pub fn state(id: AssistantId, has_key: bool) -> AssistantState {
 pub fn write_entry(id: AssistantId, url: &str, key: &str) -> Result<(), Error> {
     let changed = match id {
         AssistantId::ClaudeCode => return Ok(()),
-        AssistantId::Codex => {
-            let helper = configs::codex_headers_helper(&crate::shortcuts::voice_program());
-            configs::update(&config_file(id)?, |text| {
-                configs::codex_with_super_voice(text, url, &helper)
-            })
-        }
-        // The key is in the file itself, so only its owner may read it.
+        AssistantId::Codex => configs::update_holding_key(&config_file(id)?, |text| {
+            configs::codex_with_super_voice(text, url, key)
+        }),
         AssistantId::OpenCode => configs::update_holding_key(&config_file(id)?, |text| {
             configs::opencode_with_super_voice(text, url, key)
         }),

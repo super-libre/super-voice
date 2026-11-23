@@ -556,9 +556,9 @@ fn cosmic(id: ShortcutId) -> &'static cosmic_shortcuts::Shortcut {
     }
 }
 
-/// The `voice` a shortcut the daemon adds runs, and an assistant's key helper
-/// and hooks: the one beside the daemon, under either name, since a build
-/// tree names it as its crate does, or the one on `PATH` when there is none.
+/// The `voice` a shortcut the daemon adds runs, and agy's hooks: the one
+/// beside the daemon, under either name, since a build tree names it as its
+/// crate does, or the one on `PATH` when there is none.
 pub(crate) fn voice_program() -> String {
     std::env::current_exe()
         .ok()

@@ -7,10 +7,12 @@
 //! assistant at the daemon's MCP server and gives it the key made for it.
 //! Claude Code is not here: its plugin connects it.
 //!
-//! 1. Codex: `config.toml`. Codex gets the key from a command it runs,
-//!    `voice assistant-header codex`, so the file holds no key.
-//! 2. `OpenCode`: `opencode.json`, with the key in a header.
-//! 3. Antigravity CLI: `mcp_config.json`, with the key in a header.
+//! 1. Codex: `config.toml`.
+//! 2. `OpenCode`: `opencode.json`.
+//! 3. Antigravity CLI: `mcp_config.json`.
+//!
+//! Each has the key in an `Authorization` header, so a file is made readable
+//! by its owner alone when the key is written into it ([`update_holding_key`]).
 //!
 //! The transforms are pure functions over a file's text, tested on strings.
 //! [`read`] and [`update`] are the file wrappers around them. Everything else
@@ -26,7 +28,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use serde::Serialize as _;
 use serde_json::{Map, Value};
-use toml_edit::{DocumentMut, Item, Table, value};
+use toml_edit::{DocumentMut, InlineTable, Item, Table, value};
 
 /// The name of Super Voice's entry in every assistant's config.
 pub const ENTRY: &str = "super-voice";
@@ -59,11 +61,11 @@ pub enum Error {
 //
 // From Codex's source, codex-rs/config/src/mcp_types.rs (openai/codex at
 // 7066a55a7b), and its docs, https://learn.chatgpt.com/docs/extend/mcp: a
-// Streamable HTTP server is a `[mcp_servers.<name>]` table with `url`.
-// `http_headers_helper` is "a local-only shell command that prints a JSON
-// object of dynamic HTTP headers", run with `sh -c`, for servers in the
-// local environment only. `tool_timeout_sec` is how long a tool may run, 60
-// seconds unless set. The file is `$CODEX_HOME/config.toml`, `~/.codex` when
+// Streamable HTTP server is a `[mcp_servers.<name>]` table with `url`, and
+// `http_headers`, a table of headers sent with every request.
+// `http_headers_helper` is a shell command that prints more of them, and
+// `bearer_token_env_var` names a variable holding a token. `tool_timeout_sec`
+// is how long a tool may run, 60 seconds unless set. The file is `$CODEX_HOME/config.toml`, `~/.codex` when
 // `CODEX_HOME` is not set (codex-rs/utils/home-dir/src/lib.rs).
 
 /// How long Codex lets one of Super Voice's tools run, in seconds. Codex's
@@ -71,10 +73,11 @@ pub enum Error {
 pub const CODEX_TOOL_TIMEOUT_SEC: i32 = 600;
 
 /// Keys an entry may have picked up that stop it working as written: a
-/// stdio server's, which Codex refuses beside `url`; a bearer token, which
-/// wins over the helper's `Authorization`; another environment, where the
-/// helper does not run; and `enabled`, since connecting turns it on.
-const CODEX_STALE_KEYS: [&str; 9] = [
+/// stdio server's, which Codex refuses beside `url`; another bearer token,
+/// or a command printing headers, as an entry from before had, which would
+/// send an `Authorization` of their own; another environment; and `enabled`,
+/// since connecting turns it on.
+const CODEX_STALE_KEYS: [&str; 10] = [
     "command",
     "args",
     "env",
@@ -82,6 +85,7 @@ const CODEX_STALE_KEYS: [&str; 9] = [
     "cwd",
     "bearer_token",
     "bearer_token_env_var",
+    "http_headers_helper",
     "environment_id",
     "enabled",
 ];
@@ -95,15 +99,6 @@ pub fn codex_file() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| dirs::home_dir().map(|home| home.join(".codex")))?;
     Some(home.join("config.toml"))
-}
-
-/// The command Codex runs for Super Voice's headers, given the `voice`
-/// program: `voice assistant-header codex`, which prints
-/// `{"Authorization":"Bearer <key>"}`. Codex runs it with `sh -c`, so the
-/// program is quoted for the shell.
-#[must_use]
-pub fn codex_headers_helper(voice: &str) -> String {
-    format!("{} assistant-header codex", shell_quote(voice))
 }
 
 /// `word` as `sh` reads it back: as it is when it is plain, in single quotes
@@ -122,19 +117,15 @@ pub fn shell_quote(word: &str) -> String {
 }
 
 /// `text`, Codex's config, with Super Voice's entry: the server at `url`,
-/// its headers from `headers_helper` (see [`codex_headers_helper`]), and
-/// tools allowed [`CODEX_TOOL_TIMEOUT_SEC`]. An entry already there is
-/// updated in place, keeping the keys it has of its own, and a longer
-/// timeout.
+/// with `key` as its bearer token, and tools allowed
+/// [`CODEX_TOOL_TIMEOUT_SEC`]. An entry already there is updated in place,
+/// keeping the keys and headers it has of its own, and a longer timeout.
 ///
 /// # Errors
 ///
-/// When `text` is not TOML, or `mcp_servers` or the entry is not a table.
-pub fn codex_with_super_voice(
-    text: &str,
-    url: &str,
-    headers_helper: &str,
-) -> Result<String, Error> {
+/// When `text` is not TOML, or `mcp_servers`, the entry or its
+/// `http_headers` is not a table.
+pub fn codex_with_super_voice(text: &str, url: &str, key: &str) -> Result<String, Error> {
     let mut doc: DocumentMut = text.parse()?;
     let servers = doc
         .entry("mcp_servers")
@@ -164,7 +155,20 @@ pub fn codex_with_super_voice(
         entry.remove(key);
     }
     entry.insert("url", value(url));
-    entry.insert("http_headers_helper", value(headers_helper));
+    let headers = entry
+        .entry("http_headers")
+        .or_insert_with(|| value(InlineTable::new()))
+        .as_table_like_mut()
+        .ok_or_else(|| Error::NotATable(format!("mcp_servers.{ENTRY}.http_headers")))?;
+    // A header named in other letters, like `authorization`, is the same
+    // header, so it is the one updated.
+    let name = headers
+        .iter()
+        .map(|(name, _)| name)
+        .find(|name| name.eq_ignore_ascii_case("authorization"))
+        .unwrap_or("Authorization")
+        .to_string();
+    headers.insert(&name, value(format!("Bearer {key}")));
     let long_enough = entry.get("tool_timeout_sec").is_some_and(|timeout| {
         timeout
             .as_integer()
@@ -819,18 +823,18 @@ mod tests {
     use super::*;
 
     const URL: &str = "http://127.0.0.1:7300/v1/mcp";
-    const HELPER: &str = "/usr/local/bin/voice assistant-header codex";
+    const KEY: &str = "sva_k1";
 
     // Codex.
 
     #[test]
     fn codex_entry_in_an_empty_file() {
-        let text = codex_with_super_voice("", URL, HELPER).unwrap();
+        let text = codex_with_super_voice("", URL, KEY).unwrap();
         assert_eq!(
             text,
             "[mcp_servers.super-voice]\n\
              url = \"http://127.0.0.1:7300/v1/mcp\"\n\
-             http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"\n\
+             http_headers = { Authorization = \"Bearer sva_k1\" }\n\
              tool_timeout_sec = 600\n"
         );
         assert!(codex_has_super_voice(&text));
@@ -854,7 +858,7 @@ model = \"o4-mini\"
 
     #[test]
     fn codex_entry_keeps_the_rest_of_the_file() {
-        let text = codex_with_super_voice(CODEX_CONFIG, URL, HELPER).unwrap();
+        let text = codex_with_super_voice(CODEX_CONFIG, URL, KEY).unwrap();
         assert_eq!(
             text,
             "\
@@ -866,7 +870,7 @@ command = \"docs-mcp\"  # local
 
 [mcp_servers.super-voice]
 url = \"http://127.0.0.1:7300/v1/mcp\"
-http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
+http_headers = { Authorization = \"Bearer sva_k1\" }
 tool_timeout_sec = 600
 
 # Fast work.
@@ -880,7 +884,7 @@ model = \"o4-mini\"
     /// A file of settings alone gets the entry after them.
     #[test]
     fn codex_entry_after_settings() {
-        let text = codex_with_super_voice("model = \"gpt-5\"\n", URL, HELPER).unwrap();
+        let text = codex_with_super_voice("model = \"gpt-5\"\n", URL, KEY).unwrap();
         assert!(
             text.starts_with("model = \"gpt-5\"\n\n[mcp_servers.super-voice]\n"),
             "{text}"
@@ -892,35 +896,38 @@ model = \"o4-mini\"
     }
 
     /// Connecting again updates the entry: one entry, the new values, the
-    /// user's own keys kept, and the ones that would stop it working gone.
+    /// user's own keys and headers kept, and the ones that would stop it
+    /// working gone, like the command an entry from before got its key from.
     #[test]
     fn codex_entry_is_updated_not_added_again() {
         let old = "\
 [mcp_servers.super-voice]
 url = \"http://127.0.0.1:7000/v1/mcp\"
 bearer_token_env_var = \"OLD_TOKEN\"
+http_headers_helper = \"voice assistant-header codex\"
+http_headers = { X-Trace = \"1\", authorization = \"Bearer old\" }
 enabled = false
 tool_timeout_sec = 30
 default_tools_approval_mode = \"approve\"
 ";
-        let text = codex_with_super_voice(old, URL, HELPER).unwrap();
+        let text = codex_with_super_voice(old, URL, KEY).unwrap();
         assert_eq!(
             text,
             "\
 [mcp_servers.super-voice]
 url = \"http://127.0.0.1:7300/v1/mcp\"
+http_headers = { X-Trace = \"1\", authorization = \"Bearer sva_k1\" }
 tool_timeout_sec = 600
 default_tools_approval_mode = \"approve\"
-http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
 "
         );
-        assert_eq!(codex_with_super_voice(&text, URL, HELPER).unwrap(), text);
+        assert_eq!(codex_with_super_voice(&text, URL, KEY).unwrap(), text);
 
         // A longer timeout the user set is kept.
         let longer = codex_with_super_voice(
             "[mcp_servers.super-voice]\ntool_timeout_sec = 900.5\n",
             URL,
-            HELPER,
+            KEY,
         )
         .unwrap();
         assert!(longer.contains("tool_timeout_sec = 900.5\n"), "{longer}");
@@ -931,7 +938,7 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
     #[test]
     fn codex_entry_in_an_inline_table() {
         let inline = "mcp_servers = { docs = { command = \"docs-mcp\" } }\n";
-        let text = codex_with_super_voice(inline, URL, HELPER).unwrap();
+        let text = codex_with_super_voice(inline, URL, KEY).unwrap();
         assert!(
             text.starts_with("mcp_servers = { docs = { command = \"docs-mcp\" }, super-voice = {"),
             "{text}"
@@ -961,7 +968,7 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
     #[test]
     fn codex_refuses_what_it_cannot_read() {
         assert!(matches!(
-            codex_with_super_voice("model = ", URL, HELPER),
+            codex_with_super_voice("model = ", URL, KEY),
             Err(Error::Toml(_))
         ));
         assert!(matches!(
@@ -970,32 +977,33 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
         ));
         assert!(!codex_has_super_voice("[x"));
         assert!(matches!(
-            codex_with_super_voice("mcp_servers = 3\n", URL, HELPER),
+            codex_with_super_voice("mcp_servers = 3\n", URL, KEY),
             Err(Error::NotATable(path)) if path == "mcp_servers"
         ));
         assert!(matches!(
-            codex_with_super_voice("[mcp_servers]\nsuper-voice = \"x\"\n", URL, HELPER),
+            codex_with_super_voice("[mcp_servers]\nsuper-voice = \"x\"\n", URL, KEY),
             Err(Error::NotATable(path)) if path == "mcp_servers.super-voice"
+        ));
+        assert!(matches!(
+            codex_with_super_voice("[mcp_servers.super-voice]\nhttp_headers = 1\n", URL, KEY),
+            Err(Error::NotATable(path)) if path == "mcp_servers.super-voice.http_headers"
         ));
     }
 
-    /// The helper runs through `sh -c`, so a path with a space or a quote in
-    /// it is quoted.
+    /// A path with a space or a quote in it is quoted for `sh`; a plain one
+    /// is left as it is.
     #[test]
-    fn codex_helper_quotes_the_program() {
-        assert_eq!(codex_headers_helper("/usr/local/bin/voice"), HELPER);
+    fn shell_quote_quotes_what_sh_would_split() {
+        assert_eq!(shell_quote("/usr/local/bin/voice"), "/usr/local/bin/voice");
         assert_eq!(
-            codex_headers_helper("voice"),
-            "voice assistant-header codex"
+            shell_quote("/Applications/Super Voice.app/Contents/MacOS/super-voice-cli"),
+            "'/Applications/Super Voice.app/Contents/MacOS/super-voice-cli'"
         );
         assert_eq!(
-            codex_headers_helper("/Applications/Super Voice.app/Contents/MacOS/voice"),
-            "'/Applications/Super Voice.app/Contents/MacOS/voice' assistant-header codex"
+            shell_quote("/home/o'neil/voice"),
+            r"'/home/o'\''neil/voice'"
         );
-        assert_eq!(
-            codex_headers_helper("/home/o'neil/voice"),
-            r"'/home/o'\''neil/voice' assistant-header codex"
-        );
+        assert_eq!(shell_quote(""), "''");
     }
 
     // OpenCode.
@@ -1444,7 +1452,7 @@ http_headers_helper = \"/usr/local/bin/voice assistant-header codex\"
         std::fs::write(&path, CODEX_CONFIG).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
 
-        assert!(update(&path, |text| codex_with_super_voice(text, URL, HELPER)).unwrap());
+        assert!(update(&path, |text| codex_with_super_voice(text, URL, KEY)).unwrap());
         assert_eq!(mode(&path), 0o644);
         assert!(update(&path, codex_without_super_voice).unwrap());
         assert_eq!(read(&path).unwrap(), CODEX_CONFIG);
