@@ -410,6 +410,50 @@ fn claude_marketplace(set: Option<String>) -> String {
         .unwrap_or_else(|| CLAUDE_MARKETPLACE.to_string())
 }
 
+/// Install Super Voice's plugin in assistant `id`, set to reach Super Voice
+/// at `address`. `program` is the assistant's own, when the daemon found it:
+/// Claude Code's, Codex's and agy's plugins are installed with it, so one of
+/// those found only by its config gets no plugin, and Claude Code, whose
+/// plugin is its entry, is not found.
+///
+/// # Errors
+///
+/// [`Error::NotFound`] for Claude Code without its program, and
+/// [`Error::Plugin`] when the files cannot be written, or a command fails or
+/// runs too long.
+pub async fn install_plugin(
+    id: AssistantId,
+    program: Option<&Path>,
+    address: &str,
+) -> Result<(), Error> {
+    match (id, program) {
+        (AssistantId::ClaudeCode, Some(claude)) => install_claude_plugin(claude, address).await,
+        (AssistantId::ClaudeCode, None) => Err(Error::NotFound),
+        (AssistantId::Codex, Some(codex)) => install_codex_plugin(codex).await,
+        (AssistantId::OpenCode, _) => install_opencode_plugin().await,
+        (AssistantId::Antigravity, Some(agy)) => install_antigravity_plugin(agy).await,
+        (AssistantId::Codex | AssistantId::Antigravity, None) => Ok(()),
+    }
+}
+
+/// Uninstall Super Voice's plugin from assistant `id`, with `program`, its
+/// own, when the daemon found it. Without it there is no plugin to
+/// uninstall, but for `OpenCode`'s, which is only files.
+///
+/// # Errors
+///
+/// [`Error::Plugin`] when a command fails or runs too long, or `OpenCode`'s
+/// plugin cannot be deleted.
+pub async fn uninstall_plugin(id: AssistantId, program: Option<&Path>) -> Result<(), Error> {
+    match (id, program) {
+        (AssistantId::ClaudeCode, Some(claude)) => uninstall_claude_plugin(claude).await,
+        (AssistantId::Codex, Some(codex)) => uninstall_codex_plugin(codex).await,
+        (AssistantId::OpenCode, _) => uninstall_opencode_plugin().await,
+        (AssistantId::Antigravity, Some(agy)) => uninstall_antigravity_plugin(agy).await,
+        (_, None) => Ok(()),
+    }
+}
+
 /// Install Super Voice's plugin in Claude Code, with `claude`, the program
 /// found: add its marketplace ([`claude_marketplace`]), then install it, for
 /// the user, set to reach Super Voice at `address`. Either already done is
@@ -418,7 +462,7 @@ fn claude_marketplace(set: Option<String>) -> String {
 /// # Errors
 ///
 /// [`Error::Plugin`] when a command fails or runs too long.
-pub async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), Error> {
+async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), Error> {
     let var = SUPER_VOICE.env(CLAUDE_MARKETPLACE_VAR);
     let marketplace = claude_marketplace(std::env::var(&var).ok());
     if marketplace != CLAUDE_MARKETPLACE {
@@ -460,7 +504,7 @@ pub async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), E
 /// # Errors
 ///
 /// [`Error::Plugin`] when the command fails or runs too long.
-pub async fn uninstall_claude_plugin(claude: &Path) -> Result<(), Error> {
+async fn uninstall_claude_plugin(claude: &Path) -> Result<(), Error> {
     run_plugin_command(
         claude,
         &["plugin", "uninstall", CLAUDE_PLUGIN, "--scope", "user"],
@@ -483,11 +527,10 @@ fn opencode_plugin_dir() -> Option<PathBuf> {
 /// # Errors
 ///
 /// [`Error::Plugin`] when the files cannot be written.
-pub fn install_opencode_plugin() -> Result<(), Error> {
+async fn install_opencode_plugin() -> Result<(), Error> {
     let dir = opencode_plugin_dir()
         .ok_or_else(|| Error::Plugin("no home folder for OpenCode's plugin".to_string()))?;
-    write_plugin_files(&dir, &OPENCODE_PLUGIN_FILES)
-        .map_err(|e| Error::Plugin(format!("could not write OpenCode's plugin: {e}")))?;
+    write_plugin(&dir, &OPENCODE_PLUGIN_FILES, "OpenCode's plugin").await?;
     info!("Wrote Super Voice's plugin into {}", dir.display());
     Ok(())
 }
@@ -498,20 +541,15 @@ pub fn install_opencode_plugin() -> Result<(), Error> {
 /// # Errors
 ///
 /// [`Error::Plugin`] when the folder is there and cannot be deleted.
-pub fn uninstall_opencode_plugin() -> Result<(), Error> {
+async fn uninstall_opencode_plugin() -> Result<(), Error> {
     let Some(dir) = opencode_plugin_dir() else {
         return Ok(());
     };
-    match std::fs::remove_dir_all(&dir) {
-        Ok(()) => {
-            info!("Deleted Super Voice's plugin from {}", dir.display());
-            Ok(())
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(Error::Plugin(format!(
-            "could not delete OpenCode's plugin: {e}"
-        ))),
-    }
+    remove_plugin_dir(&dir)
+        .await
+        .map_err(|e| Error::Plugin(format!("could not delete OpenCode's plugin: {e}")))?;
+    info!("Deleted Super Voice's plugin from {}", dir.display());
+    Ok(())
 }
 
 /// Where Super Voice writes its plugin for the Antigravity CLI, which `agy
@@ -531,24 +569,18 @@ fn antigravity_plugin_dir() -> PathBuf {
 ///
 /// [`Error::Plugin`] when the files cannot be written, or the command fails
 /// or runs too long.
-pub async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
+async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
     let dir = antigravity_plugin_dir();
     let voice = configs::shell_quote(&hook_program());
-    let files: Vec<(&'static str, String)> = ANTIGRAVITY_PLUGIN_FILES
+    let files: Vec<(&str, String)> = ANTIGRAVITY_PLUGIN_FILES
         .iter()
         .map(|(name, text)| (*name, with_voice(text, &voice)))
         .collect();
-    let written = dir.clone();
-    tokio::task::spawn_blocking(move || {
-        let files: Vec<(&str, &str)> = files
-            .iter()
-            .map(|(name, text)| (*name, text.as_str()))
-            .collect();
-        write_plugin_files(&written, &files)
-    })
-    .await
-    .map_err(|e| Error::Plugin(e.to_string()))?
-    .map_err(|e| Error::Plugin(format!("could not write the Antigravity CLI's plugin: {e}")))?;
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(name, text)| (*name, text.as_str()))
+        .collect();
+    write_plugin(&dir, &files, "the Antigravity CLI's plugin").await?;
     let source = dir.to_string_lossy();
     run_plugin_command(agy, &["plugin", "install", &source], &[]).await
 }
@@ -575,15 +607,15 @@ fn hook_program() -> String {
 /// # Errors
 ///
 /// [`Error::Plugin`] when the command fails or runs too long.
-pub async fn uninstall_antigravity_plugin(agy: &Path) -> Result<(), Error> {
+async fn uninstall_antigravity_plugin(agy: &Path) -> Result<(), Error> {
     run_plugin_command(
         agy,
         &["plugin", "uninstall", ANTIGRAVITY_PLUGIN],
         &["not installed", "not found"],
     )
     .await?;
-    let dir = antigravity_plugin_dir();
-    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+    // The copy it was installed from; what is left of it does no harm.
+    let _ = remove_plugin_dir(&antigravity_plugin_dir()).await;
     Ok(())
 }
 
@@ -611,6 +643,37 @@ fn write_plugin_files(dir: &Path, files: &[(&str, &str)]) -> std::io::Result<()>
         std::fs::write(&path, text)?;
     }
     Ok(())
+}
+
+/// Write `files` into `dir`, as [`write_plugin_files`] does, on a thread
+/// that may block. `what` names the plugin in the error.
+async fn write_plugin(dir: &Path, files: &[(&str, &str)], what: &str) -> Result<(), Error> {
+    let dir = dir.to_path_buf();
+    let files: Vec<(String, String)> = files
+        .iter()
+        .map(|(place, text)| ((*place).to_string(), (*text).to_string()))
+        .collect();
+    tokio::task::spawn_blocking(move || {
+        let files: Vec<(&str, &str)> = files
+            .iter()
+            .map(|(place, text)| (place.as_str(), text.as_str()))
+            .collect();
+        write_plugin_files(&dir, &files)
+    })
+    .await
+    .map_err(|e| Error::Plugin(e.to_string()))?
+    .map_err(|e| Error::Plugin(format!("could not write {what}: {e}")))
+}
+
+/// Delete `dir`, a plugin's folder, on a thread that may block. Not there is
+/// fine.
+async fn remove_plugin_dir(dir: &Path) -> std::io::Result<()> {
+    let dir = dir.to_path_buf();
+    match tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await {
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(removed) => removed,
+        Err(e) => Err(std::io::Error::other(e)),
+    }
 }
 
 /// A plugin file, `text`, with `{voice}` made `voice` in each of its JSON
@@ -662,13 +725,9 @@ fn with_version(text: &str, version: &str) -> String {
 ///
 /// [`Error::Plugin`] when the files cannot be written, or a command fails or
 /// runs too long.
-pub async fn install_codex_plugin(codex: &Path) -> Result<(), Error> {
+async fn install_codex_plugin(codex: &Path) -> Result<(), Error> {
     let dir = codex_marketplace_dir();
-    let written = dir.clone();
-    tokio::task::spawn_blocking(move || write_plugin_files(&written, &CODEX_MARKETPLACE_FILES))
-        .await
-        .map_err(|e| Error::Plugin(e.to_string()))?
-        .map_err(|e| Error::Plugin(format!("could not write Codex's plugin: {e}")))?;
+    write_plugin(&dir, &CODEX_MARKETPLACE_FILES, "Codex's plugin").await?;
     let source = dir.to_string_lossy();
     run_plugin_command(
         codex,
@@ -692,7 +751,7 @@ pub async fn install_codex_plugin(codex: &Path) -> Result<(), Error> {
 /// # Errors
 ///
 /// [`Error::Plugin`] when a command fails or runs too long.
-pub async fn uninstall_codex_plugin(codex: &Path) -> Result<(), Error> {
+async fn uninstall_codex_plugin(codex: &Path) -> Result<(), Error> {
     run_plugin_command(
         codex,
         &["plugin", "remove", CODEX_PLUGIN],
@@ -705,8 +764,8 @@ pub async fn uninstall_codex_plugin(codex: &Path) -> Result<(), Error> {
         &["not found", "no marketplace", "not configured"],
     )
     .await?;
-    let dir = codex_marketplace_dir();
-    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
+    // The marketplace's files; what is left of them does no harm.
+    let _ = remove_plugin_dir(&codex_marketplace_dir()).await;
     Ok(())
 }
 

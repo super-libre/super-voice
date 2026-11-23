@@ -199,26 +199,13 @@ impl SuperSTTDaemon {
             .ok()
             .flatten();
         let url = self.mcp_address().await;
-        if id == AssistantId::ClaudeCode {
-            let claude = program.ok_or(Error::NotFound)?;
-            return assistants::install_claude_plugin(&claude, &url).await;
+        if id != AssistantId::ClaudeCode {
+            let (url, secret) = (url.clone(), secret.to_string());
+            tokio::task::spawn_blocking(move || assistants::write_entry(id, &url, &secret))
+                .await
+                .unwrap_or_else(|e| Err(Error::Config(e.to_string())))?;
         }
-        let secret = secret.to_string();
-        tokio::task::spawn_blocking(move || assistants::write_entry(id, &url, &secret))
-            .await
-            .unwrap_or_else(|e| Err(Error::Config(e.to_string())))?;
-        match (id, program) {
-            (AssistantId::Codex, Some(codex)) => assistants::install_codex_plugin(&codex).await,
-            (AssistantId::OpenCode, _) => {
-                tokio::task::spawn_blocking(assistants::install_opencode_plugin)
-                    .await
-                    .unwrap_or_else(|e| Err(Error::Plugin(e.to_string())))
-            }
-            (AssistantId::Antigravity, Some(agy)) => {
-                assistants::install_antigravity_plugin(&agy).await
-            }
-            _ => Ok(()),
-        }
+        assistants::install_plugin(id, program.as_deref(), &url).await
     }
 
     /// Take the entry a connect that failed wrote back out of `id`'s config.
@@ -259,22 +246,7 @@ impl SuperSTTDaemon {
             .await
             .ok()
             .flatten();
-        // Without the assistant's program there is no plugin to uninstall.
-        let plugin = match (id, &program) {
-            (AssistantId::ClaudeCode, Some(claude)) => {
-                assistants::uninstall_claude_plugin(claude).await
-            }
-            (AssistantId::Codex, Some(codex)) => assistants::uninstall_codex_plugin(codex).await,
-            (AssistantId::OpenCode, _) => {
-                tokio::task::spawn_blocking(assistants::uninstall_opencode_plugin)
-                    .await
-                    .unwrap_or_else(|e| Err(Error::Plugin(e.to_string())))
-            }
-            (AssistantId::Antigravity, Some(agy)) => {
-                assistants::uninstall_antigravity_plugin(agy).await
-            }
-            _ => Ok(()),
-        };
+        let plugin = assistants::uninstall_plugin(id, program.as_deref()).await;
         let removed = if id == AssistantId::ClaudeCode {
             plugin
         } else {
