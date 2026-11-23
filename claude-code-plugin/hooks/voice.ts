@@ -19,6 +19,25 @@ export const NOT_SPOKEN_TO =
   'The user typed this prompt, so answer in writing. Super Voice speaks and listens only ' +
   'while the user is talking to you by voice, which they start with Talk.'
 
+/** A tool's answer: its text, and whether it failed. */
+export type Answer = { text: string; isError: boolean }
+
+/** The fields of a tool's JSON answer: none when the call failed, or its text
+ * is not a JSON object. */
+export function fieldsOf(answer: Answer): Record<string, unknown> {
+  if (answer.isError) {
+    return {}
+  }
+  try {
+    const value: unknown = JSON.parse(answer.text)
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
 /** The Super Voice tools the model calls. */
 export const MODEL_TOOL_NAMES = ['speak', 'listen'] as const
 

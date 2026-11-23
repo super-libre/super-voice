@@ -8,8 +8,7 @@
 /** Where Super Voice is, and the headers that let the plugin in. */
 export type Target = { url: string; headers: Record<string, string> }
 
-/** A tool's answer: its text, and whether it failed. */
-export type Answer = { text: string; isError: boolean }
+import type { Answer } from './voice'
 
 /** The answer to a call that never reached Super Voice. */
 const UNREACHABLE: Answer = { text: 'Super Voice is not reachable.', isError: true }

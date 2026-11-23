@@ -13,7 +13,7 @@ import { Plugin } from '@opencode/plugin'
 import { SuperVoice, type Target } from './mcp'
 import { Voice } from './rpc'
 import { pickTerms } from './terms'
-import { MODEL_TOOL_NAMES, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE } from './voice'
+import { MODEL_TOOL_NAMES, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE, fieldsOf } from './voice'
 
 /** Super Voice's entry in OpenCode's config, which names its tools. */
 const SERVER = 'super-voice'
@@ -26,15 +26,6 @@ const PLUGIN_TOOLS = PLUGIN_TOOL_NAMES.map(tool => `${SERVER}_${tool}`)
 function isSpoken(metadata: unknown): boolean {
   const voice = (metadata as { superVoice?: { spoken?: unknown } } | undefined)?.superVoice
   return voice?.spoken === true
-}
-
-/** Whether Super Voice's answer to a prompt's `turn` says it was spoken. */
-function saysSpoken(text: string | undefined): boolean {
-  try {
-    return (JSON.parse(text ?? '{}') as { spoken?: unknown }).spoken === true
-  } catch {
-    return false
-  }
 }
 
 /** The text of a stored message, its text parts joined. */
@@ -138,7 +129,7 @@ export default Plugin.define({
         text: event.prompt.text,
         ...(isTalk ? { spoken: true } : {}),
       })
-      spoken.set(event.sessionID, isTalk || saysSpoken(answer.isError ? undefined : answer.text))
+      spoken.set(event.sessionID, isTalk || fieldsOf(answer).spoken === true)
     })
 
     const told = await ctx.session.hook('context', event => {
@@ -191,13 +182,7 @@ export default Plugin.define({
       status: async input => {
         const { sessionID } = input as { sessionID: string }
         const answer = await call('status', sessionID)
-        const status = (() => {
-          try {
-            return JSON.parse(answer.text) as { speaking?: unknown; listening?: unknown; talk?: unknown }
-          } catch {
-            return {}
-          }
-        })()
+        const status = fieldsOf(answer)
         return {
           speaking: status.speaking === true,
           listening: status.listening === true,
@@ -214,7 +199,7 @@ export default Plugin.define({
       }
       const { reply } = await lastExchange(event.sessionID)
       const answer = await call('turn', event.sessionID, { event: 'reply', text: reply })
-      if (!answer.isError && answer.text.includes('"read":true')) {
+      if (fieldsOf(answer).read === true) {
         await rpc.events.emit('replied', { sessionID: event.sessionID })
       }
     })

@@ -15,7 +15,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { SuperVoiceTalk } from '../types'
 import { pickTerms } from './terms'
-import { NO_SPEECH, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE } from './voice'
+import { type Answer, NO_SPEECH, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE, fieldsOf } from './voice'
 
 const speaking = atom({ plugin: 'super-voice', key: 'isSpeaking' } as const, false)
 const claudeListening = atom(
@@ -137,8 +137,6 @@ async function sessionOf($: EngineInterface, id?: string) {
   return { id: id ?? (await $.session.id()), ...(folder ? { folder } : {}) }
 }
 
-type Answer = { text: string; isError: boolean }
-
 /** Call one of Super Voice's tools for this session, or for session `id`,
  * through Claude Code's own connection: its answer, an error with no text
  * when the call failed. */
@@ -174,14 +172,7 @@ async function promptWasSpoken(
     ...(isTalk ? { spoken: true } : {}),
     ...(heard ? { heard } : {}),
   })
-  if (isTalk || answer.isError) {
-    return isTalk
-  }
-  try {
-    return (JSON.parse(answer.text) as { spoken?: unknown }).spoken === true
-  } catch {
-    return false
-  }
+  return isTalk || fieldsOf(answer).spoken === true
 }
 
 type VoiceStatus = { isSpeaking: boolean; isListening: boolean }
@@ -193,16 +184,12 @@ async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined>
   if (answer.isError) {
     return undefined
   }
-  try {
-    const status = JSON.parse(answer.text) as { speaking?: unknown; listening?: unknown; talk?: unknown }
-    if (typeof status.talk === 'boolean' && status.talk !== isTalkShown) {
-      isTalkShown = status.talk
-      await update($, showsTalk, () => status.talk === true)
-    }
-    return { isSpeaking: status.speaking === true, isListening: status.listening === true }
-  } catch {
-    return undefined
+  const { speaking: isSpeaking, listening: isListening, talk: isShown } = fieldsOf(answer)
+  if (typeof isShown === 'boolean' && isShown !== isTalkShown) {
+    isTalkShown = isShown
+    await update($, showsTalk, () => isShown)
   }
+  return { isSpeaking: isSpeaking === true, isListening: isListening === true }
 }
 
 /** Tell Super Voice this session is open, and check in while it is. A new
