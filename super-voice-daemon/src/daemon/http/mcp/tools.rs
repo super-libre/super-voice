@@ -58,9 +58,9 @@ const NOT_SPOKEN_TO: &str = "The user typed this prompt, so answer in writing. S
 const SPOKEN_NOTE: &str = "The user said this aloud, through Super Voice. Your reply will be \
     read aloud to them: keep it short and plain to listen to, and end with any question you have.";
 
-/// The refusal for `who`, when its plugin said the turn under way was typed.
-fn not_spoken_to(daemon: &SuperSTTDaemon, who: &Who) -> Option<String> {
-    (daemon.assistants.sessions.spoken(who) == Some(false)).then(|| NOT_SPOKEN_TO.to_string())
+/// Whether `who`'s plugin said the turn under way was typed.
+fn is_typed_turn(daemon: &SuperSTTDaemon, who: &Who) -> bool {
+    daemon.assistants.sessions.spoken(who) == Some(false)
 }
 
 /// `answer`, or for a hook, which reads the text as its own output,
@@ -85,9 +85,9 @@ pub(crate) async fn run(
     let sessions = &daemon.assistants.sessions;
     match tool {
         Tool::Speak { asked: false, .. } | Tool::Listen { asked: false, .. }
-            if not_spoken_to(daemon, who).is_some() =>
+            if is_typed_turn(daemon, who) =>
         {
-            not_spoken_to(daemon, who).map(Err)
+            Some(Err(NOT_SPOKEN_TO.to_string()))
         }
         Tool::Speak { text, .. } => speak(daemon, who, text, cancel).await,
         Tool::Listen {
@@ -123,19 +123,17 @@ pub(crate) async fn run(
             }
             .to_string(),
         ))),
-        Tool::Turn(TurnEvent::Prompt { text, .. }) if read_request(&text).is_some() => {
-            let request = read_request(&text)?;
-            // A turn of its own, typed, that ends before the assistant runs.
-            sessions.set_spoken(who, false);
-            let outcome = read_again(daemon, who, request).await;
-            Some(Ok(read_answer(caller.hook, outcome)))
-        }
         Tool::Turn(TurnEvent::Prompt {
             text,
             spoken,
             heard,
             again,
-        }) => {
+        }) => Some(Ok(if let Some(request) = read_request(&text) {
+            // A turn of its own, typed, that ends before the assistant runs.
+            sessions.set_spoken(who, false);
+            let outcome = read_again(daemon, who, request).await;
+            read_answer(caller.hook, outcome)
+        } else {
             // The same prompt said again keeps its turn: its dictation is
             // used up by now.
             let again = sessions.prompted(who, &text, again);
@@ -144,8 +142,8 @@ pub(crate) async fn run(
                     || sessions.was_dictated(&text, std::time::Instant::now())
             });
             sessions.set_spoken(who, spoken);
-            Some(Ok(prompt_answer(caller.hook, spoken, again.is_none())))
-        }
+            prompt_answer(caller.hook, spoken, again.is_none())
+        })),
         Tool::Turn(TurnEvent::Reply { text }) => {
             sessions.replied(who, &text);
             let read = sessions.spoken(who) == Some(true) && !text.trim().is_empty();
@@ -313,7 +311,7 @@ async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     }
     let playing = sessions
         .utterance(who)
-        .filter(|utterance| daemon.tts.speech.current().as_deref() == Some(utterance.as_str()));
+        .filter(|utterance| is_playing(daemon, utterance));
     if let Some(utterance) = &playing {
         silence_if_speaking(daemon, utterance).await;
     }
@@ -335,14 +333,19 @@ async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     }
 }
 
+/// Whether `utterance` is the speech playing.
+fn is_playing(daemon: &SuperSTTDaemon, utterance: &str) -> bool {
+    daemon.tts.speech.current().as_deref() == Some(utterance)
+}
+
 /// Whether `who`'s own speech plays, or is on its way: waiting for the
 /// model, or being made.
 fn is_speaking(daemon: &SuperSTTDaemon, who: &Who) -> bool {
     let sessions = &daemon.assistants.sessions;
     sessions.speaking(who).is_some()
-        || sessions.utterance(who).is_some_and(|utterance| {
-            daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
-        })
+        || sessions
+            .utterance(who)
+            .is_some_and(|utterance| is_playing(daemon, &utterance))
 }
 
 /// Whether `who`'s own speech plays and whether it records, and whether the
@@ -553,7 +556,7 @@ async fn ask(
     };
     let mut listening = true;
     loop {
-        if daemon.tts.speech.current().as_deref() != Some(utterance.as_str()) {
+        if !is_playing(daemon, &utterance) {
             return Asked::Done;
         }
         tokio::select! {
@@ -576,7 +579,7 @@ async fn ask(
 /// Stop `utterance`, if it is still the one speaking. Speech the user or
 /// another client started since is left alone.
 async fn silence_if_speaking(daemon: &SuperSTTDaemon, utterance: &str) {
-    if daemon.tts.speech.current().as_deref() == Some(utterance) {
+    if is_playing(daemon, utterance) {
         let _ = daemon.tts.stop_speaking().await;
     }
 }
