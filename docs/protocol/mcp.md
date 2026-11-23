@@ -138,10 +138,13 @@ itself, first match wins:
    connection nothing named is a session of its own.
 4. Otherwise all the caller's calls are one session.
 
-A session is kept from its first call, or from its plugin's `session` start,
-until its plugin says it ended, its assistant is disconnected, or it goes
-quiet: 3 minutes for one its plugin opened, which checks in every minute, and
-30 minutes for any other. One still recording is kept. The speech and the
+A session is listed from its first call, or from its plugin's `session`
+start, until its plugin says it ended, its assistant is disconnected, or it
+goes quiet: 3 minutes for one its plugin opened, which checks in every
+minute, and 30 minutes for any other. One still recording stays listed. Off
+the list, a session that went quiet is remembered for a day: its turn,
+spoken or typed, and its replies, so a long task that said nothing to Super
+Voice ends in the turn it began. The speech and the
 recording a session starts are its own: `stop` and `status` see only those.
 [`GET /assistants`](endpoints/v1/assistants.md) lists each assistant's open
 sessions.

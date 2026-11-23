@@ -23,6 +23,12 @@ pub const OPENED_IDLE: Duration = Duration::from_mins(3);
 /// when it ends.
 pub const SEEN_IDLE: Duration = Duration::from_mins(30);
 
+/// How long a session is remembered once it has left the list: its turn,
+/// spoken or typed, and its replies. A turn may run long with nothing said
+/// to Super Voice, as a Codex task working on its own does, and is still the
+/// turn it was when it ends.
+pub const REMEMBERED: Duration = Duration::from_hours(24);
+
 /// What a request says of the session it comes from.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Named {
@@ -96,6 +102,13 @@ struct Entry {
 impl Entry {
     fn is(&self, who: &Who) -> bool {
         self.caller == who.caller && self.id == who.named.id
+    }
+
+    /// Whether it is listed at `now`: it records, or has not been quiet for
+    /// longer than a session like it may be.
+    fn is_listed(&self, now: Instant) -> bool {
+        let idle = if self.opened { OPENED_IDLE } else { SEEN_IDLE };
+        self.recordings > 0 || now.saturating_duration_since(self.last_active) < idle
     }
 
     fn view(&self) -> SessionView {
@@ -434,16 +447,25 @@ impl Sessions {
         let mut entries = self.entries.lock();
         let before = entries.len();
         entries.retain(|entry| {
-            let idle = if entry.opened { OPENED_IDLE } else { SEEN_IDLE };
-            entry.recordings > 0 || now.saturating_duration_since(entry.last_active) < idle
+            entry.recordings > 0 || now.saturating_duration_since(entry.last_active) < REMEMBERED
         });
         before - entries.len()
     }
 
-    /// Every session, oldest first.
+    /// Every session listed, oldest first.
     #[must_use]
     pub fn list(&self) -> Vec<SessionView> {
-        self.entries.lock().iter().map(Entry::view).collect()
+        self.list_at(Instant::now())
+    }
+
+    /// Every session listed at `now`, oldest first.
+    fn list_at(&self, now: Instant) -> Vec<SessionView> {
+        self.entries
+            .lock()
+            .iter()
+            .filter(|entry| entry.is_listed(now))
+            .map(Entry::view)
+            .collect()
     }
 
     /// Run `change` on `who`'s session, made now if it is new, and mark it
@@ -609,30 +631,44 @@ mod tests {
         assert_eq!(list[0].id, None);
     }
 
-    /// One its plugin opened goes after a few quiet minutes, one nothing
-    /// opened after half an hour, and one recording stays.
+    /// One its plugin opened leaves the list after a few quiet minutes, one
+    /// nothing opened after half an hour, and one recording stays. Off the
+    /// list, a session still holds its turn, until a day has gone by.
     #[test]
-    fn quiet_sessions_are_swept() {
+    fn quiet_sessions_leave_the_list_and_are_forgotten_later() {
         let sessions = Arc::new(Sessions::default());
         let opened = who("a", Some("opened"));
         let seen = who("a", Some("seen"));
         let listening = who("a", Some("listening"));
         sessions.open(&opened);
         sessions.touch(&seen);
+        sessions.set_spoken(&seen, false);
         let take = sessions.recording(&listening);
+        let listed = |at| {
+            sessions
+                .list_at(at)
+                .into_iter()
+                .filter_map(|session| session.id)
+                .collect::<Vec<_>>()
+        };
 
         let now = Instant::now();
-        assert_eq!(sessions.sweep(now + OPENED_IDLE / 2), 0);
+        assert_eq!(listed(now + OPENED_IDLE / 2).len(), 3);
         assert_eq!(
-            sessions.sweep(now + OPENED_IDLE + Duration::from_secs(1)),
-            1
+            listed(now + OPENED_IDLE + Duration::from_secs(1)),
+            ["seen", "listening"]
         );
-        assert_eq!(sessions.sweep(now + SEEN_IDLE + Duration::from_secs(1)), 1);
-        let left = sessions.list();
-        assert_eq!(left.len(), 1);
-        assert_eq!(left[0].id.as_deref(), Some("listening"));
+        let after_half_an_hour = now + SEEN_IDLE + Duration::from_secs(1);
+        assert_eq!(listed(after_half_an_hour), ["listening"]);
+        // A typed turn stays typed off the list: a long task's speech at
+        // its end is still refused.
+        assert_eq!(sessions.sweep(after_half_an_hour), 0);
+        assert_eq!(sessions.spoken(&seen), Some(false));
+
         drop(take);
-        assert_eq!(sessions.sweep(now + SEEN_IDLE + Duration::from_secs(1)), 1);
+        let after_a_day = now + REMEMBERED + Duration::from_secs(1);
+        assert_eq!(sessions.sweep(after_a_day), 3);
+        assert_eq!(sessions.spoken(&seen), None);
     }
 
     /// A session keeps its last replies, the last one first, each once, and
