@@ -33,6 +33,8 @@ pub struct Calls {
 struct Entry {
     serial: u64,
     caller: Caller,
+    /// The connection it came over, its `Mcp-Session-Id`, when it named one.
+    connection: Option<String>,
     /// The JSON-RPC id, as JSON text, so `1` and `"1"` stay two ids.
     request: String,
     cancel: CancellationToken,
@@ -64,18 +66,23 @@ impl Drop for InFlight {
 }
 
 impl Calls {
-    /// Keep a call `caller` made with JSON-RPC id `request`, until the
-    /// returned guard is dropped.
+    /// Keep a call `caller` made over `connection` with JSON-RPC id
+    /// `request`, until the returned guard is dropped.
     ///
-    /// Two calls can share an id: the server is stateless, so two sessions
-    /// of one assistant both count from 1. Both are kept, and a cancel names
-    /// both.
-    pub fn begin(self: &Arc<Self>, caller: Caller, request: &Value) -> InFlight {
+    /// Two calls can share an id: each connection counts its own, so two
+    /// sessions of one assistant both count from 1. Both are kept.
+    pub fn begin(
+        self: &Arc<Self>,
+        caller: Caller,
+        connection: Option<String>,
+        request: &Value,
+    ) -> InFlight {
         let serial = self.next.fetch_add(1, Ordering::Relaxed);
         let cancel = CancellationToken::new();
         self.entries.lock().push(Entry {
             serial,
             caller,
+            connection,
             request: request.to_string(),
             cancel: cancel.clone(),
         });
@@ -86,11 +93,16 @@ impl Calls {
         }
     }
 
-    /// Cancel the calls `caller` made with JSON-RPC id `request`. How many
-    /// were.
-    pub fn cancel(&self, caller: &Caller, request: &Value) -> usize {
+    /// Cancel the calls `caller` made with JSON-RPC id `request` over
+    /// `connection`: the cancel's own. One naming no connection reaches the
+    /// caller's calls with that id over any. How many there were.
+    pub fn cancel(&self, caller: &Caller, connection: Option<&str>, request: &Value) -> usize {
         let request = request.to_string();
-        self.cancel_where(|entry| entry.caller == *caller && entry.request == request)
+        self.cancel_where(|entry| {
+            entry.caller == *caller
+                && entry.request == request
+                && (connection.is_none() || entry.connection.as_deref() == connection)
+        })
     }
 
     /// Cancel every call `caller` made. How many there were.
@@ -133,37 +145,48 @@ mod tests {
     #[test]
     fn a_cancel_reaches_only_the_call_it_names() {
         let calls = Arc::new(Calls::default());
-        let mine = calls.begin(key("a"), &json!(1));
-        let other_id = calls.begin(key("a"), &json!(2));
-        let same_text = calls.begin(key("a"), &json!("1"));
-        let other_caller = calls.begin(key("b"), &json!(1));
+        let mine = calls.begin(key("a"), None, &json!(1));
+        let other_id = calls.begin(key("a"), None, &json!(2));
+        let same_text = calls.begin(key("a"), None, &json!("1"));
+        let other_caller = calls.begin(key("b"), None, &json!(1));
 
-        assert_eq!(calls.cancel(&key("a"), &json!(1)), 1);
+        assert_eq!(calls.cancel(&key("a"), None, &json!(1)), 1);
         assert!(mine.token().is_cancelled());
         assert!(!other_id.token().is_cancelled());
         assert!(!same_text.token().is_cancelled(), "1 and \"1\" are two ids");
         assert!(!other_caller.token().is_cancelled());
     }
 
-    /// Two sessions of one assistant count from 1 alike, and the server
-    /// cannot tell them apart, so a cancel reaches both.
+    /// Two sessions of one assistant count from 1 alike. A cancel over a
+    /// connection reaches that connection's call only; one naming none
+    /// reaches both.
     #[test]
-    fn calls_sharing_an_id_are_both_kept_and_both_cancelled() {
+    fn calls_sharing_an_id_are_both_kept_and_cancelled_by_connection() {
         let calls = Arc::new(Calls::default());
-        let first = calls.begin(key("a"), &json!(3));
-        let second = calls.begin(key("a"), &json!(3));
+        let first = calls.begin(key("a"), Some("c1".to_string()), &json!(3));
+        let second = calls.begin(key("a"), Some("c2".to_string()), &json!(3));
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls.cancel(&key("a"), &json!(3)), 2);
-        assert!(first.token().is_cancelled() && second.token().is_cancelled());
+        assert_eq!(calls.cancel(&key("a"), Some("c2"), &json!(3)), 1);
+        assert!(second.token().is_cancelled());
+        assert!(
+            !first.token().is_cancelled(),
+            "the other connection's call goes on"
+        );
+        // Cancelled, it ends.
+        drop(second);
+
+        let third = calls.begin(key("a"), Some("c3".to_string()), &json!(3));
+        assert_eq!(calls.cancel(&key("a"), None, &json!(3)), 2);
+        assert!(first.token().is_cancelled() && third.token().is_cancelled());
     }
 
     /// Revoking a key cancels every call it has running.
     #[test]
     fn cancelling_a_caller_cancels_all_its_calls() {
         let calls = Arc::new(Calls::default());
-        let one = calls.begin(key("a"), &json!(1));
-        let two = calls.begin(key("a"), &json!(2));
-        let session = calls.begin(Caller::Session("t".to_string()), &json!(1));
+        let one = calls.begin(key("a"), None, &json!(1));
+        let two = calls.begin(key("a"), None, &json!(2));
+        let session = calls.begin(Caller::Session("t".to_string()), None, &json!(1));
         assert_eq!(calls.cancel_caller(&key("a")), 2);
         assert!(one.token().is_cancelled() && two.token().is_cancelled());
         assert!(!session.token().is_cancelled());
@@ -172,10 +195,10 @@ mod tests {
     #[test]
     fn a_call_is_forgotten_when_it_ends() {
         let calls = Arc::new(Calls::default());
-        let call = calls.begin(key("a"), &json!(1));
+        let call = calls.begin(key("a"), None, &json!(1));
         assert!(!calls.is_empty());
         drop(call);
         assert!(calls.is_empty());
-        assert_eq!(calls.cancel(&key("a"), &json!(1)), 0);
+        assert_eq!(calls.cancel(&key("a"), None, &json!(1)), 0);
     }
 }

@@ -218,8 +218,10 @@ A call ends without an answer, and its stream ends with no `message` event,
 when:
 
 1. The client sends `notifications/cancelled` naming the call's request id.
-   The server cannot tell two sessions of one assistant apart, so a cancel
-   reaches every call that assistant has running under that id.
+   Sent with the connection's `Mcp-Session-Id`, it reaches that connection's
+   call only: two sessions of one assistant each count their own ids. Sent
+   without one, it reaches every call the assistant has running under that
+   id.
 2. The client closes the connection. The server notices at the next keepalive,
    within two seconds.
 3. The user disconnects the assistant, or revokes the key made by hand. The key
