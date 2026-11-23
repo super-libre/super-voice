@@ -15,7 +15,15 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { SuperVoiceTalk } from '../types'
 import { talkArgs } from './terms'
-import { type Answer, NO_SPEECH, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE, fieldsOf } from './voice'
+import {
+  type Answer,
+  MODEL_TOOL_NAMES,
+  NO_SPEECH,
+  NOT_SPOKEN_TO,
+  PLUGIN_TOOL_NAMES,
+  SPOKEN_NOTE,
+  fieldsOf,
+} from './voice'
 
 const speaking = atom({ plugin: 'super-voice', key: 'isSpeaking' } as const, false)
 const claudeListening = atom(
@@ -57,16 +65,14 @@ const SERVER_KEY = 'voice'
  * to learn whether the user shows Talk, so the switch on the Assistants page
  * takes effect soon after it moves. */
 const CHECK_IN_MS = 5_000
+/** A Super Voice tool, as Claude Code names it. */
+const toolName = (tool: string) => `mcp__plugin_${NAME}_${SERVER_KEY}__${tool}`
 /** The tools this plugin calls itself, kept from the model. */
-const PLUGIN_TOOLS: ReadonlySet<string> = new Set(
-  PLUGIN_TOOL_NAMES.map(tool => `mcp__plugin_super-voice_voice__${tool}`),
-)
-/** The Super Voice tools that speak. `listen` asks its question aloud. */
-const LISTEN_TOOL = 'mcp__plugin_super-voice_voice__listen'
-const SPEAKING_TOOLS: ReadonlySet<string> = new Set([
-  'mcp__plugin_super-voice_voice__speak',
-  LISTEN_TOOL,
-])
+const PLUGIN_TOOLS: ReadonlySet<string> = new Set(PLUGIN_TOOL_NAMES.map(toolName))
+/** The tools Claude calls, which speak or record: refused in a typed turn.
+ * `listen` asks its question aloud. */
+const MODEL_TOOLS: ReadonlySet<string> = new Set(MODEL_TOOL_NAMES.map(toolName))
+const LISTEN_TOOL = toolName('listen')
 
 // Watching for speech.
 let speechTimer: Timer | undefined
@@ -120,7 +126,7 @@ let checkInTimer: Timer | undefined
 let isCheckingIn = false
 
 /** Super Voice's MCP server as Claude Code names it, once connected. */
-let server = 'plugin:super-voice:voice'
+let server = `plugin:${NAME}:${SERVER_KEY}`
 
 /** Whether `origin`, the one that changed or sent the prompt, is this
  * plugin. */
@@ -553,7 +559,7 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
-    if (!SPEAKING_TOOLS.has(e.tool)) {
+    if (!MODEL_TOOLS.has(e.tool)) {
       return next(e)
     }
     // This plugin's own calls, as Talk and reading a reply make them, name
