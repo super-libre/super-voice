@@ -6,9 +6,8 @@
 //! Only what a server of tools needs is here: `initialize`, `ping`,
 //! `tools/list`, `tools/call` and `notifications/cancelled`. The tools are
 //! `speak` and `listen`, and a caller is offered only the ones its key or
-//! token may use. An assistant whose plugin works through its own connection
-//! also gets `stop`, `status`, `announce` and `session`, marked for the app
-//! and not the model.
+//! token may use. A connected assistant's plugin also gets `stop`, `status`,
+//! `announce`, `session` and `turn`, kept from the model: see [`Plugin`].
 
 use serde_json::{Value, json};
 use super_voice_shared::models::contexts::ExtraContext;
@@ -60,9 +59,9 @@ pub(crate) enum Plugin {
     /// No plugin: the model's tools alone.
     #[default]
     None,
-    /// Claude Code's, which hides them from the model itself. Claude Code
-    /// keeps a tool marked for the app alone from the plugin's own calls
-    /// too, so they go unmarked.
+    /// Claude Code's, `OpenCode`'s and agy's, which hide them from the model
+    /// themselves. Claude Code keeps a tool marked for the app alone from
+    /// the plugin's own calls too, so they go unmarked.
     HidesItsTools,
     /// Codex's: its client keeps a tool marked for the app alone from its
     /// model, so they are marked.

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! MCP's Streamable HTTP transport, without sessions: every message is a
-//! `POST` of its own, and nothing is kept between them but the tool calls
-//! in flight.
+//! MCP's Streamable HTTP transport: every message is a `POST` of its own.
+//! The answer to `initialize` carries an `Mcp-Session-Id`, which only tells
+//! a client's sessions apart and matches a cancel to its call: a request
+//! with none, or one from before a restart, is served all the same.
 //!
 //! 1. A request that answers at once (`initialize`, `ping`, `tools/list`) is
 //!    answered with `application/json`.

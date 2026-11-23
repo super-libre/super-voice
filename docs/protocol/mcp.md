@@ -164,9 +164,13 @@ by hand, is only told.
 ## Transport
 
 [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
-without sessions: every message is a `POST` of its own, the server sends no
-`Mcp-Session-Id`, and nothing is kept between messages but the tool calls in
-flight.
+with every message a `POST` of its own. The server sends an `Mcp-Session-Id`
+with its answer to `initialize`, and uses the one a client sends back only to
+tell its sessions apart (see [Sessions](#sessions)) and to match a cancel to
+its call. It never refuses a request for a missing or unknown one, so a
+client whose id is from before a restart goes on as it was. Between
+messages it keeps the tool calls in flight and each session's turn and
+replies, in memory: a restart forgets them.
 
 | Message                                   | Answer                                                     |
 |-------------------------------------------|------------------------------------------------------------|
