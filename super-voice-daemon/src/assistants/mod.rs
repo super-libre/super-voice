@@ -200,8 +200,39 @@ fn search_dirs() -> Vec<PathBuf> {
         .map_or_else(Vec::new, |path| std::env::split_paths(&path).collect());
     if let Some(home) = dirs::home_dir() {
         dirs.extend(HOME_BIN_DIRS.iter().map(|dir| home.join(dir)));
+        dirs.extend(node_version_dirs(&home));
     }
     dirs.extend(SYSTEM_BIN_DIRS.iter().map(PathBuf::from));
+    dirs
+}
+
+/// The directories a Node version manager under `home` puts the programs
+/// npm installs in, which a service's `PATH` never has: asdf's and mise's
+/// shims, fnm's default version, and each of nvm's versions, the newest
+/// first.
+fn node_version_dirs(home: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![
+        home.join(".asdf/shims"),
+        home.join(".local/share/mise/shims"),
+        home.join(".local/share/fnm/aliases/default/bin"),
+        home.join(".fnm/aliases/default/bin"),
+    ];
+    let mut nvm: Vec<(Vec<u64>, PathBuf)> = std::fs::read_dir(home.join(".nvm/versions/node"))
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let version = name
+                .trim_start_matches('v')
+                .split('.')
+                .map(|part| part.parse().unwrap_or(0))
+                .collect();
+            (version, entry.path().join("bin"))
+        })
+        .collect();
+    nvm.sort_by(|a, b| b.0.cmp(&a.0));
+    dirs.extend(nvm.into_iter().map(|(_, dir)| dir));
     dirs
 }
 
@@ -262,10 +293,12 @@ fn config_dir(id: AssistantId) -> Option<PathBuf> {
 }
 
 /// Whether the daemon finds the assistant on this computer: its program, or
-/// its config.
+/// its config. Claude Code only by its program, which connecting it runs:
+/// found by its config alone, every connect would fail.
 #[must_use]
 pub fn is_found(id: AssistantId) -> bool {
-    find_program(id).is_some() || config_dir(id).is_some_and(|dir| dir.is_dir())
+    find_program(id).is_some()
+        || (id != AssistantId::ClaudeCode && config_dir(id).is_some_and(|dir| dir.is_dir()))
 }
 
 /// Whether Claude Code's settings, `text`, have Super Voice's plugin
@@ -734,6 +767,34 @@ mod tests {
         assert!(!claude_has_plugin(r#"{"theme": "dark"}"#));
         assert!(!claude_has_plugin(""));
         assert!(!claude_has_plugin("{not json"));
+    }
+
+    /// The Node version managers' directories are searched, nvm's newest
+    /// version first, numbers compared as numbers.
+    #[test]
+    fn node_version_managers_are_searched() {
+        let home = tempfile::tempdir().expect("home");
+        for version in ["v9.11.2", "v20.11.1", "v20.9.0"] {
+            std::fs::create_dir_all(
+                home.path()
+                    .join(".nvm/versions/node")
+                    .join(version)
+                    .join("bin"),
+            )
+            .expect("nvm version");
+        }
+        let dirs = node_version_dirs(home.path());
+        let nvm: Vec<_> = dirs
+            .iter()
+            .filter_map(|dir| {
+                dir.strip_prefix(home.path().join(".nvm/versions/node"))
+                    .ok()
+            })
+            .map(|dir| dir.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(nvm, ["v20.11.1/bin", "v20.9.0/bin", "v9.11.2/bin"]);
+        assert!(dirs.contains(&home.path().join(".asdf/shims")));
+        assert!(dirs.contains(&home.path().join(".local/share/mise/shims")));
     }
 
     #[test]

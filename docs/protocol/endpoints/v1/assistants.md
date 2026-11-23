@@ -39,9 +39,12 @@ Each assistant's `state`:
 The daemon looks for an assistant's program on its own `PATH`, then in the
 directories assistants install to that a service's `PATH` usually lacks:
 `~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.claude/local`,
-`~/.local/share/pnpm`, `~/.volta/bin`, `/home/linuxbrew/.linuxbrew/bin`,
-`/opt/homebrew/bin` and `/usr/local/bin`. Its config is the directory it keeps
-its config in, which is there once it has run. For Claude Code, `connected`
+`~/.local/share/pnpm`, `~/.volta/bin`, the Node version managers' (asdf's and
+mise's shims, fnm's default version, and each of nvm's versions, the newest
+first), `/home/linuxbrew/.linuxbrew/bin`, `/opt/homebrew/bin` and
+`/usr/local/bin`. Its config is the directory it keeps its config in, which is
+there once it has run. Claude Code is found only by its program, which
+connecting it runs. For Claude Code, `connected`
 also takes Super Voice's plugin listed under `enabledPlugins` in Claude Code's
 user settings, `~/.claude/settings.json`, or the one in `$CLAUDE_CONFIG_DIR`.
 
