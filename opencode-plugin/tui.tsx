@@ -20,8 +20,14 @@ import { Voice } from './rpc'
 
 /** What `listen` says when the user said nothing. */
 const NO_SPEECH = '(no speech detected)'
-/** How often the row asks Super Voice what this session's speech is doing. */
+/** How often the row asks Super Voice what this session's speech is doing
+ * while something goes on: speech, Talk, a spoken conversation, or a reply
+ * about to be read. */
 const POLL_MS = 1000
+/** How often it asks otherwise, for speech started elsewhere and for the
+ * Talk switch: seldom enough that a few OpenCode windows left open stay well
+ * within what Super Voice lets one key ask. */
+const QUIET_POLL_MS = 5000
 /** How long to wait for a reply's reading to start before giving up on it. */
 const START_WAIT_MS = 10_000
 /** What `/read` takes. */
@@ -120,6 +126,7 @@ export default Plugin.define({
         context.ui.toast.show({ message: error, variant: 'error' })
       } else {
         setSpeaking(true)
+        pollIn(POLL_MS)
       }
     }
 
@@ -170,18 +177,31 @@ export default Plugin.define({
       // Nothing records without the row to say so.
       if (sessionID === currentSession() && shown()) {
         armed = { sessionID, since: Date.now(), heard: false }
+        pollIn(0)
       }
     })
 
     // What this session's speech is doing, for the row, and to listen once a
-    // reply has been read.
-    const poll = setInterval(() => {
+    // reply has been read: asked often while something goes on.
+    const isBusy = () => speaking() || conversation() || phase() !== 'idle' || armed !== undefined
+    let pollTimer: ReturnType<typeof setTimeout> | undefined
+    let isClosed = false
+    const pollIn = (ms: number) => {
+      clearTimeout(pollTimer)
+      if (!isClosed) {
+        pollTimer = setTimeout(async () => {
+          await check()
+          pollIn(isBusy() ? POLL_MS : QUIET_POLL_MS)
+        }, ms)
+      }
+    }
+    const check = async () => {
       const sessionID = currentSession()
       if (!sessionID) {
         setSpeaking(false)
         return
       }
-      void voice
+      await voice
         .status({ sessionID })
         .then(status => {
           const {
@@ -213,10 +233,12 @@ export default Plugin.define({
           }
         })
         .catch(() => setSpeaking(false))
-    }, POLL_MS)
+    }
+    pollIn(0)
 
     return () => {
-      clearInterval(poll)
+      isClosed = true
+      clearTimeout(pollTimer)
       stopReplied()
       row()
     }
