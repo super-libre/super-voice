@@ -303,19 +303,19 @@ async function pressStopSpeaking($: EngineInterface) {
   }
 }
 
-/** Read Claude's reply to a spoken prompt aloud, and open the microphone once
- * it has been read. */
-async function readReply($: EngineInterface, answer: string) {
-  if (!answer.trim()) {
+/** Tell Super Voice Claude answered the turn with `answer`. Super Voice reads
+ * the reply to a spoken prompt aloud; once it has been read, the microphone
+ * opens. */
+async function replied($: EngineInterface, answer: string) {
+  const turn = await call($, 'turn', { event: 'reply', text: answer })
+  if (turn.isError) {
+    $.ui.toast(turn.text || 'Could not read the reply aloud.')
     return
   }
-  const spoken = await call($, 'speak', { text: answer })
-  if (spoken.isError) {
-    $.ui.toast(spoken.text || 'Could not read the reply aloud.')
-    return
+  if (fieldsOf(turn).read === true) {
+    await setArmed($, true)
+    await watchSpeech($)
   }
-  await setArmed($, true)
-  await watchSpeech($)
 }
 
 /** Read one of Claude's reply blocks aloud again, or stop it when it is the
@@ -554,9 +554,9 @@ export const register: Register = on => {
       if (e.isAborted) {
         // A spoken prompt that stopped this turn is still to be answered.
         await setArmed($, false)
-      } else if (isTurnSpoken) {
+      } else {
         isTurnSpoken = false
-        await readReply($, e.answer)
+        await replied($, e.answer)
       }
     }
     return next(e)
