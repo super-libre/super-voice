@@ -92,7 +92,7 @@ async fn cosmic_shortcuts_are_added_and_removed_one_at_a_time() {
     );
     assert_eq!(list["shortcuts"][1]["keys"], "Super+Shift+Space");
     let written = std::fs::read_to_string(&file).expect("the file was written");
-    assert!(written.contains("voice speak --read"), "{written}");
+    assert!(written.contains(" speak --read"), "{written}");
 
     let (status, again) = call(&daemon, &token, Method::POST, "/shortcuts/read_aloud").await;
     assert_eq!(status, StatusCode::OK, "{again}");
@@ -105,7 +105,7 @@ async fn cosmic_shortcuts_are_added_and_removed_one_at_a_time() {
         [pair("dictate", "missing"), pair("read_aloud", "missing")]
     );
     let left = std::fs::read_to_string(&file).expect("file");
-    assert!(!left.contains("voice speak --read"), "{left}");
+    assert!(!left.contains(" speak --read"), "{left}");
 
     let (status, _) = call(&daemon, &token, Method::DELETE, "/shortcuts/read_aloud").await;
     assert_eq!(status, StatusCode::OK, "removing it again changes nothing");

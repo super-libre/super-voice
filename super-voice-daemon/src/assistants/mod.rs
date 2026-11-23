@@ -571,7 +571,7 @@ fn antigravity_plugin_dir() -> PathBuf {
 /// or runs too long.
 async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
     let dir = antigravity_plugin_dir();
-    let voice = configs::shell_quote(&hook_program());
+    let voice = configs::shell_quote(&crate::shortcuts::voice_program());
     let files: Vec<(&str, String)> = ANTIGRAVITY_PLUGIN_FILES
         .iter()
         .map(|(name, text)| (*name, with_voice(text, &voice)))
@@ -583,22 +583,6 @@ async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
     write_plugin(&dir, &files, "the Antigravity CLI's plugin").await?;
     let source = dir.to_string_lossy();
     run_plugin_command(agy, &["plugin", "install", &source], &[]).await
-}
-
-/// The `voice` an assistant's hook runs: the one beside the daemon, under
-/// either name, since a build tree names it as its crate does, or the one on
-/// `PATH`.
-fn hook_program() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| {
-            let dir = exe.parent()?.to_path_buf();
-            ["voice", "super-voice-cli"]
-                .into_iter()
-                .map(|name| dir.join(name))
-                .find(|voice| voice.is_file())
-        })
-        .map_or_else(|| "voice".to_string(), |voice| voice.display().to_string())
 }
 
 /// Uninstall Super Voice's plugin from the Antigravity CLI, and delete the
