@@ -248,6 +248,16 @@
                 }
               }
             }
+          },
+          "500": {
+            "description": "The key could not be revoked, and still works (`could_not_save_key`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -330,7 +340,7 @@
             }
           },
           "500": {
-            "description": "The config could not be changed, or the plugin could not be uninstalled. The key is revoked.",
+            "description": "The config could not be changed, or the plugin could not be uninstalled, and the key is revoked; or the key could not be revoked, and still works (`could_not_save_key`).",
             "content": {
               "application/json": {
                 "schema": {
