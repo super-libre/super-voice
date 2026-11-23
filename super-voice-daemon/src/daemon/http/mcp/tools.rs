@@ -130,10 +130,14 @@ pub(crate) async fn run(
             let outcome = read_again(daemon, who, request).await;
             Some(Ok(read_answer(caller.hook, outcome)))
         }
-        Tool::Turn(TurnEvent::Prompt { text, spoken }) => {
+        Tool::Turn(TurnEvent::Prompt {
+            text,
+            spoken,
+            again,
+        }) => {
             // The same prompt said again keeps its turn: its dictation is
             // used up by now.
-            let again = sessions.prompted(who, &text);
+            let again = sessions.prompted(who, &text, again);
             let spoken = spoken
                 .or(again)
                 .unwrap_or_else(|| sessions.was_dictated(&text, std::time::Instant::now()));
@@ -830,6 +834,7 @@ mod tests {
             Tool::Turn(TurnEvent::Prompt {
                 text: text.to_string(),
                 spoken,
+                again: false,
             })
         };
         let typed = run(&daemon, prompt("Hi.", Some(false)), &caller(), &cancel)
@@ -864,13 +869,28 @@ mod tests {
         assert_eq!(daemon.assistants.sessions.spoken(&caller().who), Some(true));
         // Said again before each model call, it stays spoken, and the note
         // is added once.
-        let again = run(&daemon, prompt("open the notes.", None), &caller(), &cancel)
+        let said_again = Tool::Turn(TurnEvent::Prompt {
+            text: "open the notes.".to_string(),
+            spoken: None,
+            again: true,
+        });
+        let again = run(&daemon, said_again, &caller(), &cancel)
             .await
             .unwrap()
             .unwrap();
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&again).unwrap(),
             serde_json::json!({ "spoken": true, "note": null })
+        );
+        // The same words in a new turn are a new turn: typed, they are
+        // answered in writing.
+        let retyped = run(&daemon, prompt("open the notes.", None), &caller(), &cancel)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&retyped).unwrap(),
+            serde_json::json!({ "spoken": false, "note": null })
         );
     }
 
@@ -888,6 +908,7 @@ mod tests {
             Tool::Turn(TurnEvent::Prompt {
                 text: "Hi.".to_string(),
                 spoken: Some(spoken),
+                again: false,
             })
         };
         let spoken = run(&daemon, prompt(true), &hook, &cancel)
@@ -957,6 +978,7 @@ mod tests {
             let prompt = Tool::Turn(TurnEvent::Prompt {
                 text: text.to_string(),
                 spoken: None,
+                again: false,
             });
             let answer = run(&daemon, prompt, caller, &cancel)
                 .await

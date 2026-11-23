@@ -131,9 +131,14 @@ pub(crate) enum SessionEvent {
 pub(crate) enum TurnEvent {
     /// The user sent `text`. `spoken` when the plugin knows whether it was
     /// said aloud; when it does not, the daemon tells from its dictation.
-    /// `/read` asks to hear a reply again instead, and is answered by the
-    /// daemon.
-    Prompt { text: String, spoken: Option<bool> },
+    /// `again` when a hook that runs before each model call says the turn's
+    /// prompt again. `/read` asks to hear a reply again instead, and is
+    /// answered by the daemon.
+    Prompt {
+        text: String,
+        spoken: Option<bool>,
+        again: bool,
+    },
     /// The assistant answered with `text`, kept to read again, and read
     /// aloud when the turn was spoken.
     Reply { text: String },
@@ -310,6 +315,7 @@ impl Tool {
                     Some("prompt") => Ok(Self::Turn(TurnEvent::Prompt {
                         text,
                         spoken: args["spoken"].as_bool(),
+                        again: args["again"].as_bool() == Some(true),
                     })),
                     Some("reply") => Ok(Self::Turn(TurnEvent::Reply { text })),
                     _ => Err(CallError::Arguments(
@@ -507,6 +513,7 @@ fn plugin_tools(may_speak: bool, marked: bool) -> Vec<Value> {
                     "event": { "type": "string", "enum": ["prompt", "reply"] },
                     "text": { "type": "string" },
                     "spoken": { "type": "boolean" },
+                    "again": { "type": "boolean" },
                 },
                 "required": ["event"],
             },
@@ -682,6 +689,28 @@ mod tests {
                 tool: Tool::Session(SessionEvent::End)
             }
         );
+        // A hook that runs before each model call says the turn's prompt
+        // again; a prompt is a new turn otherwise.
+        for (again, sent) in [
+            (true, json!(true)),
+            (false, json!(false)),
+            (false, Value::Null),
+        ] {
+            assert_eq!(
+                call(
+                    "turn",
+                    json!({ "event": "prompt", "text": "Go.", "again": sent })
+                ),
+                Handled::Call {
+                    id: json!(1),
+                    tool: Tool::Turn(TurnEvent::Prompt {
+                        text: "Go.".to_string(),
+                        spoken: None,
+                        again,
+                    })
+                }
+            );
+        }
         let Handled::Reply(refused) = call("session", json!({ "event": "later" })) else {
             panic!("a bad event is the model's error");
         };

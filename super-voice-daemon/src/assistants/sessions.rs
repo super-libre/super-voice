@@ -358,14 +358,15 @@ impl Sessions {
         self.with(who, |entry| entry.spoken = Some(spoken));
     }
 
-    /// `who`'s plugin says the user sent `prompt`. What its turn was, when
-    /// it is the prompt the turn under way started with, as a hook that runs
-    /// before each model call says again; `None` for a new turn, whose
-    /// prompt it keeps.
-    pub fn prompted(&self, who: &Who, prompt: &str) -> Option<bool> {
+    /// `who`'s plugin says the user sent `prompt`. Said `again`, as a hook
+    /// that runs before each model call of a turn says it, and the prompt the
+    /// turn under way started with: what that turn was. Otherwise `None`: a
+    /// new turn, whose prompt it keeps. The same text sent in a new turn is a
+    /// new turn.
+    pub fn prompted(&self, who: &Who, prompt: &str, again: bool) -> Option<bool> {
         let mut said = None;
         self.with(who, |entry| {
-            if entry.prompt.as_deref() == Some(prompt) {
+            if again && entry.prompt.as_deref() == Some(prompt) {
                 said = entry.spoken;
             } else {
                 entry.prompt = Some(prompt.to_string());

@@ -98,7 +98,14 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
             if prompt.trim().is_empty() {
                 return Some(json!({}));
             }
-            let answer = call("turn", json!({ "event": "prompt", "text": prompt })).await?;
+            // The hook runs before each model call of a turn, numbered from
+            // 0: past the first, it is the turn's prompt again.
+            let again = hook["invocationNum"].as_u64().is_some_and(|n| n > 0);
+            let answer = call(
+                "turn",
+                json!({ "event": "prompt", "text": prompt, "again": again }),
+            )
+            .await?;
             let turn: Value = serde_json::from_str(&answer.text).ok()?;
             Some(invocation(&turn))
         }
