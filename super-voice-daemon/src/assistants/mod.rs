@@ -11,7 +11,7 @@
 //! 1. Claude Code: the daemon runs `claude plugin install`, and the plugin
 //!    gets its key from `voice assistant-header claude-code`.
 //! 2. Codex, `OpenCode` and the Antigravity CLI: an entry in their config files
-//!    ([`super_voice_shared::assistant_configs`]).
+//!    ([`configs`]).
 //!
 //! Disconnecting takes the entry out and revokes the key, which also cancels
 //! the key's calls in flight ([`calls`]). A key made by hand, for any other
@@ -21,6 +21,7 @@
 //! `docs/protocol/endpoints/v1/assistants.md`.
 
 pub mod calls;
+pub mod configs;
 pub mod sessions;
 
 use log::{info, warn};
@@ -28,7 +29,6 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use super_voice_shared::SUPER_VOICE;
-use super_voice_shared::assistant_configs;
 use super_voice_shared::models::assistants::{AssistantId, AssistantState};
 
 /// Where an MCP client reaches Super Voice on the daemon's TCP listener.
@@ -274,9 +274,7 @@ fn claude_dir() -> Option<PathBuf> {
 fn config_dir(id: AssistantId) -> Option<PathBuf> {
     match id {
         AssistantId::ClaudeCode => claude_dir(),
-        AssistantId::Codex => assistant_configs::codex_file()?
-            .parent()
-            .map(Path::to_path_buf),
+        AssistantId::Codex => configs::codex_file()?.parent().map(Path::to_path_buf),
         AssistantId::OpenCode => {
             let config = std::env::var_os("XDG_CONFIG_HOME")
                 .filter(|config| !config.is_empty())
@@ -322,20 +320,14 @@ pub fn has_entry(id: AssistantId) -> bool {
             claude_dir().map(|dir| dir.join("settings.json")),
             claude_has_plugin,
         ),
-        AssistantId::Codex => (
-            assistant_configs::codex_file(),
-            assistant_configs::codex_has_super_voice,
-        ),
-        AssistantId::OpenCode => (
-            assistant_configs::opencode_file(),
-            assistant_configs::opencode_has_super_voice,
-        ),
+        AssistantId::Codex => (configs::codex_file(), configs::codex_has_super_voice),
+        AssistantId::OpenCode => (configs::opencode_file(), configs::opencode_has_super_voice),
         AssistantId::Antigravity => (
-            assistant_configs::antigravity_file(),
-            assistant_configs::antigravity_has_super_voice,
+            configs::antigravity_file(),
+            configs::antigravity_has_super_voice,
         ),
     };
-    file.and_then(|file| assistant_configs::read(&file).ok())
+    file.and_then(|file| configs::read(&file).ok())
         .is_some_and(|text| has(&text))
 }
 
@@ -363,21 +355,18 @@ pub fn write_entry(id: AssistantId, url: &str, key: &str) -> Result<(), Error> {
     let changed = match id {
         AssistantId::ClaudeCode => return Ok(()),
         AssistantId::Codex => {
-            let helper =
-                assistant_configs::codex_headers_helper(&crate::shortcuts::voice_program());
-            assistant_configs::update(&config_file(id)?, |text| {
-                assistant_configs::codex_with_super_voice(text, url, &helper)
+            let helper = configs::codex_headers_helper(&crate::shortcuts::voice_program());
+            configs::update(&config_file(id)?, |text| {
+                configs::codex_with_super_voice(text, url, &helper)
             })
         }
         // The key is in the file itself, so only its owner may read it.
-        AssistantId::OpenCode => assistant_configs::update_holding_key(&config_file(id)?, |text| {
-            assistant_configs::opencode_with_super_voice(text, url, key)
+        AssistantId::OpenCode => configs::update_holding_key(&config_file(id)?, |text| {
+            configs::opencode_with_super_voice(text, url, key)
         }),
-        AssistantId::Antigravity => {
-            assistant_configs::update_holding_key(&config_file(id)?, |text| {
-                assistant_configs::antigravity_with_super_voice(text, url, key)
-            })
-        }
+        AssistantId::Antigravity => configs::update_holding_key(&config_file(id)?, |text| {
+            configs::antigravity_with_super_voice(text, url, key)
+        }),
     };
     match changed {
         Ok(true) => info!("Wrote Super Voice into {}'s config", id.display_name()),
@@ -394,13 +383,13 @@ pub fn write_entry(id: AssistantId, url: &str, key: &str) -> Result<(), Error> {
 ///
 /// [`Error::Config`] when the file cannot be read, parsed or written.
 pub fn remove_entry(id: AssistantId) -> Result<(), Error> {
-    let without: fn(&str) -> Result<String, assistant_configs::Error> = match id {
+    let without: fn(&str) -> Result<String, configs::Error> = match id {
         AssistantId::ClaudeCode => return Ok(()),
-        AssistantId::Codex => assistant_configs::codex_without_super_voice,
-        AssistantId::OpenCode => assistant_configs::opencode_without_super_voice,
-        AssistantId::Antigravity => assistant_configs::antigravity_without_super_voice,
+        AssistantId::Codex => configs::codex_without_super_voice,
+        AssistantId::OpenCode => configs::opencode_without_super_voice,
+        AssistantId::Antigravity => configs::antigravity_without_super_voice,
     };
-    match assistant_configs::update(&config_file(id)?, without) {
+    match configs::update(&config_file(id)?, without) {
         Ok(true) => info!("Took Super Voice out of {}'s config", id.display_name()),
         Ok(false) => {}
         Err(e) => return Err(Error::Config(e.to_string())),
@@ -412,9 +401,9 @@ pub fn remove_entry(id: AssistantId) -> Result<(), Error> {
 fn config_file(id: AssistantId) -> Result<PathBuf, Error> {
     let file = match id {
         AssistantId::ClaudeCode => claude_dir().map(|dir| dir.join("settings.json")),
-        AssistantId::Codex => assistant_configs::codex_file(),
-        AssistantId::OpenCode => assistant_configs::opencode_file(),
-        AssistantId::Antigravity => assistant_configs::antigravity_file(),
+        AssistantId::Codex => configs::codex_file(),
+        AssistantId::OpenCode => configs::opencode_file(),
+        AssistantId::Antigravity => configs::antigravity_file(),
     };
     file.ok_or_else(|| Error::Config("there is no home directory".to_string()))
 }
@@ -554,7 +543,7 @@ fn antigravity_plugin_dir() -> PathBuf {
 /// or runs too long.
 pub async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
     let dir = antigravity_plugin_dir();
-    let voice = assistant_configs::shell_quote(&hook_program());
+    let voice = configs::shell_quote(&hook_program());
     let files: Vec<(&'static str, String)> = ANTIGRAVITY_PLUGIN_FILES
         .iter()
         .map(|(name, text)| (*name, with_voice(text, &voice)))
@@ -933,7 +922,7 @@ mod tests {
 
         // A `voice` whose path holds a quote and a backslash: the hooks stay
         // JSON, and each command is the quoted path.
-        let voice = assistant_configs::shell_quote(r#"/home/o'neil/a "b"\c/voice"#);
+        let voice = configs::shell_quote(r#"/home/o'neil/a "b"\c/voice"#);
         let filled: serde_json::Value =
             serde_json::from_str(&with_voice(ANTIGRAVITY_PLUGIN_FILES[1].1, &voice))
                 .expect("the hooks are still JSON");
