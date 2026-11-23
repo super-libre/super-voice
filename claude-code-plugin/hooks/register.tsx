@@ -73,7 +73,7 @@ let speechTimer: Timer | undefined
 let isChecking = false
 /** What the row last showed. Unknown after a reload, so the first check writes
  * whatever it finds. */
-let shown: boolean | undefined
+let shownSpeaking: boolean | undefined
 /** Until when to keep asking while no speech has been seen. Zero once speech
  * was seen, so the first silence after it ends the watch. */
 let waitUntil = 0
@@ -90,8 +90,6 @@ let filled: { text: string; cursor: number } | undefined
 /** Claude's `listen` call waiting on the user's answer, which they can check
  * in the prompt box first: what to hand it once it is sent. */
 let pendingAnswer: ((text: string | undefined) => void) | undefined
-/** Whether Claude's `listen` call has the microphone. */
-let isClaudeListening = false
 /** Claude's running main turn, which sending the user's words stops first,
  * as their Ctrl+Enter does: a plugin's prompt otherwise waits for it to end. */
 let runningTurnId: string | undefined
@@ -120,8 +118,6 @@ let checkInTimer: Timer | undefined
 /** A check-in is under way: one waiting on Claude Code's connection can
  * outlast the timer's beat. */
 let isCheckingIn = false
-/** Whether the user shows Talk, as Super Voice last said. */
-let isTalkShown = true
 
 /** Super Voice's MCP server as Claude Code names it, once connected. */
 let server = 'plugin:super-voice:voice'
@@ -189,8 +185,7 @@ async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined>
     return undefined
   }
   const { speaking: isSpeaking, listening: isListening, talk: isShown } = fieldsOf(answer)
-  if (typeof isShown === 'boolean' && isShown !== isTalkShown) {
-    isTalkShown = isShown
+  if (typeof isShown === 'boolean' && isShown !== (await read($, showsTalk))) {
     await update($, showsTalk, () => isShown)
   }
   return { isSpeaking: isSpeaking === true, isListening: isListening === true }
@@ -244,8 +239,8 @@ async function setArmed($: EngineInterface, isArmed: boolean) {
 }
 
 async function showSpeaking($: EngineInterface, isOn: boolean) {
-  if (shown !== isOn) {
-    shown = isOn
+  if (shownSpeaking !== isOn) {
+    shownSpeaking = isOn
     await update($, speaking, () => isOn)
   }
 }
@@ -270,7 +265,7 @@ async function checkSpeech($: EngineInterface) {
       // Whatever a 🔊 was reading has ended, or never started.
       await update($, readingAgain, () => '')
       // With Talk not shown, nothing records without a row to say so.
-      if (isReplyRead && isTalkShown) {
+      if (isReplyRead && (await read($, showsTalk))) {
         void startTalk($)
       }
     }
@@ -302,7 +297,7 @@ async function pressStopSpeaking($: EngineInterface) {
   const isConversation = armed
   // The stop comes first, whatever else is going on.
   await stopSpeaking($)
-  if (isConversation && !isClaudeListening && phase === 'idle') {
+  if (isConversation && !(await read($, claudeListening)) && phase === 'idle') {
     await startTalk($)
   }
 }
@@ -507,10 +502,9 @@ export const register: Register = on => {
     await update($, opensMicAfter, () => false)
     await update($, claudeWorking, () => false)
     await update($, readingAgain, () => '')
-    // A reload starts the session's check-ins over too.
+    // A reload starts the session's check-ins over too. The Talk switch is
+    // kept as last seen until Super Voice says.
     openedId = undefined
-    // The switch as last seen, kept across a reload, until Super Voice says.
-    isTalkShown = await read($, showsTalk)
     checkInTimer?.cancel()
     checkInTimer = $.clock.every(CHECK_IN_MS, () => void checkIn($))
     void checkIn($)
@@ -580,12 +574,10 @@ export const register: Register = on => {
       return next(named)
     }
     // Claude has the microphone: no Talk button until it is done.
-    isClaudeListening = true
     await update($, claudeListening, () => true)
     try {
       return await next(named)
     } finally {
-      isClaudeListening = false
       await update($, claudeListening, () => false)
     }
   })
