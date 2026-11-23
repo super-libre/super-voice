@@ -8,10 +8,11 @@
 //! assistant makes it a key of its own, through the auth layer, and writes
 //! Super Voice into the assistant's own config:
 //!
-//! 1. Claude Code: the daemon runs `claude plugin install`, and the plugin
-//!    gets its key from `voice assistant-header claude-code`.
+//! 1. Claude Code: the daemon runs `claude plugin install`, and gives the
+//!    plugin its key as a secret option, which Claude Code keeps with its own
+//!    credentials.
 //! 2. Codex, `OpenCode` and the Antigravity CLI: an entry in their config files
-//!    ([`configs`]).
+//!    ([`configs`]), with the key in it.
 //!
 //! Disconnecting takes the entry out and revokes the key, which also cancels
 //! the key's calls in flight ([`calls`]). A key made by hand, for any other
@@ -346,8 +347,8 @@ pub fn state(id: AssistantId, has_key: bool) -> AssistantState {
 }
 
 /// Write Super Voice into the config of `id`, one of the assistants with a
-/// config file: the server at `url`, with `key`, or for Codex the command
-/// that prints it.
+/// config file: the server at `url`, with `key`. The key is in the file
+/// itself, so only its owner may read it.
 ///
 /// # Errors
 ///
@@ -355,13 +356,9 @@ pub fn state(id: AssistantId, has_key: bool) -> AssistantState {
 pub fn write_entry(id: AssistantId, url: &str, key: &str) -> Result<(), Error> {
     let changed = match id {
         AssistantId::ClaudeCode => return Ok(()),
-        AssistantId::Codex => {
-            let helper = configs::codex_headers_helper(&crate::shortcuts::voice_program());
-            configs::update(&config_file(id)?, |text| {
-                configs::codex_with_super_voice(text, url, &helper)
-            })
-        }
-        // The key is in the file itself, so only its owner may read it.
+        AssistantId::Codex => configs::update_holding_key(&config_file(id)?, |text| {
+            configs::codex_with_super_voice(text, url, key)
+        }),
         AssistantId::OpenCode => configs::update_holding_key(&config_file(id)?, |text| {
             configs::opencode_with_super_voice(text, url, key)
         }),
@@ -419,7 +416,8 @@ fn claude_marketplace(set: Option<String>) -> String {
 }
 
 /// Install Super Voice's plugin in assistant `id`, set to reach Super Voice
-/// at `address`. `program` is the assistant's own, when the daemon found it:
+/// at `address`; Claude Code's with `key`, which the others have in their
+/// configs. `program` is the assistant's own, when the daemon found it:
 /// Claude Code's, Codex's and agy's plugins are installed with it, so one of
 /// those found only by its config gets no plugin, and Claude Code, whose
 /// plugin is its entry, is not found.
@@ -433,9 +431,12 @@ pub async fn install_plugin(
     id: AssistantId,
     program: Option<&Path>,
     address: &str,
+    key: &str,
 ) -> Result<(), Error> {
     match (id, program) {
-        (AssistantId::ClaudeCode, Some(claude)) => install_claude_plugin(claude, address).await,
+        (AssistantId::ClaudeCode, Some(claude)) => {
+            install_claude_plugin(claude, address, key).await
+        }
         (AssistantId::ClaudeCode, None) => Err(Error::NotFound),
         (AssistantId::Codex, Some(codex)) => install_codex_plugin(codex).await,
         (AssistantId::OpenCode, _) => install_opencode_plugin().await,
@@ -463,14 +464,16 @@ pub async fn uninstall_plugin(id: AssistantId, program: Option<&Path>) -> Result
 }
 
 /// Install Super Voice's plugin in Claude Code, with `claude`, the program
-/// found: add its marketplace ([`claude_marketplace`]), then install it, for
-/// the user, set to reach Super Voice at `address`. Either already done is
-/// fine: installing it again sets the address all the same.
+/// found: add its marketplace ([`claude_marketplace`]), install it for the
+/// user, and set its options: `address`, where it reaches Super Voice, and
+/// `key`, a secret one Claude Code keeps with its credentials. Either step
+/// already done is fine, and the options are set all the same. They go in
+/// on stdin, so the key is never on a command line.
 ///
 /// # Errors
 ///
 /// [`Error::Plugin`] when a command fails or runs too long.
-async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), Error> {
+async fn install_claude_plugin(claude: &Path, address: &str, key: &str) -> Result<(), Error> {
     let var = SUPER_VOICE.env(CLAUDE_MARKETPLACE_VAR);
     let marketplace = claude_marketplace(std::env::var(&var).ok());
     if marketplace != CLAUDE_MARKETPLACE {
@@ -489,19 +492,18 @@ async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), Error
         &["already"],
     )
     .await?;
-    let address = format!("address={address}");
     run_plugin_command(
         claude,
-        &[
-            "plugin",
-            "install",
-            CLAUDE_PLUGIN,
-            "--scope",
-            "user",
-            "--config",
-            &address,
-        ],
+        &["plugin", "install", CLAUDE_PLUGIN, "--scope", "user"],
         &["already"],
+    )
+    .await?;
+    let options = serde_json::json!({ "address": address, "key": key }).to_string();
+    run_command(
+        claude,
+        &["plugin", "configure", CLAUDE_PLUGIN, "--values-stdin"],
+        Some(&options),
+        &[],
     )
     .await
 }
@@ -764,6 +766,17 @@ async fn uninstall_codex_plugin(codex: &Path) -> Result<(), Error> {
 /// Run an assistant's `program` with `args`. A command that fails saying one
 /// of `fine` (in any case) has nothing left to do, and counts as done.
 async fn run_plugin_command(program: &Path, args: &[&str], fine: &[&str]) -> Result<(), Error> {
+    run_command(program, args, None, fine).await
+}
+
+/// [`run_plugin_command`], writing `input` to the command's stdin when there
+/// is some. It is never logged.
+async fn run_command(
+    program: &Path,
+    args: &[&str],
+    input: Option<&str>,
+    fine: &[&str],
+) -> Result<(), Error> {
     let name = program
         .file_name()
         .map_or_else(|| program.to_string_lossy(), |name| name.to_string_lossy());
@@ -772,14 +785,30 @@ async fn run_plugin_command(program: &Path, args: &[&str], fine: &[&str]) -> Res
     let mut command = tokio::process::Command::new(program);
     command
         .args(args)
-        .stdin(std::process::Stdio::null())
+        .stdin(if input.is_some() {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        })
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     // A program installed with npm runs `node` through `env`, and a service's
     // `PATH` may not reach it.
     if let Some(path) = child_path(program) {
         command.env("PATH", path);
     }
-    let output = match tokio::time::timeout(PLUGIN_COMMAND_TIMEOUT, command.output()).await {
+    let run = async {
+        let mut child = command.spawn()?;
+        if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+            use tokio::io::AsyncWriteExt as _;
+            stdin.write_all(input.as_bytes()).await?;
+            // Closed, so the command sees the end of its input.
+            drop(stdin);
+        }
+        child.wait_with_output().await
+    };
+    let output = match tokio::time::timeout(PLUGIN_COMMAND_TIMEOUT, run).await {
         Ok(Ok(output)) => output,
         Ok(Err(e)) => return Err(Error::Plugin(format!("could not run {shown}: {e}"))),
         Err(_) => {

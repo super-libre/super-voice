@@ -38,14 +38,14 @@ what it typed counts as spoken, even with a word or two you fixed by hand.
 
 ## Requirements
 
-1. Super Voice installed, with the daemon running and a model selected for each
-   feature.
-2. `voice` on your `PATH`. Super Voice's installer puts it there. Claude Code
-   runs it to get its key.
+Super Voice installed, with the daemon running and a model selected for each
+feature.
 
 Claude Code reaches Super Voice at the plugin's `address` option, which
 connecting sets to Super Voice's own (`http://127.0.0.1:7300/v1/mcp` unless
-you changed its port), with a key only Claude Code has. The plugin talks through that same connection, and names
+you changed its port), with a key only Claude Code has: the plugin's secret
+`key` option, which connecting sets too, and Claude Code keeps with its own
+credentials. The plugin talks through that same connection, and names
 the session on every call, so Super Voice lists each open Claude Code session
 on the Assistants page, and `0` in one session never stops another's speech.
 Disconnecting Claude Code on the Assistants page takes the key away.

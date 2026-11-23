@@ -29,9 +29,14 @@ pub(crate) fn command() -> clap::Command {
              assistant go on when Super Voice can't be reached.",
         )
         // Only the Antigravity CLI's hooks can only run a command.
-        .arg(crate::assistant_arg(&[
-            AssistantId::Antigravity.as_wire_str()
-        ]))
+        .arg(
+            Arg::new("assistant")
+                .help("The assistant")
+                .required(true)
+                .value_parser(clap::builder::PossibleValuesParser::new([
+                    AssistantId::Antigravity.as_wire_str(),
+                ])),
+        )
         .arg(
             Arg::new("event")
                 .help("The hook's event")

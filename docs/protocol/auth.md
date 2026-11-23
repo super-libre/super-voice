@@ -297,10 +297,10 @@ the user's consent.
   `wrong_caller`. It is not revoked then: a key pasted into the wrong place
   is no reason to disconnect the assistant.
 - **Where it is kept:** in the secrets file beside the session tokens, and
-  in the assistant's own config. Claude Code's plugin and Codex get it by
-  running `voice assistant-header <assistant>`, so their configs hold no
-  key. OpenCode and the Antigravity CLI have no way to run a command for
-  it, so the key is written into their configs.
+  with the assistant. Claude Code's plugin has it as a secret option, which
+  Claude Code keeps with its own credentials. Codex, OpenCode and the
+  Antigravity CLI have it written into their configs, which only their
+  owner can read.
 
 ## Per-request authorization
 

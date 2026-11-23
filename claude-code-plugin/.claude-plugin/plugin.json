@@ -13,6 +13,12 @@
       "title": "Super Voice's address",
       "description": "Where Super Voice's MCP server is. Super Voice sets it when you connect Claude Code on its Assistants page.",
       "default": "http://127.0.0.1:7300/v1/mcp"
+    },
+    "key": {
+      "type": "string",
+      "title": "Super Voice's key",
+      "description": "The key Super Voice made for Claude Code. Super Voice sets it when you connect Claude Code on its Assistants page.",
+      "sensitive": true
     }
   }
 }
