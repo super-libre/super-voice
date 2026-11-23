@@ -182,7 +182,8 @@ flight.
 its own. A request whose `MCP-Protocol-Version` header names a version this
 server does not speak is `400`.
 
-The versions it speaks are `2025-11-25`, `2025-06-18` and `2025-03-26`.
+The versions it speaks are `2025-11-25` and `2025-06-18`. It does not speak
+`2025-03-26`, whose servers take batches of messages.
 `initialize` agrees on the one the client asks for, or offers `2025-11-25` when
 it asks for another.
 

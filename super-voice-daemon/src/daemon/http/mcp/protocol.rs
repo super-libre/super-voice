@@ -14,8 +14,9 @@ use serde_json::{Value, json};
 use super_voice_shared::models::contexts::ExtraContext;
 
 /// Newest first. A client asking for one of these gets it; any other gets the
-/// newest, and decides whether it can work with that.
-pub(crate) const PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26"];
+/// newest, and decides whether it can work with that. Not 2025-03-26, which
+/// has servers take batches of messages: this one takes one at a time.
+pub(crate) const PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18"];
 
 /// The body is not JSON.
 pub(crate) const PARSE_ERROR: i64 = -32700;
@@ -753,7 +754,7 @@ mod tests {
 
     #[test]
     fn initialize_offers_the_newest_version_for_one_it_does_not_know() {
-        for asked in ["1999-01-01", "2024-11-05"] {
+        for asked in ["1999-01-01", "2024-11-05", "2025-03-26"] {
             let answer = reply(
                 &json!({
                     "jsonrpc": "2.0", "id": 1, "method": "initialize",
