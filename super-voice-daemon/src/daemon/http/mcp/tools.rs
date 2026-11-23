@@ -18,7 +18,8 @@
 //!    the same, so the microphone is freed as at any other stop.
 
 use super::protocol::{Hook, SessionEvent, Tool, TurnEvent};
-use crate::assistants::sessions::{Sessions, Who, holds_what_was_said};
+use crate::assistants::dictation::holds_what_was_said;
+use crate::assistants::sessions::{Sessions, Who};
 use crate::daemon::events::Topic;
 use crate::daemon::recording::{Stopped, TakeSettings};
 use crate::daemon::types::SuperSTTDaemon;
@@ -139,7 +140,10 @@ pub(crate) async fn run(
             let again = sessions.prompted(who, &text, again);
             let spoken = spoken.or(again).unwrap_or_else(|| {
                 heard.is_some_and(|heard| holds_what_was_said(&text, &heard))
-                    || sessions.was_dictated(&text, std::time::Instant::now())
+                    || daemon
+                        .assistants
+                        .dictation
+                        .matches(&text, std::time::Instant::now())
             });
             sessions.set_spoken(who, spoken);
             prompt_answer(call.hook, spoken, again.is_none())
@@ -851,7 +855,7 @@ mod tests {
         .await;
         assert_eq!(refused, Some(Err(NOT_SPOKEN_TO.to_string())));
 
-        daemon.assistants.sessions.dictated("Open the notes");
+        daemon.assistants.dictation.remember("Open the notes");
         let spoken = run(&daemon, prompt("open the notes.", None), &call(), &cancel)
             .await
             .unwrap()

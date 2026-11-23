@@ -22,6 +22,7 @@
 
 pub mod calls;
 pub mod configs;
+pub mod dictation;
 pub mod sessions;
 
 use log::{info, warn};
@@ -146,7 +147,8 @@ pub enum Error {
 }
 
 /// The daemon's hold on the assistants: one change at a time, the tool calls
-/// in flight on `/v1/mcp`, and the sessions they come from.
+/// in flight on `/v1/mcp`, the sessions they come from, and what the user
+/// last dictated, which tells a prompt they said from one they typed.
 #[derive(Default)]
 pub struct Assistants {
     /// Held across a whole connect or disconnect, so two at once cannot each
@@ -156,6 +158,8 @@ pub struct Assistants {
     pub calls: std::sync::Arc<calls::Calls>,
     /// The sessions the calls come from.
     pub sessions: std::sync::Arc<sessions::Sessions>,
+    /// What the user last dictated into a window.
+    pub dictation: dictation::Dictation,
 }
 
 impl Assistants {
