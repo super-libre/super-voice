@@ -286,12 +286,9 @@ async fn speak(
     let mut spoken = start_speaking(daemon, who, text);
     tokio::select! {
         biased;
-        joined = &mut spoken => Some(spoken_outcome(joined).map(|utterance| {
-            if let Some(utterance) = utterance {
-                daemon.assistants.sessions.spoke(who, utterance);
-            }
-            "Speaking.".to_string()
-        })),
+        // The utterance is the session's from its start: a newer one of the
+        // session's may have started by now, and stays the one recorded.
+        joined = &mut spoken => Some(spoken_outcome(joined).map(|_| "Speaking.".to_string())),
         // The speech goes on: it is on a task of its own.
         () = cancel.cancelled() => None,
     }
@@ -524,7 +521,6 @@ async fn ask(
     let Some(utterance) = utterance else {
         return Asked::Done;
     };
-    daemon.assistants.sessions.spoke(who, utterance.clone());
     let mut listening = true;
     loop {
         if daemon.tts.speech.current().as_deref() != Some(utterance.as_str()) {
