@@ -341,10 +341,9 @@ pub(crate) async fn revoke_key(State(state): State<AppState>, Path(id): Path<Str
     tag = "assistants",
     summary = "Show an assistant's key",
     description = "\
-The key the daemon made for the assistant when it was connected. `voice \
-assistant-header <id>` asks for it, for an assistant that gets its key by running that \
-command, as Claude Code's plugin and Codex do. An assistant that is not connected has \
-none: `404 not_connected`.
+The key the daemon made for the assistant when it was connected. The Antigravity CLI's \
+hooks ask for it, through `voice assistant-hook antigravity`, to call Super Voice's \
+tools with it. An assistant that is not connected has none: `404 not_connected`.
 
 For Super Voice's own clients alone, since it shows a key: any other caller is `403` \
 with reason `not_official_client`.",

@@ -268,11 +268,8 @@ revokes it. Answers the whole list.
 ## `GET /assistants/{id}/key`
 
 The key the daemon made for the assistant when it was connected, and the
-address it reaches the MCP server at with it. The key is what
-`voice assistant-header <id>` prints, as
-`{"Authorization":"Bearer <key>"}`, for an assistant that gets its key by
-running that command. `voice assistant-hook` calls the MCP server with both,
-for an assistant whose hooks can only run a command.
+address it reaches the MCP server at with it. `voice assistant-hook` calls the MCP server with both, for an assistant whose
+hooks can only run a command.
 
 **Response (200):**
 

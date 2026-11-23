@@ -4,9 +4,8 @@
 //!
 //! Each feature's commands are under its own subcommand — `voice record` for
 //! speech to text, `voice speak` for text to speech — and what the daemon has
-//! once is at the top: `ping`, `status`, `logout`. `assistant-header` is
-//! for AI assistants, which run it for the key Super Voice made them, and
-//! `assistant-hook` for an assistant's hooks that can only run a command.
+//! once is at the top: `ping`, `status`, `logout`. `assistant-hook` is for
+//! an AI assistant's hooks that can only run a command.
 //!
 //! Auth flow is delegated to `super_voice_shared::daemon::session`, the
 //! shared client-side session helper. Each client (CLI, settings app,
@@ -42,11 +41,11 @@ const APP_ID: AppId = super_voice_shared::daemon::session::app_id("super-voice-c
 const APP_NAME: &str = "Super Voice CLI";
 /// Both features' commands run on one token, so it asks for both.
 const SCOPES: &[&str] = &["transcribe", "speak", "status"];
-/// `assistant-header` reads an assistant's key, which takes `settings` too.
+/// `assistant-hook` reads its assistant's key, which takes `settings` too.
 /// Only for that command, so a CLI that is not the one installed beside the
 /// daemon asks the user for `settings` only when it needs it. The token it
 /// gets covers the other commands as well.
-const ASSISTANT_HEADER_SCOPES: &[&str] = &["transcribe", "speak", "status", "settings"];
+const ASSISTANT_KEY_SCOPES: &[&str] = &["transcribe", "speak", "status", "settings"];
 
 fn main() -> Result<()> {
     // The CLI previously had no logging at all; initialize it like the other
@@ -143,9 +142,6 @@ async fn dispatch(matches: &ArgMatches, socket_path: PathBuf) -> Result<()> {
             .context("speak failed")
         }
         Some(("logout", _)) => cmd_logout(),
-        Some(("assistant-header", sub)) => {
-            cmd_assistant_header(socket_path, assistant_of(sub)?).await
-        }
         Some(("assistant-hook", sub)) => {
             let assistant = assistant_of(sub)?;
             let event = sub
@@ -245,16 +241,6 @@ fn build_cli() -> Command {
         .subcommand(
             Command::new("logout")
                 .about("Forget the cached session token (forces re-consent next call)"),
-        )
-        .subcommand(
-            Command::new("assistant-header")
-                .about("Print the header an AI assistant sends Super Voice, with its key")
-                .long_about(
-                    "Print the header an AI assistant sends Super Voice's MCP server, with the key \
-                     Super Voice made it, as {\"Authorization\":\"Bearer <key>\"}. The assistant \
-                     runs this itself, once it is connected on the Assistants page of the app.",
-                )
-                .arg(assistant_arg(AssistantId::WIRE_VARIANTS)),
         )
         .subcommand(assistant_hook::command()),
     )
@@ -576,7 +562,7 @@ async fn assistant_key_body(
         socket_path.clone(),
         APP_ID,
         APP_NAME,
-        ASSISTANT_HEADER_SCOPES,
+        ASSISTANT_KEY_SCOPES,
         |token| {
             let socket_path = socket_path.clone();
             let path = path.clone();
@@ -589,53 +575,11 @@ async fn assistant_key_body(
     .await
 }
 
-/// `voice assistant-header <assistant>`: print
-/// `{"Authorization":"Bearer <key>"}`, with the key the daemon made the
-/// assistant, and nothing else on stdout, since the assistant reads it as
-/// JSON. When there is no key to print, say why on stderr and exit with 1.
-async fn cmd_assistant_header(socket_path: PathBuf, assistant: AssistantId) -> Result<()> {
-    let answer = assistant_key_body(socket_path, assistant).await;
-    let key = answer.as_ref().ok().and_then(|body| body["key"].as_str());
-    if let Some(key) = key {
-        println!("{}", authorization_header(key));
-        return Ok(());
-    }
-    let name = assistant.display_name();
-    let reason = match &answer {
-        Err(e) if e.to_string().contains("not_connected") => format!(
-            "Super Voice has not connected {name}. Connect it on the Assistants page of the Super Voice app."
-        ),
-        Err(http_client::HttpError::AuthDenied { .. }) => {
-            "Super Voice shows a key only to the voice command installed beside its daemon."
-                .to_string()
-        }
-        Err(e) => format!("Could not get {name}'s key from Super Voice: {e}"),
-        Ok(_) => format!("Super Voice sent no key for {name}."),
-    };
-    eprintln!("{reason}");
-    std::process::exit(1);
-}
-
-/// The `assistant` argument of the assistant commands: one of `ids`.
-pub(crate) fn assistant_arg(ids: &[&'static str]) -> Arg {
-    Arg::new("assistant")
-        .help("The assistant")
-        .required(true)
-        .value_parser(clap::builder::PossibleValuesParser::new(
-            ids.iter().copied(),
-        ))
-}
-
-/// The assistant an assistant command names.
+/// The assistant `assistant-hook` names.
 fn assistant_of(sub: &clap::ArgMatches) -> Result<AssistantId> {
     sub.get_one::<String>("assistant")
         .and_then(|id| id.parse::<AssistantId>().ok())
         .context("an assistant is required")
-}
-
-/// The headers an assistant sends, as the JSON object it reads.
-fn authorization_header(key: &str) -> String {
-    serde_json::json!({ "Authorization": format!("Bearer {key}") }).to_string()
 }
 
 fn cmd_logout() -> Result<()> {
@@ -714,7 +658,7 @@ mod tests {
     /// the consent binary's `scope_conformance` guard (audit 2 Tier 3 #33).
     #[test]
     fn requested_scopes_are_known() {
-        for scope in SCOPES.iter().chain(super::ASSISTANT_HEADER_SCOPES) {
+        for scope in SCOPES.iter().chain(super::ASSISTANT_KEY_SCOPES) {
             assert!(
                 is_known_scope(scope),
                 "CLI requests scope `{scope}` that is not in scopes::known_scopes"
@@ -722,51 +666,16 @@ mod tests {
         }
     }
 
-    /// `assistant-header` asks for what every other command does, so its
-    /// token serves them too, and `settings`, which the key's route takes.
+    /// Reading an assistant's key asks for what every other command does, so
+    /// its token serves them too, and `settings`, which the key's route takes.
     #[test]
-    fn assistant_header_asks_for_settings_as_well() {
-        let header = super::ASSISTANT_HEADER_SCOPES;
-        assert!(
-            SCOPES.iter().all(|scope| header.contains(scope)),
-            "{header:?}"
-        );
-        assert!(header.contains(&"settings"));
+    fn reading_a_key_asks_for_settings_as_well() {
+        let key = super::ASSISTANT_KEY_SCOPES;
+        assert!(SCOPES.iter().all(|scope| key.contains(scope)), "{key:?}");
+        assert!(key.contains(&"settings"));
         assert!(
             !SCOPES.contains(&"settings"),
             "only that command asks for it"
-        );
-    }
-
-    /// Exactly the JSON object an assistant reads its headers from.
-    #[test]
-    fn the_header_is_one_json_object() {
-        assert_eq!(
-            super::authorization_header("sva_0123abcd"),
-            r#"{"Authorization":"Bearer sva_0123abcd"}"#
-        );
-    }
-
-    #[test]
-    fn assistant_header_takes_only_an_assistant_super_voice_knows() {
-        let matches = super::build_cli()
-            .try_get_matches_from(["voice", "assistant-header", "claude-code"])
-            .expect("parses");
-        let (name, sub) = matches.subcommand().expect("a subcommand");
-        assert_eq!(name, "assistant-header");
-        assert_eq!(
-            sub.get_one::<String>("assistant").map(String::as_str),
-            Some("claude-code")
-        );
-        assert!(
-            super::build_cli()
-                .try_get_matches_from(["voice", "assistant-header", "robot"])
-                .is_err()
-        );
-        assert!(
-            super::build_cli()
-                .try_get_matches_from(["voice", "assistant-header"])
-                .is_err()
         );
     }
 
