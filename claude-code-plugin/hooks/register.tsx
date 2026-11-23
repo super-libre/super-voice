@@ -22,8 +22,8 @@ const claudeListening = atom(
   { plugin: 'super-voice', key: 'isClaudeListening' } as const,
   false,
 )
-const listensAfter = atom(
-  { plugin: 'super-voice', key: 'listensAfterReply' } as const,
+const opensMicAfter = atom(
+  { plugin: 'super-voice', key: 'opensMicAfterReply' } as const,
   false,
 )
 const claudeWorking = atom(
@@ -104,8 +104,9 @@ let runningTurnId: string | undefined
 // Listening after a spoken reply.
 /** The words Talk put in the box since the last prompt was sent. */
 let talked: string | undefined
-/** The prompt now being answered was spoken, so its reply should be too. */
-let listenAfterReply = false
+/** The prompt now being answered was spoken, so its reply is read aloud, and
+ * Claude may speak and listen. */
+let isTurnSpoken = false
 /** The main agent's last prompt and reply, which Talk picks the names and
  * terms of the conversation from. */
 let lastPrompt = ''
@@ -234,7 +235,7 @@ async function openSession($: EngineInterface) {
 async function setArmed($: EngineInterface, isArmed: boolean) {
   if (armed !== isArmed) {
     armed = isArmed
-    await update($, listensAfter, () => isArmed)
+    await update($, opensMicAfter, () => isArmed)
   }
 }
 
@@ -479,7 +480,7 @@ async function tick($: EngineInterface) {
   }
   // Set here too, in case this mod's own `prompt.submit` hook is not told of
   // its own prompt.
-  listenAfterReply = true
+  isTurnSpoken = true
   talked = undefined
   // The words are the user's own, so Claude reads them bare. Hooks and
   // permission checks still see this mod as the sender.
@@ -503,7 +504,7 @@ export const register: Register = on => {
     await update($, talk, () => ({ phase: 'idle' }))
     await update($, speaking, () => false)
     await update($, claudeListening, () => false)
-    await update($, listensAfter, () => false)
+    await update($, opensMicAfter, () => false)
     await update($, claudeWorking, () => false)
     await update($, readingAgain, () => '')
     // A reload starts the session's check-ins over too.
@@ -553,8 +554,8 @@ export const register: Register = on => {
       if (e.isAborted) {
         // A spoken prompt that stopped this turn is still to be answered.
         await setArmed($, false)
-      } else if (listenAfterReply) {
-        listenAfterReply = false
+      } else if (isTurnSpoken) {
+        isTurnSpoken = false
         await readReply($, e.answer)
       }
     }
@@ -573,7 +574,7 @@ export const register: Register = on => {
       return next(e)
     }
     // Claude speaks only after being spoken to.
-    if (!listenAfterReply) {
+    if (!isTurnSpoken) {
       return { deny: NOT_SPOKEN_TO }
     }
     // Named as this session, as the plugin's own calls are.
@@ -670,7 +671,7 @@ export const register: Register = on => {
       // Talk's words, or ones the user dictated with Super Voice's shortcut.
       const isSpoken = await promptWasSpoken($, e.text, false, talked)
       lastPrompt = e.text
-      listenAfterReply = isSpoken
+      isTurnSpoken = isSpoken
       talked = undefined
       await setArmed($, false)
       return next(isSpoken ? { ...e, context: [...(e.context ?? []), SPOKEN_NOTE] } : e)
@@ -678,7 +679,7 @@ export const register: Register = on => {
     if (isOwn) {
       await promptWasSpoken($, e.text, true)
       lastPrompt = e.text
-      listenAfterReply = true
+      isTurnSpoken = true
       talked = undefined
       return next({ ...e, context: [...(e.context ?? []), SPOKEN_NOTE] })
     }
@@ -752,7 +753,7 @@ export const register: Register = on => {
     }
     const isListening = await read($, claudeListening)
     if (await read($, speaking)) {
-      const talksAfter = isListening || (await read($, listensAfter))
+      const talksAfter = isListening || (await read($, opensMicAfter))
       return (
         <Button
           key="stop-speaking"

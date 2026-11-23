@@ -9,7 +9,7 @@ export type SuperVoiceIsClaudeListening = boolean
 
 /** Whether the reply being read answers a spoken prompt, so the microphone
  * opens after it, and stopping it starts the user talking. */
-export type SuperVoiceListensAfterReply = boolean
+export type SuperVoiceOpensMicAfterReply = boolean
 
 /** Which reply block a 🔊 is reading aloud again, by its button's key; empty
  * when none is. */
@@ -36,7 +36,7 @@ declare module 'claude-code' {
     'super-voice': {
       isSpeaking: SuperVoiceIsSpeaking
       isClaudeListening: SuperVoiceIsClaudeListening
-      listensAfterReply: SuperVoiceListensAfterReply
+      opensMicAfterReply: SuperVoiceOpensMicAfterReply
       isClaudeWorking: SuperVoiceIsClaudeWorking
       readingAgain: SuperVoiceReadingAgain
       talk: SuperVoiceTalk
