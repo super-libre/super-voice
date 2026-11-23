@@ -187,7 +187,7 @@ behind does nothing without it.
 | HTTP | `error_code` | Meaning                                                                    |
 |------|--------------|----------------------------------------------------------------------------|
 | 404  | `not_found`  | No assistant has that id (`unknown_assistant`)                             |
-| 500  | `internal`   | `could_not_write_assistant_config` or `could_not_change_plugin`. The key is revoked. |
+| 500  | `internal`   | `could_not_write_assistant_config` or `could_not_change_plugin`, and the key is revoked; or `could_not_save_key`: the key could not be revoked, and still works. |
 
 ## `PATCH /assistants/{id}`
 
@@ -257,6 +257,7 @@ revokes it. Answers the whole list.
 | HTTP | `error_code` | Meaning                                         |
 |------|--------------|-------------------------------------------------|
 | 404  | `not_found`  | No key made by hand has that id (`unknown_key`) |
+| 500  | `internal`   | The key could not be revoked, and still works (`could_not_save_key`) |
 
 ## `GET /assistants/{id}/key`
 

@@ -178,7 +178,11 @@ impl SuperSTTDaemon {
         if let Err(e) = self.write_assistant_entry(id, &secret).await {
             if minted {
                 self.remove_assistant_entry(id).await;
-                self.revoke_keys(auth, &[key_id]).await;
+                // What went wrong first is the answer; a key that cannot be
+                // revoked as well is logged.
+                if let Err(revoking) = self.revoke_keys(auth, &[key_id]).await {
+                    warn!("{revoking:?}");
+                }
             }
             return Err(e);
         }
@@ -243,7 +247,8 @@ impl SuperSTTDaemon {
     ///
     /// # Errors
     ///
-    /// See [`Error`].
+    /// See [`Error`]. [`Error::Key`] when the key could not be revoked, and
+    /// still works.
     pub async fn disconnect_assistant(
         &self,
         auth: &Auth,
@@ -284,18 +289,29 @@ impl SuperSTTDaemon {
             .filter(|key| key.name == id.as_wire_str())
             .map(|key| key.id)
             .collect();
-        self.revoke_keys(auth, &keys).await;
+        let revoked = self.revoke_keys(auth, &keys).await;
         removed?;
+        revoked?;
         Ok(self.list_assistants(auth).await)
     }
 
     /// Revoke each of `keys`, cancel its calls in flight, and forget its
     /// sessions.
-    async fn revoke_keys(&self, auth: &Auth, keys: &[String]) {
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Key`] when a key could not be revoked: the secrets file could
+    /// not be written, and the key still works. The others are revoked all
+    /// the same.
+    async fn revoke_keys(&self, auth: &Auth, keys: &[String]) -> Result<(), Error> {
+        let mut failed = Ok(());
         for key in keys {
             match auth.revoke_assistant_key(key).await {
                 Ok(_) => info!("Revoked key {key}"),
-                Err(e) => warn!("Could not revoke key {key}: {e}"),
+                Err(e) => {
+                    warn!("Could not revoke key {key}: {e}");
+                    failed = Err(Error::Key(format!("could not revoke key {key}: {e}")));
+                }
             }
             let caller = Caller::Key(key.clone());
             self.assistants.sessions.forget(&caller);
@@ -304,6 +320,7 @@ impl SuperSTTDaemon {
                 info!("Cancelled {cancelled} calls made with key {key}");
             }
         }
+        failed
     }
 
     /// Keep assistant `id`'s switches: whether Super Voice says aloud when it
@@ -375,7 +392,8 @@ impl SuperSTTDaemon {
     ///
     /// # Errors
     ///
-    /// [`Error::UnknownKey`] when no key made by hand has that id.
+    /// [`Error::UnknownKey`] when no key made by hand has that id, and
+    /// [`Error::Key`] when it could not be revoked, and still works.
     pub async fn revoke_custom_key(
         &self,
         auth: &Auth,
@@ -388,7 +406,7 @@ impl SuperSTTDaemon {
         if !known {
             return Err(Error::UnknownKey);
         }
-        self.revoke_keys(auth, &[key_id.to_string()]).await;
+        self.revoke_keys(auth, &[key_id.to_string()]).await?;
         Ok(self.list_assistants(auth).await)
     }
 

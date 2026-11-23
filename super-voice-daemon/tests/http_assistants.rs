@@ -255,6 +255,43 @@ async fn a_failed_connect_takes_its_entry_back_out() {
     assert_eq!(status, StatusCode::NOT_FOUND, "the key is revoked: {body}");
 }
 
+/// A key that cannot be revoked, as with the secrets file not writable, is
+/// an error, not a disconnect that answers as if the key were gone.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_key_that_cannot_be_revoked_is_an_error() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (daemon, token, _home) = start("assistants-unrevoked", true).await;
+    let (status, list) = call(
+        &daemon,
+        &token,
+        Method::POST,
+        "/assistants/codex/connect",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+
+    let state = std::fs::read_dir(&daemon.home().state)
+        .expect("state")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|dir| dir.join("secrets.ron").exists())
+        .expect("the secrets file's folder");
+    let writable = std::fs::metadata(&state).expect("state").permissions();
+    std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o500)).expect("chmod");
+    let (status, body) = call(&daemon, &token, Method::DELETE, "/assistants/codex", None).await;
+    std::fs::set_permissions(&state, writable).expect("chmod back");
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+    assert!(
+        body["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("could_not_save_key")),
+        "{body}"
+    );
+}
+
 /// Connecting Claude Code installs the plugin with the `claude` it found,
 /// after adding its marketplace; disconnecting uninstalls it.
 #[tokio::test]
