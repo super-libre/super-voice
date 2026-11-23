@@ -37,6 +37,9 @@ pub const MCP_PATH: &str = "/v1/mcp";
 /// What a key made for an assistant may do: speak, and hear the user.
 pub const KEY_SCOPES: [&str; 2] = ["speak", "transcribe"];
 
+/// The MCP tools an assistant's plugin calls itself, kept from its model.
+pub const PLUGIN_TOOLS: [&str; 5] = ["stop", "status", "announce", "session", "turn"];
+
 /// The marketplace Claude Code installs Super Voice's plugin from, unless
 /// [`CLAUDE_MARKETPLACE_VAR`] names another.
 pub const CLAUDE_MARKETPLACE: &str = "super-libre/super-voice";

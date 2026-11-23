@@ -531,10 +531,6 @@ mod jsonc {
 const ANTIGRAVITY_STALE_KEYS: [&str; 7] =
     ["url", "httpUrl", "type", "command", "args", "cwd", "env"];
 
-/// The tools Super Voice's plugin for the Antigravity CLI calls itself,
-/// kept from its model with `disabledTools`.
-const ANTIGRAVITY_PLUGIN_TOOLS: [&str; 5] = ["stop", "status", "announce", "session", "turn"];
-
 /// How long a tool call may run: `listen` waits for the user, often longer
 /// than the default 3 minutes.
 const ANTIGRAVITY_TIMEOUT_SECONDS: u64 = 600;
@@ -571,7 +567,7 @@ pub fn antigravity_with_super_voice(text: &str, url: &str, key: &str) -> Result<
     // The tools Super Voice's plugin calls itself, never the model.
     entry.insert(
         "disabledTools".to_string(),
-        ANTIGRAVITY_PLUGIN_TOOLS.into_iter().collect(),
+        super::PLUGIN_TOOLS.into_iter().collect(),
     );
     json_text(root, text)
 }
