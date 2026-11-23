@@ -536,7 +536,7 @@ async fn ask(
             Err(e) => return Asked::Failed(e),
         },
         () = cancel.cancelled() => {
-            silence_once_spoken(Arc::clone(daemon), spoken);
+            call_off(daemon, spoken).await;
             return Asked::Cancelled;
         }
     };
@@ -575,14 +575,15 @@ async fn silence_if_speaking(daemon: &SuperSTTDaemon, utterance: &str) {
     }
 }
 
-/// Stop the question `spoken` is still producing once it plays: the call
-/// asking it was cancelled, and the question would otherwise be heard after.
-fn silence_once_spoken(daemon: Arc<SuperSTTDaemon>, spoken: JoinHandle<SpeechResponse>) {
-    tokio::spawn(async move {
-        if let Ok(Some(utterance)) = spoken_outcome(spoken.await) {
-            silence_if_speaking(&daemon, &utterance).await;
-        }
-    });
+/// Call off the question `spoken` is asking: the call asking it was
+/// cancelled. Still waiting for the model or being made, the question never
+/// plays, and what of it was made stops; made already, it is silenced if it
+/// still plays.
+async fn call_off(daemon: &SuperSTTDaemon, spoken: JoinHandle<SpeechResponse>) {
+    spoken.abort();
+    if let Ok(Some(utterance)) = spoken_outcome(spoken.await) {
+        silence_if_speaking(daemon, &utterance).await;
+    }
 }
 
 #[cfg(test)]
@@ -750,6 +751,17 @@ mod tests {
             stop(&daemon, &mine.who).await,
             "Nothing of this session's was playing or recording."
         );
+    }
+
+    /// A question whose `listen` was cancelled while it waited for the model
+    /// is called off then, not left to play once the model is in.
+    #[tokio::test]
+    async fn a_cancelled_question_is_called_off_before_it_plays() {
+        let daemon = test_daemon().await;
+        let asking = tokio::spawn(std::future::pending::<SpeechResponse>());
+        let task = asking.abort_handle();
+        call_off(&daemon, asking).await;
+        assert!(task.is_finished(), "the question's task is called off");
     }
 
     /// With announcing off, `announce` says nothing and says why.
