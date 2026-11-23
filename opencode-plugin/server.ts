@@ -138,7 +138,7 @@ export default Plugin.define({
         text: event.prompt.text,
         ...(isTalk ? { spoken: true } : {}),
       })
-      spoken.set(event.sessionID, isTalk || saysSpoken(answer?.isError ? undefined : answer?.text))
+      spoken.set(event.sessionID, isTalk || saysSpoken(answer.isError ? undefined : answer.text))
     })
 
     const told = await ctx.session.hook('context', event => {
@@ -171,9 +171,6 @@ export default Plugin.define({
           { asked: true, ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}) },
           context.signal,
         )
-        if (heard === undefined) {
-          return { error: 'Super Voice is not reachable.' }
-        }
         return heard.isError ? { error: heard.text } : { text: heard.text }
       },
       read: async input => {
@@ -185,9 +182,6 @@ export default Plugin.define({
         }
         // The user asked for it: a typed turn does not refuse it.
         const spoke = await call('speak', sessionID, { text: reply, asked: true })
-        if (spoke === undefined) {
-          return { error: 'Super Voice is not reachable.' }
-        }
         return spoke.isError ? { error: spoke.text } : {}
       },
       stop: async input => {
@@ -199,7 +193,7 @@ export default Plugin.define({
         const answer = await call('status', sessionID)
         const status = (() => {
           try {
-            return JSON.parse(answer?.text ?? '{}') as { speaking?: unknown; listening?: unknown; talk?: unknown }
+            return JSON.parse(answer.text) as { speaking?: unknown; listening?: unknown; talk?: unknown }
           } catch {
             return {}
           }
@@ -220,7 +214,7 @@ export default Plugin.define({
       }
       const { reply } = await lastExchange(event.sessionID)
       const answer = await call('turn', event.sessionID, { event: 'reply', text: reply })
-      if (answer && !answer.isError && answer.text.includes('"read":true')) {
+      if (!answer.isError && answer.text.includes('"read":true')) {
         await rpc.events.emit('replied', { sessionID: event.sessionID })
       }
     })

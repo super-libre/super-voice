@@ -11,6 +11,9 @@ export type Target = { url: string; headers: Record<string, string> }
 /** A tool's answer: its text, and whether it failed. */
 export type Answer = { text: string; isError: boolean }
 
+/** The answer to a call that never reached Super Voice. */
+const UNREACHABLE: Answer = { text: 'Super Voice is not reachable.', isError: true }
+
 type Message = {
   id?: number
   result?: { content?: Array<{ type?: string; text?: string }>; isError?: boolean }
@@ -41,11 +44,11 @@ export class SuperVoice {
 
   constructor(private readonly target: () => Target | undefined) {}
 
-  /** Call `tool` with `args`. Undefined when Super Voice can't be reached. */
-  async call(tool: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Answer | undefined> {
+  /** Call `tool` with `args`: its answer, an error when the call failed. */
+  async call(tool: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<Answer> {
     const target = this.target()
     if (!target) {
-      return undefined
+      return UNREACHABLE
     }
     try {
       if (this.connection === undefined) {
@@ -63,7 +66,7 @@ export class SuperVoice {
       const text = (message.result?.content ?? []).map(block => (block.type === 'text' ? (block.text ?? '') : '')).join('')
       return { text, isError: message.result?.isError === true }
     } catch {
-      return undefined
+      return UNREACHABLE
     }
   }
 

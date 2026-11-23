@@ -140,19 +140,20 @@ async function sessionOf($: EngineInterface, id?: string) {
 type Answer = { text: string; isError: boolean }
 
 /** Call one of Super Voice's tools for this session, or for session `id`,
- * through Claude Code's own connection. Nothing when the call fails. */
+ * through Claude Code's own connection: its answer, an error with no text
+ * when the call failed. */
 async function call(
   $: EngineInterface,
   tool: string,
   args: Record<string, unknown> = {},
   id?: string,
-): Promise<Answer | undefined> {
+): Promise<Answer> {
   try {
     const result = await $.mcp.call(server, tool, { ...args, session: await sessionOf($, id) })
     const text = result.content.map(block => (block.type === 'text' ? block.text : '')).join('')
     return { text, isError: result.isError }
   } catch {
-    return undefined
+    return { text: '', isError: true }
   }
 }
 
@@ -173,7 +174,7 @@ async function promptWasSpoken(
     ...(isTalk ? { spoken: true } : {}),
     ...(heard ? { heard } : {}),
   })
-  if (isTalk || answer === undefined || answer.isError) {
+  if (isTalk || answer.isError) {
     return isTalk
   }
   try {
@@ -189,7 +190,7 @@ type VoiceStatus = { isSpeaking: boolean; isListening: boolean }
  * when Super Voice can't say. */
 async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined> {
   const answer = await call($, 'status')
-  if (answer === undefined || answer.isError) {
+  if (answer.isError) {
     return undefined
   }
   try {
@@ -226,7 +227,7 @@ async function checkIn($: EngineInterface) {
   }
   const started = await call($, 'session', { event: 'start' })
   // Not yet: the next check-in tries again.
-  if (started !== undefined && !started.isError) {
+  if (!started.isError) {
     openedId = id
   }
 }
@@ -321,8 +322,8 @@ async function readReply($: EngineInterface, answer: string) {
     return
   }
   const spoken = await call($, 'speak', { text: answer })
-  if (spoken === undefined || spoken.isError) {
-    $.ui.toast(spoken?.text || 'Could not read the reply aloud.')
+  if (spoken.isError) {
+    $.ui.toast(spoken.text || 'Could not read the reply aloud.')
     return
   }
   await setArmed($, true)
@@ -341,9 +342,9 @@ async function readAgain($: EngineInterface, key: string, text: string) {
   await update($, readingAgain, () => key)
   // The user asked for it: a typed turn does not refuse it.
   const spoken = await call($, 'speak', { text, asked: true })
-  if (spoken === undefined || spoken.isError) {
+  if (spoken.isError) {
     await update($, readingAgain, () => '')
-    $.ui.toast(spoken?.text || 'Could not read it aloud.')
+    $.ui.toast(spoken.text || 'Could not read it aloud.')
     return
   }
   await watchSpeech($)
@@ -380,9 +381,7 @@ async function recordAndFill($: EngineInterface) {
     asked: true,
     ...(vocabulary.length > 0 ? { context: { vocabulary } } : {}),
   })
-  if (heard === undefined) {
-    $.ui.toast('Could not record.')
-  } else if (heard.isError) {
+  if (heard.isError) {
     $.ui.toast(heard.text || 'Could not record.')
   } else {
     words = heard.text.trim()
