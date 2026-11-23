@@ -53,9 +53,10 @@ pub(crate) async fn run(socket_path: PathBuf, assistant: AssistantId, event: &st
     let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
     let hook: Value = serde_json::from_str(&input).unwrap_or(Value::Null);
     let answer = if assistant == AssistantId::Antigravity {
-        match crate::assistant_access(socket_path, assistant).await {
-            Ok((key, address)) => antigravity(&address, &key, event, &hook).await,
-            Err(_) => None,
+        let access = crate::assistant_access(socket_path, assistant).await;
+        match access {
+            Some((key, address)) => antigravity(&address, &key, event, &hook).await,
+            None => None,
         }
     } else {
         None
@@ -86,7 +87,13 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
     let call = |tool: &str, mut arguments: Value| {
         arguments["session"] = session.clone();
         let tool = tool.to_string();
-        async move { call_tool(address, key, &tool, arguments).await.ok() }
+        // A refused call is answered as if Super Voice could not be reached.
+        async move {
+            call_tool(address, key, &tool, arguments)
+                .await
+                .ok()
+                .filter(|answer| !answer.is_error)
+        }
     };
     match event {
         "session-start" => {

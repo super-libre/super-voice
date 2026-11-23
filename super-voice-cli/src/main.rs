@@ -567,22 +567,17 @@ async fn cmd_speak_stop(
 }
 
 /// The key the daemon made `assistant`, and where it reaches Super Voice's
-/// MCP server with it.
-///
-/// # Errors
-///
-/// What the daemon answered instead, such as `not_connected`.
+/// MCP server with it. `None` when the daemon gave none, as for an assistant
+/// not connected.
 pub(crate) async fn assistant_access(
     socket_path: PathBuf,
     assistant: AssistantId,
-) -> Result<(String, String), String> {
-    let body = assistant_key_body(socket_path, assistant)
-        .await
-        .map_err(|e| e.to_string())?;
-    match (body["key"].as_str(), body["address"].as_str()) {
-        (Some(key), Some(address)) => Ok((key.to_string(), address.to_string())),
-        _ => Err("Super Voice sent no key".to_string()),
-    }
+) -> Option<(String, String)> {
+    let body = assistant_key_body(socket_path, assistant).await.ok()?;
+    Some((
+        body["key"].as_str()?.to_string(),
+        body["address"].as_str()?.to_string(),
+    ))
 }
 
 /// `GET /assistants/{assistant}/key`, as the daemon answers it.
