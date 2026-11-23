@@ -176,14 +176,19 @@ fn is_written_without_spaces(c: char) -> bool {
 /// all of it, in order, but for about a word in four the user corrected by
 /// hand, with anything they typed around it; or the prompt is the dictation
 /// cut down, keeping at least half of it. A dictation of three words or
-/// fewer is matched whole.
+/// fewer is matched whole: cut down, its few words are too common to tell
+/// the user's typing from it.
 fn holds(prompt: &[String], dictated: &[String]) -> bool {
+    /// The longest dictation that must be held whole.
+    const SHORT: usize = 3;
     if prompt.is_empty() || dictated.is_empty() {
         return false;
     }
     let kept = words_in_common(prompt, dictated);
     let nearly_all = |of: usize| kept >= of - of / 4;
-    nearly_all(dictated.len()) || (2 * prompt.len() >= dictated.len() && nearly_all(prompt.len()))
+    let cut_down =
+        dictated.len() > SHORT && 2 * prompt.len() >= dictated.len() && nearly_all(prompt.len());
+    nearly_all(dictated.len()) || cut_down
 }
 
 /// How many words `a` and `b` share in the same order: the length of their
@@ -730,11 +735,15 @@ mod tests {
             ["打", "开", "readme", "文", "件"]
         );
 
-        // Three words or fewer: whole, or not at all.
+        // Three words or fewer: whole, or not at all. Cut down, they would
+        // be a word or two the user may well have typed.
         let sessions = Sessions::default();
         sessions.dictated("Open the notes");
         assert!(!sessions.was_dictated("Open my notes", Instant::now()));
+        assert!(!sessions.was_dictated("open notes", Instant::now()));
         assert!(sessions.was_dictated("open the notes!", Instant::now()));
+        assert!(!said("Yes please", "yes"));
+        assert!(said("Yes please", "Yes, please."));
     }
 
     /// A session's turn is spoken or typed once its plugin says, and the next
