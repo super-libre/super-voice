@@ -185,6 +185,13 @@ fn is_written_without_spaces(c: char) -> bool {
     )
 }
 
+/// Whether `prompt` holds `said`, what the user said into the prompt box, as
+/// [`holds`] says: a word or two corrected by hand still counts.
+#[must_use]
+pub fn holds_what_was_said(prompt: &str, said: &str) -> bool {
+    holds(&words(prompt), &words(said))
+}
+
 /// Whether a prompt of `prompt`'s words holds a dictation of `dictated`'s:
 /// all of it, in order, but for about a word in four the user corrected by
 /// hand, with anything they typed around it; or the prompt is the dictation

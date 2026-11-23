@@ -18,7 +18,7 @@
 //!    the same, so the microphone is freed as at any other stop.
 
 use super::protocol::{Hook, SessionEvent, Tool, TurnEvent};
-use crate::assistants::sessions::{Sessions, Who};
+use crate::assistants::sessions::{Sessions, Who, holds_what_was_said};
 use crate::daemon::events::Topic;
 use crate::daemon::recording::{Stopped, TakeSettings};
 use crate::daemon::types::SuperSTTDaemon;
@@ -133,14 +133,16 @@ pub(crate) async fn run(
         Tool::Turn(TurnEvent::Prompt {
             text,
             spoken,
+            heard,
             again,
         }) => {
             // The same prompt said again keeps its turn: its dictation is
             // used up by now.
             let again = sessions.prompted(who, &text, again);
-            let spoken = spoken
-                .or(again)
-                .unwrap_or_else(|| sessions.was_dictated(&text, std::time::Instant::now()));
+            let spoken = spoken.or(again).unwrap_or_else(|| {
+                heard.is_some_and(|heard| holds_what_was_said(&text, &heard))
+                    || sessions.was_dictated(&text, std::time::Instant::now())
+            });
             sessions.set_spoken(who, spoken);
             Some(Ok(prompt_answer(caller.hook, spoken, again.is_none())))
         }
@@ -834,6 +836,7 @@ mod tests {
             Tool::Turn(TurnEvent::Prompt {
                 text: text.to_string(),
                 spoken,
+                heard: None,
                 again: false,
             })
         };
@@ -872,6 +875,7 @@ mod tests {
         let said_again = Tool::Turn(TurnEvent::Prompt {
             text: "open the notes.".to_string(),
             spoken: None,
+            heard: None,
             again: true,
         });
         let again = run(&daemon, said_again, &caller(), &cancel)
@@ -892,6 +896,28 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&retyped).unwrap(),
             serde_json::json!({ "spoken": false, "note": null })
         );
+
+        // What Talk put in the box is spoken, touched up by hand too; a
+        // prompt typed in its place is not.
+        let with_talk = |text: &str| {
+            Tool::Turn(TurnEvent::Prompt {
+                text: text.to_string(),
+                spoken: None,
+                heard: Some("Rename the super boys folder".to_string()),
+                again: false,
+            })
+        };
+        for (text, spoken) in [
+            ("Rename the super voice folder", true),
+            ("What does this function do?", false),
+        ] {
+            let answer = run(&daemon, with_talk(text), &caller(), &cancel)
+                .await
+                .unwrap()
+                .unwrap();
+            let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
+            assert_eq!(answer["spoken"], spoken, "{text}");
+        }
     }
 
     /// A Codex hook reads the answer as its own output: the context beside a
@@ -908,6 +934,7 @@ mod tests {
             Tool::Turn(TurnEvent::Prompt {
                 text: "Hi.".to_string(),
                 spoken: Some(spoken),
+                heard: None,
                 again: false,
             })
         };
@@ -978,6 +1005,7 @@ mod tests {
             let prompt = Tool::Turn(TurnEvent::Prompt {
                 text: text.to_string(),
                 spoken: None,
+                heard: None,
                 again: false,
             });
             let answer = run(&daemon, prompt, caller, &cancel)

@@ -130,13 +130,15 @@ pub(crate) enum SessionEvent {
 #[derive(Debug, PartialEq)]
 pub(crate) enum TurnEvent {
     /// The user sent `text`. `spoken` when the plugin knows whether it was
-    /// said aloud; when it does not, the daemon tells from its dictation.
-    /// `again` when a hook that runs before each model call says the turn's
-    /// prompt again. `/read` asks to hear a reply again instead, and is
-    /// answered by the daemon.
+    /// said aloud; when it does not, the daemon tells: from `heard`, the
+    /// words the plugin's Talk put in the prompt box, which the user may have
+    /// touched up, or from its dictation. `again` when a hook that runs
+    /// before each model call says the turn's prompt again. `/read` asks to
+    /// hear a reply again instead, and is answered by the daemon.
     Prompt {
         text: String,
         spoken: Option<bool>,
+        heard: Option<String>,
         again: bool,
     },
     /// The assistant answered with `text`, kept to read again, and read
@@ -315,6 +317,7 @@ impl Tool {
                     Some("prompt") => Ok(Self::Turn(TurnEvent::Prompt {
                         text,
                         spoken: args["spoken"].as_bool(),
+                        heard: optional_text(args, "heard")?,
                         again: args["again"].as_bool() == Some(true),
                     })),
                     Some("reply") => Ok(Self::Turn(TurnEvent::Reply { text })),
@@ -513,6 +516,7 @@ fn plugin_tools(may_speak: bool, marked: bool) -> Vec<Value> {
                     "event": { "type": "string", "enum": ["prompt", "reply"] },
                     "text": { "type": "string" },
                     "spoken": { "type": "boolean" },
+                    "heard": { "type": "string" },
                     "again": { "type": "boolean" },
                 },
                 "required": ["event"],
@@ -706,6 +710,7 @@ mod tests {
                     tool: Tool::Turn(TurnEvent::Prompt {
                         text: "Go.".to_string(),
                         spoken: None,
+                        heard: None,
                         again,
                     })
                 }
