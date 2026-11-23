@@ -557,7 +557,7 @@ pub async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
     let voice = assistant_configs::shell_quote(&hook_program());
     let files: Vec<(&'static str, String)> = ANTIGRAVITY_PLUGIN_FILES
         .iter()
-        .map(|(name, text)| (*name, text.replace("{voice}", &voice)))
+        .map(|(name, text)| (*name, with_voice(text, &voice)))
         .collect();
     let written = dir.clone();
     tokio::task::spawn_blocking(move || {
@@ -632,6 +632,35 @@ fn write_plugin_files(dir: &Path, files: &[(&str, &str)]) -> std::io::Result<()>
         std::fs::write(&path, text)?;
     }
     Ok(())
+}
+
+/// A plugin file, `text`, with `{voice}` made `voice` in each of its JSON
+/// strings: in the parsed JSON, so a path with a quote or a backslash in it
+/// stays JSON. A file that is not JSON is left as it is.
+fn with_voice(text: &str, voice: &str) -> String {
+    fn fill(value: &mut serde_json::Value, voice: &str) {
+        match value {
+            serde_json::Value::String(text) => *text = text.replace("{voice}", voice),
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    fill(item, voice);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for field in fields.values_mut() {
+                    fill(field, voice);
+                }
+            }
+            _ => {}
+        }
+    }
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(mut json) => {
+            fill(&mut json, voice);
+            serde_json::to_string_pretty(&json).map_or_else(|_| text.to_string(), |t| t + "\n")
+        }
+        Err(_) => text.to_string(),
+    }
 }
 
 /// A plugin manifest, `text`, with `version`.
@@ -901,6 +930,19 @@ mod tests {
         let manifest: serde_json::Value =
             serde_json::from_str(ANTIGRAVITY_PLUGIN_FILES[0].1).unwrap();
         assert_eq!(manifest["name"], ANTIGRAVITY_PLUGIN);
+
+        // A `voice` whose path holds a quote and a backslash: the hooks stay
+        // JSON, and each command is the quoted path.
+        let voice = assistant_configs::shell_quote(r#"/home/o'neil/a "b"\c/voice"#);
+        let filled: serde_json::Value =
+            serde_json::from_str(&with_voice(ANTIGRAVITY_PLUGIN_FILES[1].1, &voice))
+                .expect("the hooks are still JSON");
+        assert_eq!(
+            filled["super-voice"]["Stop"][0]["command"],
+            format!("{voice} assistant-hook antigravity stop")
+        );
+        let skill = ANTIGRAVITY_PLUGIN_FILES[2].1;
+        assert_eq!(with_voice(skill, &voice), skill, "not JSON, left as it is");
     }
 
     #[test]
