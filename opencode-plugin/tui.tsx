@@ -16,7 +16,7 @@
 import { Plugin } from '@opencode/plugin/tui'
 import { Show, createSignal } from 'solid-js'
 
-import { Voice } from './rpc'
+import { type Heard, type Outcome, type Status, Voice } from './rpc'
 import { NO_SPEECH } from './voice'
 
 /** How often the row asks Super Voice what this session's speech is doing
@@ -59,7 +59,7 @@ export default Plugin.define({
       armed = undefined
       setPhase('listening')
       const heard = await voice.talk({ sessionID }).catch(() => ({ error: 'Super Voice is not reachable.' }))
-      const { text, error } = heard as { text?: string; error?: string }
+      const { text, error } = heard as Heard
       const words = (text ?? '').trim()
       if (error || !words || words === NO_SPEECH) {
         setPhase('idle')
@@ -120,7 +120,7 @@ export default Plugin.define({
       const answer = await voice
         .read({ sessionID, back: Number(given || '0') })
         .catch(() => ({ error: 'Super Voice is not reachable.' }))
-      const { error } = answer as { error?: string }
+      const { error } = answer as Outcome
       if (error) {
         context.ui.toast.show({ message: error, variant: 'error' })
       } else {
@@ -203,15 +203,7 @@ export default Plugin.define({
       await voice
         .status({ sessionID })
         .then(status => {
-          const {
-            speaking: isSpeaking,
-            conversation: isConversation,
-            talk: isShown,
-          } = status as {
-            speaking: boolean
-            conversation: boolean
-            talk: boolean
-          }
+          const { speaking: isSpeaking, conversation: isConversation, talk: isShown } = status as Status
           setSpeaking(isSpeaking)
           setConversation(isConversation)
           setShown(isShown)

@@ -11,7 +11,7 @@
 import { Plugin } from '@opencode/plugin'
 
 import { SuperVoice, type Target } from './mcp'
-import { Voice } from './rpc'
+import { type ReadInput, type SessionInput, type Status, Voice } from './rpc'
 import { talkArgs } from './terms'
 import { MODEL_TOOL_NAMES, NOT_SPOKEN_TO, PLUGIN_TOOL_NAMES, SPOKEN_NOTE, fieldsOf } from './voice'
 
@@ -80,39 +80,36 @@ export default Plugin.define({
     const call = (tool: string, sessionID: string, args: Record<string, unknown> = {}, signal?: AbortSignal) =>
       voice.call(tool, { ...args, session: session(sessionID) }, signal)
 
-    /** The last prompt and reply of a session, for what Talk listens for. */
-    const lastExchange = async (sessionID: string) => {
+    /** The session's turns, oldest first: the prompt that started each, and
+     * its reply, what the assistant last wrote in it. */
+    const turnsOf = async (sessionID: string) => {
       const messages = ((await ctx.session.context({ sessionID }).catch(() => [])) ?? []) as unknown[]
-      const last = (role: string) => textOf([...messages].reverse().find(message => roleOf(message) === role) ?? {})
-      return { prompt: last('user'), reply: last('assistant') }
-    }
-
-    /** The session's replies, the last one first: what the assistant last
-     * wrote in each turn. */
-    const replies = async (sessionID: string) => {
-      const messages = ((await ctx.session.context({ sessionID }).catch(() => [])) ?? []) as unknown[]
-      const found: string[] = []
-      let reply = ''
+      const turns: Array<{ prompt: string; reply: string }> = []
       for (const message of messages) {
         const text = textOf(message).trim()
-        if (!text) {
+        const role = roleOf(message)
+        if (!text || (role !== 'user' && role !== 'assistant')) {
           continue
         }
-        const role = roleOf(message)
-        if (role === 'user') {
-          if (reply) {
-            found.push(reply)
-          }
-          reply = ''
-        } else if (role === 'assistant') {
-          reply = text
+        if (role === 'user' || turns.length === 0) {
+          turns.push({ prompt: role === 'user' ? text : '', reply: '' })
+        }
+        if (role === 'assistant') {
+          turns[turns.length - 1].reply = text
         }
       }
-      if (reply) {
-        found.push(reply)
-      }
-      return found.reverse()
+      return turns
     }
+    /** The last turn's prompt and reply, for what Talk listens for and the
+     * reply to read. */
+    const lastExchange = async (sessionID: string) =>
+      (await turnsOf(sessionID)).at(-1) ?? { prompt: '', reply: '' }
+    /** The session's replies, the last one first. */
+    const replies = async (sessionID: string) =>
+      (await turnsOf(sessionID))
+        .map(turn => turn.reply)
+        .filter(Boolean)
+        .reverse()
 
     const hidden = await ctx.tool.transform(editor => {
       for (const tool of PLUGIN_TOOLS) {
@@ -153,13 +150,13 @@ export default Plugin.define({
 
     const rpc = await ctx.rpc.register(Voice, {
       talk: async (input, context) => {
-        const { sessionID } = input as { sessionID: string }
+        const { sessionID } = input as SessionInput
         const { prompt, reply } = await lastExchange(sessionID)
         const heard = await call('listen', sessionID, talkArgs(prompt, reply), context.signal)
         return heard.isError ? { error: heard.text } : { text: heard.text }
       },
       read: async input => {
-        const { sessionID, back } = input as { sessionID: string; back: number }
+        const { sessionID, back } = input as ReadInput
         const found = await replies(sessionID)
         const reply = found[back]
         if (reply === undefined) {
@@ -170,20 +167,20 @@ export default Plugin.define({
         return spoke.isError ? { error: spoke.text } : {}
       },
       stop: async input => {
-        await call('stop', (input as { sessionID: string }).sessionID)
+        await call('stop', (input as SessionInput).sessionID)
         return {}
       },
       status: async input => {
-        const { sessionID } = input as { sessionID: string }
+        const { sessionID } = input as SessionInput
         const answer = await call('status', sessionID)
         const status = fieldsOf(answer)
-        return {
+        const answered: Status = {
           speaking: status.speaking === true,
-          listening: status.listening === true,
           conversation: spoken.get(sessionID) === true,
           // Shown until Super Voice says the user turned it off.
           talk: status.talk !== false,
         }
+        return answered
       },
     })
 
