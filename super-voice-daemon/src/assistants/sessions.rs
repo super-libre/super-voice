@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::task::AbortHandle;
 
 /// How long a session its plugin opened may go without a request. The plugin
 /// checks in every minute while the session is open.
@@ -21,6 +22,12 @@ pub const OPENED_IDLE: Duration = Duration::from_mins(3);
 /// How long a session nothing opened may go without a request: nothing says
 /// when it ends.
 pub const SEEN_IDLE: Duration = Duration::from_mins(30);
+
+/// How long a session is remembered once it has left the list: its turn,
+/// spoken or typed, and its replies. A turn may run long with nothing said
+/// to Super Voice, as a Codex task working on its own does, and is still the
+/// turn it was when it ends.
+pub const REMEMBERED: Duration = Duration::from_hours(24);
 
 /// What a request says of the session it comes from.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -78,6 +85,10 @@ struct Entry {
     /// Its plugin said it started, so it checks in while it is open.
     opened: bool,
     utterance: Option<String>,
+    /// The task making its last speech, from the moment it was asked for:
+    /// its speech while it waits for the model and is made, before any
+    /// utterance plays.
+    speaking: Option<AbortHandle>,
     recordings: usize,
     /// Whether the turn under way was spoken, once its plugin has said.
     spoken: Option<bool>,
@@ -91,6 +102,13 @@ struct Entry {
 impl Entry {
     fn is(&self, who: &Who) -> bool {
         self.caller == who.caller && self.id == who.named.id
+    }
+
+    /// Whether it is listed at `now`: it records, or has not been quiet for
+    /// longer than a session like it may be.
+    fn is_listed(&self, now: Instant) -> bool {
+        let idle = if self.opened { OPENED_IDLE } else { SEEN_IDLE };
+        self.recordings > 0 || now.saturating_duration_since(self.last_active) < idle
     }
 
     fn view(&self) -> SessionView {
@@ -167,18 +185,30 @@ fn is_written_without_spaces(c: char) -> bool {
     )
 }
 
+/// Whether `prompt` holds `said`, what the user said into the prompt box, as
+/// [`holds`] says: a word or two corrected by hand still counts.
+#[must_use]
+pub fn holds_what_was_said(prompt: &str, said: &str) -> bool {
+    holds(&words(prompt), &words(said))
+}
+
 /// Whether a prompt of `prompt`'s words holds a dictation of `dictated`'s:
 /// all of it, in order, but for about a word in four the user corrected by
 /// hand, with anything they typed around it; or the prompt is the dictation
 /// cut down, keeping at least half of it. A dictation of three words or
-/// fewer is matched whole.
+/// fewer is matched whole: cut down, its few words are too common to tell
+/// the user's typing from it.
 fn holds(prompt: &[String], dictated: &[String]) -> bool {
+    /// The longest dictation that must be held whole.
+    const SHORT: usize = 3;
     if prompt.is_empty() || dictated.is_empty() {
         return false;
     }
     let kept = words_in_common(prompt, dictated);
     let nearly_all = |of: usize| kept >= of - of / 4;
-    nearly_all(dictated.len()) || (2 * prompt.len() >= dictated.len() && nearly_all(prompt.len()))
+    let cut_down =
+        dictated.len() > SHORT && 2 * prompt.len() >= dictated.len() && nearly_all(prompt.len());
+    nearly_all(dictated.len()) || cut_down
 }
 
 /// How many words `a` and `b` share in the same order: the length of their
@@ -277,6 +307,22 @@ impl Sessions {
         });
     }
 
+    /// `who` asked to speak, on `task`.
+    pub fn asked_to_speak(&self, who: &Who, task: AbortHandle) {
+        self.with(who, |entry| entry.speaking = Some(task));
+    }
+
+    /// The task making `who`'s last speech, while it is still at it.
+    #[must_use]
+    pub fn speaking(&self, who: &Who) -> Option<AbortHandle> {
+        self.entries
+            .lock()
+            .iter()
+            .find(|entry| entry.is(who))
+            .and_then(|entry| entry.speaking.clone())
+            .filter(|task| !task.is_finished())
+    }
+
     /// The utterance `who` started last, whether or not it still plays.
     #[must_use]
     pub fn utterance(&self, who: &Who) -> Option<String> {
@@ -337,14 +383,15 @@ impl Sessions {
         self.with(who, |entry| entry.spoken = Some(spoken));
     }
 
-    /// `who`'s plugin says the user sent `prompt`. What its turn was, when
-    /// it is the prompt the turn under way started with, as a hook that runs
-    /// before each model call says again; `None` for a new turn, whose
-    /// prompt it keeps.
-    pub fn prompted(&self, who: &Who, prompt: &str) -> Option<bool> {
+    /// `who`'s plugin says the user sent `prompt`. Said `again`, as a hook
+    /// that runs before each model call of a turn says it, and the prompt the
+    /// turn under way started with: what that turn was. Otherwise `None`: a
+    /// new turn, whose prompt it keeps. The same text sent in a new turn is a
+    /// new turn.
+    pub fn prompted(&self, who: &Who, prompt: &str, again: bool) -> Option<bool> {
         let mut said = None;
         self.with(who, |entry| {
-            if entry.prompt.as_deref() == Some(prompt) {
+            if again && entry.prompt.as_deref() == Some(prompt) {
                 said = entry.spoken;
             } else {
                 entry.prompt = Some(prompt.to_string());
@@ -407,16 +454,25 @@ impl Sessions {
         let mut entries = self.entries.lock();
         let before = entries.len();
         entries.retain(|entry| {
-            let idle = if entry.opened { OPENED_IDLE } else { SEEN_IDLE };
-            entry.recordings > 0 || now.saturating_duration_since(entry.last_active) < idle
+            entry.recordings > 0 || now.saturating_duration_since(entry.last_active) < REMEMBERED
         });
         before - entries.len()
     }
 
-    /// Every session, oldest first.
+    /// Every session listed, oldest first.
     #[must_use]
     pub fn list(&self) -> Vec<SessionView> {
-        self.entries.lock().iter().map(Entry::view).collect()
+        self.list_at(Instant::now())
+    }
+
+    /// Every session listed at `now`, oldest first.
+    fn list_at(&self, now: Instant) -> Vec<SessionView> {
+        self.entries
+            .lock()
+            .iter()
+            .filter(|entry| entry.is_listed(now))
+            .map(Entry::view)
+            .collect()
     }
 
     /// Run `change` on `who`'s session, made now if it is new, and mark it
@@ -437,6 +493,7 @@ impl Sessions {
                 used_at: None,
                 opened: false,
                 utterance: None,
+                speaking: None,
                 recordings: 0,
                 spoken: None,
                 prompt: None,
@@ -581,30 +638,44 @@ mod tests {
         assert_eq!(list[0].id, None);
     }
 
-    /// One its plugin opened goes after a few quiet minutes, one nothing
-    /// opened after half an hour, and one recording stays.
+    /// One its plugin opened leaves the list after a few quiet minutes, one
+    /// nothing opened after half an hour, and one recording stays. Off the
+    /// list, a session still holds its turn, until a day has gone by.
     #[test]
-    fn quiet_sessions_are_swept() {
+    fn quiet_sessions_leave_the_list_and_are_forgotten_later() {
         let sessions = Arc::new(Sessions::default());
         let opened = who("a", Some("opened"));
         let seen = who("a", Some("seen"));
         let listening = who("a", Some("listening"));
         sessions.open(&opened);
         sessions.touch(&seen);
+        sessions.set_spoken(&seen, false);
         let take = sessions.recording(&listening);
+        let listed = |at| {
+            sessions
+                .list_at(at)
+                .into_iter()
+                .filter_map(|session| session.id)
+                .collect::<Vec<_>>()
+        };
 
         let now = Instant::now();
-        assert_eq!(sessions.sweep(now + OPENED_IDLE / 2), 0);
+        assert_eq!(listed(now + OPENED_IDLE / 2).len(), 3);
         assert_eq!(
-            sessions.sweep(now + OPENED_IDLE + Duration::from_secs(1)),
-            1
+            listed(now + OPENED_IDLE + Duration::from_secs(1)),
+            ["seen", "listening"]
         );
-        assert_eq!(sessions.sweep(now + SEEN_IDLE + Duration::from_secs(1)), 1);
-        let left = sessions.list();
-        assert_eq!(left.len(), 1);
-        assert_eq!(left[0].id.as_deref(), Some("listening"));
+        let after_half_an_hour = now + SEEN_IDLE + Duration::from_secs(1);
+        assert_eq!(listed(after_half_an_hour), ["listening"]);
+        // A typed turn stays typed off the list: a long task's speech at
+        // its end is still refused.
+        assert_eq!(sessions.sweep(after_half_an_hour), 0);
+        assert_eq!(sessions.spoken(&seen), Some(false));
+
         drop(take);
-        assert_eq!(sessions.sweep(now + SEEN_IDLE + Duration::from_secs(1)), 1);
+        let after_a_day = now + REMEMBERED + Duration::from_secs(1);
+        assert_eq!(sessions.sweep(after_a_day), 3);
+        assert_eq!(sessions.spoken(&seen), None);
     }
 
     /// A session keeps its last replies, the last one first, each once, and
@@ -707,11 +778,15 @@ mod tests {
             ["打", "开", "readme", "文", "件"]
         );
 
-        // Three words or fewer: whole, or not at all.
+        // Three words or fewer: whole, or not at all. Cut down, they would
+        // be a word or two the user may well have typed.
         let sessions = Sessions::default();
         sessions.dictated("Open the notes");
         assert!(!sessions.was_dictated("Open my notes", Instant::now()));
+        assert!(!sessions.was_dictated("open notes", Instant::now()));
         assert!(sessions.was_dictated("open the notes!", Instant::now()));
+        assert!(!said("Yes please", "yes"));
+        assert!(said("Yes please", "Yes, please."));
     }
 
     /// A session's turn is spoken or typed once its plugin says, and the next

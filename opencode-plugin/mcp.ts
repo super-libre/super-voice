@@ -17,6 +17,24 @@ type Message = {
   error?: { message?: string }
 }
 
+/** Why Super Voice refused a request, from its error's `error_code`: the
+ * key was revoked, it may not call the tool, or it called too often. */
+function refusal(status: number, body: string): string {
+  if (status === 429) {
+    return 'Super Voice is asked too often just now. Try again in a little while.'
+  }
+  if (status === 401 || status === 403) {
+    return 'Super Voice refused OpenCode: connect it again on the Assistants page of the Super Voice app.'
+  }
+  let code: unknown
+  try {
+    code = (JSON.parse(body) as { error_code?: unknown }).error_code
+  } catch {
+    code = undefined
+  }
+  return `Super Voice refused the request (${typeof code === 'string' ? code : `HTTP ${status}`}).`
+}
+
 export class SuperVoice {
   private connection: string | undefined
   private next = 0
@@ -66,7 +84,8 @@ export class SuperVoice {
       }),
       signal,
     })
-    this.connection = response.headers.get('mcp-session-id') ?? ''
+    // Refused, the next call tries again.
+    this.connection = response.ok ? (response.headers.get('mcp-session-id') ?? '') : undefined
     await response.text()
   }
 
@@ -85,6 +104,9 @@ export class SuperVoice {
       return 'gone'
     }
     const body = await response.text()
+    if (!response.ok) {
+      return { error: { message: refusal(response.status, body) } }
+    }
     const type = response.headers.get('content-type') ?? ''
     if (!type.includes('text/event-stream')) {
       return JSON.parse(body) as Message

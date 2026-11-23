@@ -101,11 +101,11 @@ calls to the tool. A key made by hand doesn't get them.
 
 | Tool       | What it does                                                                                     |
 |------------|--------------------------------------------------------------------------------------------------|
-| `stop`     | Stops this session's own speech, and ends its own recording, which is still transcribed. Another session's are left alone. |
-| `status`   | Whether this session's own speech plays, and whether it records, and whether the user shows the plugin's Talk (the assistant's `show_talk`): `{"speaking": bool, "listening": bool, "talk": bool}`. |
+| `stop`     | Stops this session's own speech, even one still waiting for the model, and ends its own recording, which is still transcribed. Another session's are left alone. |
+| `status`   | Whether this session's own speech plays or is on its way, and whether it records, and whether the user shows the plugin's Talk (the assistant's `show_talk`): `{"speaking": bool, "listening": bool, "talk": bool}`. |
 | `announce` | Says `text` (or a hook's `message`) aloud, unless the user turned off **Announce when it needs you** for the assistant. Then it says nothing, and answers so. |
 | `session`  | `{"event": "start"}` or `{"event": "end"}`: the session opened or closed, so it is listed while it is open, checking in each minute. `{"event": "seen"}`: it is there, from a plugin that cannot check in, like a hook's; it is listed until it has been quiet for 30 minutes. |
-| `turn`     | `{"event": "prompt", "text", "spoken"?}`: the user sent a prompt. `spoken` says whether it was said aloud; left out, it is spoken when it holds what the user last dictated into a window, within 90 seconds: the dictation's words in order, but for about one in four the user corrected by hand, with anything typed around them; or most of the prompt is the dictation cut down, keeping at least half of it. A dictation of three words or fewer must be there whole. In a script written without spaces between words, as Chinese, Japanese and Thai are, each character counts as a word. Answers `{"spoken": bool, "note": text}`, `note` being what the assistant is told beside a spoken prompt. Sent again in the same turn, as a hook that runs before each model call does, the prompt keeps its turn, and `note` is null. A prompt of `/read`, or of the plugin's skill as agy (`/super-voice:read`) or Codex (`$read`, `$super-voice:read`) names it, alone or with a number from 0 to 9, is answered by Super Voice instead, as a typed turn the assistant never sees: it reads the session's last reply aloud again, or the one that many before it, and plain `/read` while the session's speech plays stops it. Answers `{"spoken": false, "answered": text, "failed": bool}`, `answered` being what it did, or why it could not, and `failed` saying which. `{"event": "reply", "text"}`: the assistant answered. Super Voice keeps the session's last 10 replies for `/read`, and reads a spoken turn's reply aloud. Answers `{"read": bool}`. |
+| `turn`     | `{"event": "prompt", "text", "spoken"?, "heard"?, "again"?}`: the user sent a prompt. `spoken` says whether it was said aloud. Left out, it is spoken when it holds `heard`, the words the plugin's Talk put in the prompt box, or what the user last dictated into a window, within 90 seconds. Either holds: the dictation's words in order, but for about one in four the user corrected by hand, with anything typed around them; or most of the prompt is the dictation cut down, keeping at least half of it. A dictation of three words or fewer must be there whole. In a script written without spaces between words, as Chinese, Japanese and Thai are, each character counts as a word. Answers `{"spoken": bool, "note": text}`, `note` being what the assistant is told beside a spoken prompt. Sent again with `"again": true`, as a hook that runs before each model call of a turn does, the prompt keeps its turn, and `note` is null; the same text sent without it is a new turn. A prompt of `/read`, or of the plugin's skill as agy (`/super-voice:read`) or Codex (`$read`, `$super-voice:read`) names it, alone or with a number from 0 to 9, is answered by Super Voice instead, as a typed turn the assistant never sees: it reads the session's last reply aloud again, or the one that many before it, and plain `/read` while the session's speech plays stops it. Answers `{"spoken": false, "answered": text, "failed": bool}`, `answered` being what it did, or why it could not, and `failed` saying which. `{"event": "reply", "text"}`: the assistant answered. Super Voice keeps the session's last 10 replies for `/read`, and reads a spoken turn's reply aloud. Answers `{"read": bool}`. |
 
 Once a plugin has said a turn was typed, `speak` and `listen` refuse in it, so
 the assistant answers in writing. A session whose plugin says nothing of its
@@ -138,10 +138,13 @@ itself, first match wins:
    connection nothing named is a session of its own.
 4. Otherwise all the caller's calls are one session.
 
-A session is kept from its first call, or from its plugin's `session` start,
-until its plugin says it ended, its assistant is disconnected, or it goes
-quiet: 3 minutes for one its plugin opened, which checks in every minute, and
-30 minutes for any other. One still recording is kept. The speech and the
+A session is listed from its first call, or from its plugin's `session`
+start, until its plugin says it ended, its assistant is disconnected, or it
+goes quiet: 3 minutes for one its plugin opened, which checks in every
+minute, and 30 minutes for any other. One still recording stays listed. Off
+the list, a session that went quiet is remembered for a day: its turn,
+spoken or typed, and its replies, so a long task that said nothing to Super
+Voice ends in the turn it began. The speech and the
 recording a session starts are its own: `stop` and `status` see only those.
 [`GET /assistants`](endpoints/v1/assistants.md) lists each assistant's open
 sessions.
@@ -161,9 +164,13 @@ by hand, is only told.
 ## Transport
 
 [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
-without sessions: every message is a `POST` of its own, the server sends no
-`Mcp-Session-Id`, and nothing is kept between messages but the tool calls in
-flight.
+with every message a `POST` of its own. The server sends an `Mcp-Session-Id`
+with its answer to `initialize`, and uses the one a client sends back only to
+tell its sessions apart (see [Sessions](#sessions)) and to match a cancel to
+its call. It never refuses a request for a missing or unknown one, so a
+client whose id is from before a restart goes on as it was. Between
+messages it keeps the tool calls in flight and each session's turn and
+replies, in memory: a restart forgets them.
 
 | Message                                   | Answer                                                     |
 |-------------------------------------------|------------------------------------------------------------|
@@ -179,7 +186,8 @@ flight.
 its own. A request whose `MCP-Protocol-Version` header names a version this
 server does not speak is `400`.
 
-The versions it speaks are `2025-11-25`, `2025-06-18` and `2025-03-26`.
+The versions it speaks are `2025-11-25` and `2025-06-18`. It does not speak
+`2025-03-26`, whose servers take batches of messages.
 `initialize` agrees on the one the client asks for, or offers `2025-11-25` when
 it asks for another.
 
@@ -215,8 +223,10 @@ A call ends without an answer, and its stream ends with no `message` event,
 when:
 
 1. The client sends `notifications/cancelled` naming the call's request id.
-   The server cannot tell two sessions of one assistant apart, so a cancel
-   reaches every call that assistant has running under that id.
+   Sent with the connection's `Mcp-Session-Id`, it reaches that connection's
+   call only: two sessions of one assistant each count their own ids. Sent
+   without one, it reaches every call the assistant has running under that
+   id.
 2. The client closes the connection. The server notices at the next keepalive,
    within two seconds.
 3. The user disconnects the assistant, or revokes the key made by hand. The key

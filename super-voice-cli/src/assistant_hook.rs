@@ -98,7 +98,14 @@ async fn antigravity(address: &str, key: &str, event: &str, hook: &Value) -> Opt
             if prompt.trim().is_empty() {
                 return Some(json!({}));
             }
-            let answer = call("turn", json!({ "event": "prompt", "text": prompt })).await?;
+            // The hook runs before each model call of a turn, numbered from
+            // 0: past the first, it is the turn's prompt again.
+            let again = hook["invocationNum"].as_u64().is_some_and(|n| n > 0);
+            let answer = call(
+                "turn",
+                json!({ "event": "prompt", "text": prompt, "again": again }),
+            )
+            .await?;
             let turn: Value = serde_json::from_str(&answer.text).ok()?;
             Some(invocation(&turn))
         }
@@ -200,13 +207,24 @@ fn last_reply(path: &str) -> Option<String> {
 }
 
 fn reply_in(transcript: &str) -> Option<String> {
-    transcript
+    let steps = transcript
         .lines()
         .rev()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(|step| step["type"] == "PLANNER_RESPONSE")
-        .filter_map(|step| step["content"].as_str().map(str::to_string))
-        .find(|text| !text.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok());
+    for step in steps {
+        // The turn's own prompt: a turn that ended with no text has no
+        // reply, and the one before it is the last turn's.
+        if step["type"] == "USER_INPUT" {
+            return None;
+        }
+        if step["type"] == "PLANNER_RESPONSE"
+            && let Some(text) = step["content"].as_str()
+            && !text.trim().is_empty()
+        {
+            return Some(text.to_string());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -301,6 +319,17 @@ mod tests {
         .join("\n");
         assert_eq!(reply_in(&transcript).as_deref(), Some("done"));
         assert_eq!(reply_in(""), None);
+
+        // A turn that ended with no text, interrupted or on a tool call, has
+        // no reply: the last turn's is not this one's.
+        let unanswered = [
+            r#"{"type":"USER_INPUT","content":"<USER_REQUEST>hi</USER_REQUEST>"}"#,
+            r#"{"type":"PLANNER_RESPONSE","content":"Hello."}"#,
+            r#"{"type":"USER_INPUT","content":"<USER_REQUEST>go</USER_REQUEST>"}"#,
+            r#"{"type":"PLANNER_RESPONSE","tool_calls":[]}"#,
+        ]
+        .join("\n");
+        assert_eq!(reply_in(&unanswered), None);
     }
 
     #[test]

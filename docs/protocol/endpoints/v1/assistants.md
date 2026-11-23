@@ -39,9 +39,12 @@ Each assistant's `state`:
 The daemon looks for an assistant's program on its own `PATH`, then in the
 directories assistants install to that a service's `PATH` usually lacks:
 `~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.claude/local`,
-`~/.local/share/pnpm`, `~/.volta/bin`, `/home/linuxbrew/.linuxbrew/bin`,
-`/opt/homebrew/bin` and `/usr/local/bin`. Its config is the directory it keeps
-its config in, which is there once it has run. For Claude Code, `connected`
+`~/.local/share/pnpm`, `~/.volta/bin`, the Node version managers' (asdf's and
+mise's shims, fnm's default version, and each of nvm's versions, the newest
+first), `/home/linuxbrew/.linuxbrew/bin`, `/opt/homebrew/bin` and
+`/usr/local/bin`. Its config is the directory it keeps its config in, which is
+there once it has run. Claude Code is found only by its program, which
+connecting it runs. For Claude Code, `connected`
 also takes Super Voice's plugin listed under `enabledPlugins` in Claude Code's
 user settings, `~/.claude/settings.json`, or the one in `$CLAUDE_CONFIG_DIR`.
 
@@ -141,10 +144,13 @@ found:
 
 ```sh
 claude plugin marketplace add super-libre/super-voice --scope user
-claude plugin install super-voice@super-voice --scope user
+claude plugin install super-voice@super-voice --scope user --config address=<address>
 ```
 
-A marketplace already added or a plugin already installed counts as done. Each
+`<address>` is the server's, as the list gives it: the plugin's `address`
+option, which its MCP entry reaches. A marketplace already added or a plugin
+already installed counts as done; installing it again sets the address all
+the same. Each
 command may run for up to two minutes, since adding the marketplace clones it.
 
 When the daemon's environment sets `SUPER_VOICE_CLAUDE_MARKETPLACE`, it adds
@@ -187,7 +193,7 @@ behind does nothing without it.
 | HTTP | `error_code` | Meaning                                                                    |
 |------|--------------|----------------------------------------------------------------------------|
 | 404  | `not_found`  | No assistant has that id (`unknown_assistant`)                             |
-| 500  | `internal`   | `could_not_write_assistant_config` or `could_not_change_plugin`. The key is revoked. |
+| 500  | `internal`   | `could_not_write_assistant_config` or `could_not_change_plugin`, and the key is revoked; or `could_not_save_key`: the key could not be revoked, and still works. |
 
 ## `PATCH /assistants/{id}`
 
@@ -257,6 +263,7 @@ revokes it. Answers the whole list.
 | HTTP | `error_code` | Meaning                                         |
 |------|--------------|-------------------------------------------------|
 | 404  | `not_found`  | No key made by hand has that id (`unknown_key`) |
+| 500  | `internal`   | The key could not be revoked, and still works (`could_not_save_key`) |
 
 ## `GET /assistants/{id}/key`
 

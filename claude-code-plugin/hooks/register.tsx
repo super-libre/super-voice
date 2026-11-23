@@ -114,8 +114,8 @@ let isClaudeListening = false
 let runningTurnId: string | undefined
 
 // Listening after a spoken reply.
-/** Talk filled the box since the last prompt was sent. */
-let talkedSinceSubmit = false
+/** The words Talk put in the box since the last prompt was sent. */
+let talked: string | undefined
 /** The prompt now being answered was spoken, so its reply should be too. */
 let listenAfterReply = false
 /** The main agent's last prompt and reply, which Talk picks the names and
@@ -169,11 +169,22 @@ async function call(
 }
 
 /** Tell Super Voice of the prompt the user sent, and whether it was spoken:
- * `isTalk` when Talk heard it, else as Super Voice says, which knows a prompt
- * the user dictated into the box with its own shortcut. Typed, when Super
- * Voice can't say. */
-async function promptWasSpoken($: EngineInterface, text: string, isTalk: boolean): Promise<boolean> {
-  const answer = await call($, 'turn', { event: 'prompt', text, ...(isTalk ? { spoken: true } : {}) })
+ * `isTalk` for Talk's own prompt. Otherwise as Super Voice says: spoken when
+ * it still holds `heard`, the words Talk put in the box, though the user may
+ * have touched them up, or what they dictated into the box with Super
+ * Voice's own shortcut. Typed, when Super Voice can't say. */
+async function promptWasSpoken(
+  $: EngineInterface,
+  text: string,
+  isTalk: boolean,
+  heard?: string,
+): Promise<boolean> {
+  const answer = await call($, 'turn', {
+    event: 'prompt',
+    text,
+    ...(isTalk ? { spoken: true } : {}),
+    ...(heard ? { heard } : {}),
+  })
   if (isTalk || answer === undefined || answer.isError) {
     return isTalk
   }
@@ -462,7 +473,7 @@ async function fillAndCount($: EngineInterface, words: string) {
     return
   }
   if (pendingAnswer === undefined) {
-    talkedSinceSubmit = true
+    talked = talked ? `${talked} ${words}` : words
   }
   filled = { text: box.text, cursor: box.cursor }
   sendAt = (await $.clock.now()) + SEND_AFTER_MS
@@ -502,7 +513,7 @@ async function tick($: EngineInterface) {
   // Set here too, in case this mod's own `prompt.submit` hook is not told of
   // its own prompt.
   listenAfterReply = true
-  talkedSinceSubmit = false
+  talked = undefined
   // The words are the user's own, so Claude reads them bare. Hooks and
   // permission checks still see this mod as the sender.
   await $.prompt.submit({ text: box.text, asUser: true }).catch(() => {
@@ -690,10 +701,10 @@ export const register: Register = on => {
         await stopCountdown($)
       }
       // Talk's words, or ones the user dictated with Super Voice's shortcut.
-      const isSpoken = await promptWasSpoken($, e.text, talkedSinceSubmit)
+      const isSpoken = await promptWasSpoken($, e.text, false, talked)
       lastPrompt = e.text
       listenAfterReply = isSpoken
-      talkedSinceSubmit = false
+      talked = undefined
       await setArmed($, false)
       return next(isSpoken ? { ...e, context: [...(e.context ?? []), VOICE_NOTE] } : e)
     }
@@ -701,7 +712,7 @@ export const register: Register = on => {
       await promptWasSpoken($, e.text, true)
       lastPrompt = e.text
       listenAfterReply = true
-      talkedSinceSubmit = false
+      talked = undefined
       return next({ ...e, context: [...(e.context ?? []), VOICE_NOTE] })
     }
     return next(e)

@@ -18,7 +18,7 @@
 //!    the same, so the microphone is freed as at any other stop.
 
 use super::protocol::{Hook, SessionEvent, Tool, TurnEvent};
-use crate::assistants::sessions::{Sessions, Who};
+use crate::assistants::sessions::{Sessions, Who, holds_what_was_said};
 use crate::daemon::events::Topic;
 use crate::daemon::recording::{Stopped, TakeSettings};
 use crate::daemon::types::SuperSTTDaemon;
@@ -130,13 +130,19 @@ pub(crate) async fn run(
             let outcome = read_again(daemon, who, request).await;
             Some(Ok(read_answer(caller.hook, outcome)))
         }
-        Tool::Turn(TurnEvent::Prompt { text, spoken }) => {
+        Tool::Turn(TurnEvent::Prompt {
+            text,
+            spoken,
+            heard,
+            again,
+        }) => {
             // The same prompt said again keeps its turn: its dictation is
             // used up by now.
-            let again = sessions.prompted(who, &text);
-            let spoken = spoken
-                .or(again)
-                .unwrap_or_else(|| sessions.was_dictated(&text, std::time::Instant::now()));
+            let again = sessions.prompted(who, &text, again);
+            let spoken = spoken.or(again).unwrap_or_else(|| {
+                heard.is_some_and(|heard| holds_what_was_said(&text, &heard))
+                    || sessions.was_dictated(&text, std::time::Instant::now())
+            });
             sessions.set_spoken(who, spoken);
             Some(Ok(prompt_answer(caller.hook, spoken, again.is_none())))
         }
@@ -286,12 +292,9 @@ async fn speak(
     let mut spoken = start_speaking(daemon, who, text);
     tokio::select! {
         biased;
-        joined = &mut spoken => Some(spoken_outcome(joined).map(|utterance| {
-            if let Some(utterance) = utterance {
-                daemon.assistants.sessions.spoke(who, utterance);
-            }
-            "Speaking.".to_string()
-        })),
+        // The utterance is the session's from its start: a newer one of the
+        // session's may have started by now, and stays the one recorded.
+        joined = &mut spoken => Some(spoken_outcome(joined).map(|_| "Speaking.".to_string())),
         // The speech goes on: it is on a task of its own.
         () = cancel.cancelled() => None,
     }
@@ -302,10 +305,19 @@ async fn speak(
 async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     let sessions = &daemon.assistants.sessions;
     let mut stopped = Vec::new();
-    if let Some(utterance) = sessions.utterance(who)
-        && daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
-    {
-        silence_if_speaking(daemon, &utterance).await;
+    // Its speech still waiting for the model, or still being made, is called
+    // off; what of it already plays is silenced.
+    let making = sessions.speaking(who);
+    if let Some(task) = &making {
+        task.abort();
+    }
+    let playing = sessions
+        .utterance(who)
+        .filter(|utterance| daemon.tts.speech.current().as_deref() == Some(utterance.as_str()));
+    if let Some(utterance) = &playing {
+        silence_if_speaking(daemon, utterance).await;
+    }
+    if making.is_some() || playing.is_some() {
         stopped.push("speech");
     }
     if sessions.is_recording(who)
@@ -323,13 +335,14 @@ async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     }
 }
 
-/// Whether `who`'s own speech plays.
+/// Whether `who`'s own speech plays, or is on its way: waiting for the
+/// model, or being made.
 fn is_speaking(daemon: &SuperSTTDaemon, who: &Who) -> bool {
-    daemon
-        .assistants
-        .sessions
-        .utterance(who)
-        .is_some_and(|utterance| daemon.tts.speech.current().as_deref() == Some(utterance.as_str()))
+    let sessions = &daemon.assistants.sessions;
+    sessions.speaking(who).is_some()
+        || sessions.utterance(who).is_some_and(|utterance| {
+            daemon.tts.speech.current().as_deref() == Some(utterance.as_str())
+        })
 }
 
 /// Whether `who`'s own speech plays and whether it records, and whether the
@@ -344,9 +357,10 @@ fn status(daemon: &SuperSTTDaemon, who: &Who, shows_talk: bool) -> String {
 }
 
 /// `text` spoken on a task of its own, so it is never dropped midway: a
-/// speech dropped while it is produced stops speaking. The speech is `who`'s
-/// from the moment it starts, so its `stop` finds it while the rest of a long
-/// text is still being made.
+/// speech dropped while it is produced stops speaking. The task is `who`'s
+/// from the moment it is asked for, and its utterance from the moment it
+/// starts, so `who`'s `stop` finds the speech while it waits for the model
+/// and while the rest of a long text is still being made.
 fn start_speaking(
     daemon: &Arc<SuperSTTDaemon>,
     who: &Who,
@@ -354,19 +368,32 @@ fn start_speaking(
 ) -> JoinHandle<SpeechResponse> {
     let tts = daemon.tts.clone();
     let owner = Arc::clone(daemon);
-    let who = who.clone();
-    tokio::spawn(async move {
+    let speaker = who.clone();
+    let task = tokio::spawn(async move {
         tts.handle_speak_noting(text, move |utterance| {
-            owner.assistants.sessions.spoke(&who, utterance.to_string());
+            owner
+                .assistants
+                .sessions
+                .spoke(&speaker, utterance.to_string());
         })
         .await
-    })
+    });
+    daemon
+        .assistants
+        .sessions
+        .asked_to_speak(who, task.abort_handle());
+    task
 }
 
 /// The utterance a finished speech is speaking, or what the model is told
-/// when it could not speak.
+/// when it could not speak. A speech stopped before it played has none.
 fn spoken_outcome(joined: Result<SpeechResponse, JoinError>) -> Result<Option<String>, String> {
-    let response = joined.map_err(|e| format!("Super Voice could not speak: {e}"))?;
+    let response = match joined {
+        Ok(response) => response,
+        // Stopped before anything of it played: nothing of it is playing.
+        Err(e) if e.is_cancelled() => return Ok(None),
+        Err(e) => return Err(format!("Super Voice could not speak: {e}")),
+    };
     if response.status == "success" {
         return Ok(response.utterance_id);
     }
@@ -515,7 +542,7 @@ async fn ask(
             Err(e) => return Asked::Failed(e),
         },
         () = cancel.cancelled() => {
-            silence_once_spoken(Arc::clone(daemon), spoken);
+            call_off(daemon, spoken).await;
             return Asked::Cancelled;
         }
     };
@@ -524,7 +551,6 @@ async fn ask(
     let Some(utterance) = utterance else {
         return Asked::Done;
     };
-    daemon.assistants.sessions.spoke(who, utterance.clone());
     let mut listening = true;
     loop {
         if daemon.tts.speech.current().as_deref() != Some(utterance.as_str()) {
@@ -555,14 +581,15 @@ async fn silence_if_speaking(daemon: &SuperSTTDaemon, utterance: &str) {
     }
 }
 
-/// Stop the question `spoken` is still producing once it plays: the call
-/// asking it was cancelled, and the question would otherwise be heard after.
-fn silence_once_spoken(daemon: Arc<SuperSTTDaemon>, spoken: JoinHandle<SpeechResponse>) {
-    tokio::spawn(async move {
-        if let Ok(Some(utterance)) = spoken_outcome(spoken.await) {
-            silence_if_speaking(&daemon, &utterance).await;
-        }
-    });
+/// Call off the question `spoken` is asking: the call asking it was
+/// cancelled. Still waiting for the model or being made, the question never
+/// plays, and what of it was made stops; made already, it is silenced if it
+/// still plays.
+async fn call_off(daemon: &SuperSTTDaemon, spoken: JoinHandle<SpeechResponse>) {
+    spoken.abort();
+    if let Ok(Some(utterance)) = spoken_outcome(spoken.await) {
+        silence_if_speaking(daemon, &utterance).await;
+    }
 }
 
 #[cfg(test)]
@@ -694,6 +721,55 @@ mod tests {
         );
     }
 
+    /// A session's speech is its own from the moment it is asked for:
+    /// `status` and `stop` see it while it still waits for the model.
+    #[tokio::test]
+    async fn stop_reaches_speech_still_waiting_to_start() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = caller();
+        let waiting = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, waiting.abort_handle());
+        assert!(is_speaking(&daemon, &mine.who));
+        assert!(!is_speaking(
+            &daemon,
+            &Who {
+                named: Named {
+                    id: Some("other".into()),
+                    ..Named::default()
+                },
+                ..caller().who
+            }
+        ));
+
+        assert_eq!(stop(&daemon, &mine.who).await, "Stopped its speech.");
+        let joined = waiting.await;
+        assert!(joined.as_ref().is_err_and(JoinError::is_cancelled));
+        assert_eq!(
+            spoken_outcome(joined),
+            Ok(None),
+            "a stopped speech has nothing playing"
+        );
+        assert!(!is_speaking(&daemon, &mine.who));
+        assert_eq!(
+            stop(&daemon, &mine.who).await,
+            "Nothing of this session's was playing or recording."
+        );
+    }
+
+    /// A question whose `listen` was cancelled while it waited for the model
+    /// is called off then, not left to play once the model is in.
+    #[tokio::test]
+    async fn a_cancelled_question_is_called_off_before_it_plays() {
+        let daemon = test_daemon().await;
+        let asking = tokio::spawn(std::future::pending::<SpeechResponse>());
+        let task = asking.abort_handle();
+        call_off(&daemon, asking).await;
+        assert!(task.is_finished(), "the question's task is called off");
+    }
+
     /// With announcing off, `announce` says nothing and says why.
     #[tokio::test]
     async fn announce_says_nothing_when_announcing_is_off() {
@@ -760,6 +836,8 @@ mod tests {
             Tool::Turn(TurnEvent::Prompt {
                 text: text.to_string(),
                 spoken,
+                heard: None,
+                again: false,
             })
         };
         let typed = run(&daemon, prompt("Hi.", Some(false)), &caller(), &cancel)
@@ -794,7 +872,13 @@ mod tests {
         assert_eq!(daemon.assistants.sessions.spoken(&caller().who), Some(true));
         // Said again before each model call, it stays spoken, and the note
         // is added once.
-        let again = run(&daemon, prompt("open the notes.", None), &caller(), &cancel)
+        let said_again = Tool::Turn(TurnEvent::Prompt {
+            text: "open the notes.".to_string(),
+            spoken: None,
+            heard: None,
+            again: true,
+        });
+        let again = run(&daemon, said_again, &caller(), &cancel)
             .await
             .unwrap()
             .unwrap();
@@ -802,6 +886,38 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&again).unwrap(),
             serde_json::json!({ "spoken": true, "note": null })
         );
+        // The same words in a new turn are a new turn: typed, they are
+        // answered in writing.
+        let retyped = run(&daemon, prompt("open the notes.", None), &caller(), &cancel)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&retyped).unwrap(),
+            serde_json::json!({ "spoken": false, "note": null })
+        );
+
+        // What Talk put in the box is spoken, touched up by hand too; a
+        // prompt typed in its place is not.
+        let with_talk = |text: &str| {
+            Tool::Turn(TurnEvent::Prompt {
+                text: text.to_string(),
+                spoken: None,
+                heard: Some("Rename the super boys folder".to_string()),
+                again: false,
+            })
+        };
+        for (text, spoken) in [
+            ("Rename the super voice folder", true),
+            ("What does this function do?", false),
+        ] {
+            let answer = run(&daemon, with_talk(text), &caller(), &cancel)
+                .await
+                .unwrap()
+                .unwrap();
+            let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
+            assert_eq!(answer["spoken"], spoken, "{text}");
+        }
     }
 
     /// A Codex hook reads the answer as its own output: the context beside a
@@ -818,6 +934,8 @@ mod tests {
             Tool::Turn(TurnEvent::Prompt {
                 text: "Hi.".to_string(),
                 spoken: Some(spoken),
+                heard: None,
+                again: false,
             })
         };
         let spoken = run(&daemon, prompt(true), &hook, &cancel)
@@ -887,6 +1005,8 @@ mod tests {
             let prompt = Tool::Turn(TurnEvent::Prompt {
                 text: text.to_string(),
                 spoken: None,
+                heard: None,
+                again: false,
             });
             let answer = run(&daemon, prompt, caller, &cancel)
                 .await

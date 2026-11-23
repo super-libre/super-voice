@@ -205,7 +205,7 @@ left behind does nothing without it.",
         (status = 403, description = "The token lacks the `settings` scope.", body = ErrorEnvelope),
         (status = 404, description = "No assistant has that id (`unknown_assistant`).", body = ErrorEnvelope),
         (status = 429, description = "Per-client rate limit hit; back off and retry.", body = ErrorEnvelope),
-        (status = 500, description = "The config could not be changed, or the plugin could not be uninstalled. The key is revoked.", body = ErrorEnvelope),
+        (status = 500, description = "The config could not be changed, or the plugin could not be uninstalled, and the key is revoked; or the key could not be revoked, and still works (`could_not_save_key`).", body = ErrorEnvelope),
     ),
 )]
 pub(crate) async fn disconnect_assistant(
@@ -326,6 +326,7 @@ assistant revokes it. Answers the whole list, as `GET /assistants` does.",
         (status = 401, description = "Token unknown, expired, or its binary changed.", body = ReasonEnvelope),
         (status = 403, description = "The token lacks the `settings` scope.", body = ErrorEnvelope),
         (status = 404, description = "No key made by hand has that id (`unknown_key`).", body = ErrorEnvelope),
+        (status = 500, description = "The key could not be revoked, and still works (`could_not_save_key`).", body = ErrorEnvelope),
         (status = 429, description = "Per-client rate limit hit; back off and retry.", body = ErrorEnvelope),
     ),
 )]

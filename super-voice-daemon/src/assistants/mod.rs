@@ -200,8 +200,39 @@ fn search_dirs() -> Vec<PathBuf> {
         .map_or_else(Vec::new, |path| std::env::split_paths(&path).collect());
     if let Some(home) = dirs::home_dir() {
         dirs.extend(HOME_BIN_DIRS.iter().map(|dir| home.join(dir)));
+        dirs.extend(node_version_dirs(&home));
     }
     dirs.extend(SYSTEM_BIN_DIRS.iter().map(PathBuf::from));
+    dirs
+}
+
+/// The directories a Node version manager under `home` puts the programs
+/// npm installs in, which a service's `PATH` never has: asdf's and mise's
+/// shims, fnm's default version, and each of nvm's versions, the newest
+/// first.
+fn node_version_dirs(home: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![
+        home.join(".asdf/shims"),
+        home.join(".local/share/mise/shims"),
+        home.join(".local/share/fnm/aliases/default/bin"),
+        home.join(".fnm/aliases/default/bin"),
+    ];
+    let mut nvm: Vec<(Vec<u64>, PathBuf)> = std::fs::read_dir(home.join(".nvm/versions/node"))
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let version = name
+                .trim_start_matches('v')
+                .split('.')
+                .map(|part| part.parse().unwrap_or(0))
+                .collect();
+            (version, entry.path().join("bin"))
+        })
+        .collect();
+    nvm.sort_by(|a, b| b.0.cmp(&a.0));
+    dirs.extend(nvm.into_iter().map(|(_, dir)| dir));
     dirs
 }
 
@@ -262,10 +293,12 @@ fn config_dir(id: AssistantId) -> Option<PathBuf> {
 }
 
 /// Whether the daemon finds the assistant on this computer: its program, or
-/// its config.
+/// its config. Claude Code only by its program, which connecting it runs:
+/// found by its config alone, every connect would fail.
 #[must_use]
 pub fn is_found(id: AssistantId) -> bool {
-    find_program(id).is_some() || config_dir(id).is_some_and(|dir| dir.is_dir())
+    find_program(id).is_some()
+        || (id != AssistantId::ClaudeCode && config_dir(id).is_some_and(|dir| dir.is_dir()))
 }
 
 /// Whether Claude Code's settings, `text`, have Super Voice's plugin
@@ -396,12 +429,13 @@ fn claude_marketplace(set: Option<String>) -> String {
 
 /// Install Super Voice's plugin in Claude Code, with `claude`, the program
 /// found: add its marketplace ([`claude_marketplace`]), then install it, for
-/// the user. Either already done is fine.
+/// the user, set to reach Super Voice at `address`. Either already done is
+/// fine: installing it again sets the address all the same.
 ///
 /// # Errors
 ///
 /// [`Error::Plugin`] when a command fails or runs too long.
-pub async fn install_claude_plugin(claude: &Path) -> Result<(), Error> {
+pub async fn install_claude_plugin(claude: &Path, address: &str) -> Result<(), Error> {
     let var = SUPER_VOICE.env(CLAUDE_MARKETPLACE_VAR);
     let marketplace = claude_marketplace(std::env::var(&var).ok());
     if marketplace != CLAUDE_MARKETPLACE {
@@ -420,9 +454,18 @@ pub async fn install_claude_plugin(claude: &Path) -> Result<(), Error> {
         &["already"],
     )
     .await?;
+    let address = format!("address={address}");
     run_plugin_command(
         claude,
-        &["plugin", "install", CLAUDE_PLUGIN, "--scope", "user"],
+        &[
+            "plugin",
+            "install",
+            CLAUDE_PLUGIN,
+            "--scope",
+            "user",
+            "--config",
+            &address,
+        ],
         &["already"],
     )
     .await
@@ -514,7 +557,7 @@ pub async fn install_antigravity_plugin(agy: &Path) -> Result<(), Error> {
     let voice = assistant_configs::shell_quote(&hook_program());
     let files: Vec<(&'static str, String)> = ANTIGRAVITY_PLUGIN_FILES
         .iter()
-        .map(|(name, text)| (*name, text.replace("{voice}", &voice)))
+        .map(|(name, text)| (*name, with_voice(text, &voice)))
         .collect();
     let written = dir.clone();
     tokio::task::spawn_blocking(move || {
@@ -589,6 +632,35 @@ fn write_plugin_files(dir: &Path, files: &[(&str, &str)]) -> std::io::Result<()>
         std::fs::write(&path, text)?;
     }
     Ok(())
+}
+
+/// A plugin file, `text`, with `{voice}` made `voice` in each of its JSON
+/// strings: in the parsed JSON, so a path with a quote or a backslash in it
+/// stays JSON. A file that is not JSON is left as it is.
+fn with_voice(text: &str, voice: &str) -> String {
+    fn fill(value: &mut serde_json::Value, voice: &str) {
+        match value {
+            serde_json::Value::String(text) => *text = text.replace("{voice}", voice),
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    fill(item, voice);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for field in fields.values_mut() {
+                    fill(field, voice);
+                }
+            }
+            _ => {}
+        }
+    }
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(mut json) => {
+            fill(&mut json, voice);
+            serde_json::to_string_pretty(&json).map_or_else(|_| text.to_string(), |t| t + "\n")
+        }
+        Err(_) => text.to_string(),
+    }
 }
 
 /// A plugin manifest, `text`, with `version`.
@@ -736,6 +808,34 @@ mod tests {
         assert!(!claude_has_plugin("{not json"));
     }
 
+    /// The Node version managers' directories are searched, nvm's newest
+    /// version first, numbers compared as numbers.
+    #[test]
+    fn node_version_managers_are_searched() {
+        let home = tempfile::tempdir().expect("home");
+        for version in ["v9.11.2", "v20.11.1", "v20.9.0"] {
+            std::fs::create_dir_all(
+                home.path()
+                    .join(".nvm/versions/node")
+                    .join(version)
+                    .join("bin"),
+            )
+            .expect("nvm version");
+        }
+        let dirs = node_version_dirs(home.path());
+        let nvm: Vec<_> = dirs
+            .iter()
+            .filter_map(|dir| {
+                dir.strip_prefix(home.path().join(".nvm/versions/node"))
+                    .ok()
+            })
+            .map(|dir| dir.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(nvm, ["v20.11.1/bin", "v20.9.0/bin", "v9.11.2/bin"]);
+        assert!(dirs.contains(&home.path().join(".asdf/shims")));
+        assert!(dirs.contains(&home.path().join(".local/share/mise/shims")));
+    }
+
     #[test]
     fn each_assistant_has_its_own_program() {
         let names: Vec<&str> = AssistantId::ALL
@@ -830,6 +930,19 @@ mod tests {
         let manifest: serde_json::Value =
             serde_json::from_str(ANTIGRAVITY_PLUGIN_FILES[0].1).unwrap();
         assert_eq!(manifest["name"], ANTIGRAVITY_PLUGIN);
+
+        // A `voice` whose path holds a quote and a backslash: the hooks stay
+        // JSON, and each command is the quoted path.
+        let voice = assistant_configs::shell_quote(r#"/home/o'neil/a "b"\c/voice"#);
+        let filled: serde_json::Value =
+            serde_json::from_str(&with_voice(ANTIGRAVITY_PLUGIN_FILES[1].1, &voice))
+                .expect("the hooks are still JSON");
+        assert_eq!(
+            filled["super-voice"]["Stop"][0]["command"],
+            format!("{voice} assistant-hook antigravity stop")
+        );
+        let skill = ANTIGRAVITY_PLUGIN_FILES[2].1;
+        assert_eq!(with_voice(skill, &voice), skill, "not JSON, left as it is");
     }
 
     #[test]

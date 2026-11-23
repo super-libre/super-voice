@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! MCP's Streamable HTTP transport, without sessions: every message is a
-//! `POST` of its own, and nothing is kept between them but the tool calls
-//! in flight.
+//! MCP's Streamable HTTP transport: every message is a `POST` of its own.
+//! The answer to `initialize` carries an `Mcp-Session-Id`, which only tells
+//! a client's sessions apart and matches a cancel to its call: a request
+//! with none, or one from before a restart, is served all the same.
 //!
 //! 1. A request that answers at once (`initialize`, `ping`, `tools/list`) is
 //!    answered with `application/json`.
@@ -49,6 +50,13 @@ const SESSION_HEADER: &str = "mcp-session-id";
 /// `/v1/stt/transcribe`'s is: a client may drop a connection that has been
 /// silent for a few seconds.
 const KEEPALIVE: Duration = Duration::from_secs(2);
+
+/// The connection a request names with its `Mcp-Session-Id`, if it names one.
+fn connection_of(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(SESSION_HEADER)
+        .and_then(|value| value.to_str().ok())
+}
 
 /// `POST /v1/mcp`: one JSON-RPC message.
 pub(crate) async fn post(
@@ -109,16 +117,19 @@ pub(crate) async fn post(
         Handled::Refuse(refusal) => json(StatusCode::BAD_REQUEST, &refusal),
         Handled::Accepted => StatusCode::ACCEPTED.into_response(),
         Handled::Cancelled(id) => {
-            let cancelled = state.daemon.assistants.calls.cancel(&caller, &id);
+            let connection = connection_of(&headers);
+            let cancelled = state
+                .daemon
+                .assistants
+                .calls
+                .cancel(&caller, connection, &id);
             if cancelled > 0 {
                 info!("MCP call {id} from {} cancelled", describe(&caller));
             }
             StatusCode::ACCEPTED.into_response()
         }
         Handled::Call { id, tool } => {
-            let connection = headers
-                .get(SESSION_HEADER)
-                .and_then(|value| value.to_str().ok());
+            let connection = connection_of(&headers);
             let named = state.daemon.assistants.sessions.resolve(
                 &caller,
                 identity(&message["params"]),
@@ -197,7 +208,10 @@ fn stream_call(
     if !matches!(tool, Tool::Status) {
         info!("MCP {name} from {}", describe(&caller));
     }
-    let in_flight = daemon.assistants.calls.begin(caller, &id);
+    let in_flight = daemon
+        .assistants
+        .calls
+        .begin(caller, for_tool.who.connection.clone(), &id);
     let cancel = in_flight.token();
 
     let (frames, body) = tokio::sync::mpsc::unbounded_channel::<Result<Bytes, std::io::Error>>();

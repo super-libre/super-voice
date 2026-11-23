@@ -6,16 +6,16 @@
 //! Only what a server of tools needs is here: `initialize`, `ping`,
 //! `tools/list`, `tools/call` and `notifications/cancelled`. The tools are
 //! `speak` and `listen`, and a caller is offered only the ones its key or
-//! token may use. An assistant whose plugin works through its own connection
-//! also gets `stop`, `status`, `announce` and `session`, marked for the app
-//! and not the model.
+//! token may use. A connected assistant's plugin also gets `stop`, `status`,
+//! `announce`, `session` and `turn`, kept from the model: see [`Plugin`].
 
 use serde_json::{Value, json};
 use super_voice_shared::models::contexts::ExtraContext;
 
 /// Newest first. A client asking for one of these gets it; any other gets the
-/// newest, and decides whether it can work with that.
-pub(crate) const PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26"];
+/// newest, and decides whether it can work with that. Not 2025-03-26, which
+/// has servers take batches of messages: this one takes one at a time.
+pub(crate) const PROTOCOL_VERSIONS: &[&str] = &["2025-11-25", "2025-06-18"];
 
 /// The body is not JSON.
 pub(crate) const PARSE_ERROR: i64 = -32700;
@@ -59,9 +59,9 @@ pub(crate) enum Plugin {
     /// No plugin: the model's tools alone.
     #[default]
     None,
-    /// Claude Code's, which hides them from the model itself. Claude Code
-    /// keeps a tool marked for the app alone from the plugin's own calls
-    /// too, so they go unmarked.
+    /// Claude Code's, `OpenCode`'s and agy's, which hide them from the model
+    /// themselves. Claude Code keeps a tool marked for the app alone from
+    /// the plugin's own calls too, so they go unmarked.
     HidesItsTools,
     /// Codex's: its client keeps a tool marked for the app alone from its
     /// model, so they are marked.
@@ -130,10 +130,17 @@ pub(crate) enum SessionEvent {
 #[derive(Debug, PartialEq)]
 pub(crate) enum TurnEvent {
     /// The user sent `text`. `spoken` when the plugin knows whether it was
-    /// said aloud; when it does not, the daemon tells from its dictation.
-    /// `/read` asks to hear a reply again instead, and is answered by the
-    /// daemon.
-    Prompt { text: String, spoken: Option<bool> },
+    /// said aloud; when it does not, the daemon tells: from `heard`, the
+    /// words the plugin's Talk put in the prompt box, which the user may have
+    /// touched up, or from its dictation. `again` when a hook that runs
+    /// before each model call says the turn's prompt again. `/read` asks to
+    /// hear a reply again instead, and is answered by the daemon.
+    Prompt {
+        text: String,
+        spoken: Option<bool>,
+        heard: Option<String>,
+        again: bool,
+    },
     /// The assistant answered with `text`, kept to read again, and read
     /// aloud when the turn was spoken.
     Reply { text: String },
@@ -310,6 +317,8 @@ impl Tool {
                     Some("prompt") => Ok(Self::Turn(TurnEvent::Prompt {
                         text,
                         spoken: args["spoken"].as_bool(),
+                        heard: optional_text(args, "heard")?,
+                        again: args["again"].as_bool() == Some(true),
                     })),
                     Some("reply") => Ok(Self::Turn(TurnEvent::Reply { text })),
                     _ => Err(CallError::Arguments(
@@ -507,6 +516,8 @@ fn plugin_tools(may_speak: bool, marked: bool) -> Vec<Value> {
                     "event": { "type": "string", "enum": ["prompt", "reply"] },
                     "text": { "type": "string" },
                     "spoken": { "type": "boolean" },
+                    "heard": { "type": "string" },
+                    "again": { "type": "boolean" },
                 },
                 "required": ["event"],
             },
@@ -682,6 +693,29 @@ mod tests {
                 tool: Tool::Session(SessionEvent::End)
             }
         );
+        // A hook that runs before each model call says the turn's prompt
+        // again; a prompt is a new turn otherwise.
+        for (again, sent) in [
+            (true, json!(true)),
+            (false, json!(false)),
+            (false, Value::Null),
+        ] {
+            assert_eq!(
+                call(
+                    "turn",
+                    json!({ "event": "prompt", "text": "Go.", "again": sent })
+                ),
+                Handled::Call {
+                    id: json!(1),
+                    tool: Tool::Turn(TurnEvent::Prompt {
+                        text: "Go.".to_string(),
+                        spoken: None,
+                        heard: None,
+                        again,
+                    })
+                }
+            );
+        }
         let Handled::Reply(refused) = call("session", json!({ "event": "later" })) else {
             panic!("a bad event is the model's error");
         };
@@ -719,7 +753,7 @@ mod tests {
 
     #[test]
     fn initialize_offers_the_newest_version_for_one_it_does_not_know() {
-        for asked in ["1999-01-01", "2024-11-05"] {
+        for asked in ["1999-01-01", "2024-11-05", "2025-03-26"] {
             let answer = reply(
                 &json!({
                     "jsonrpc": "2.0", "id": 1, "method": "initialize",

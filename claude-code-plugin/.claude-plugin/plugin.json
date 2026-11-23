@@ -1,8 +1,18 @@
 {
   "name": "super-voice",
   "description": "Talk to Claude Code and hear its answers, with Super Voice on your own machine.",
-  "author": { "name": "Jorge Menjivar" },
+  "author": {
+    "name": "Jorge Menjivar"
+  },
   "homepage": "https://github.com/super-libre/super-voice",
   "license": "GPL-3.0-only",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "address": {
+      "type": "string",
+      "title": "Super Voice's address",
+      "description": "Where Super Voice's MCP server is. Super Voice sets it when you connect Claude Code on its Assistants page.",
+      "default": "http://127.0.0.1:7300/v1/mcp"
+    }
+  }
 }

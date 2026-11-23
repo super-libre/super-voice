@@ -14,8 +14,9 @@
 //!
 //! The scope each tool needs is checked against the caller's: `speak` takes
 //! `speak`, `listen` takes `transcribe`, and `speak` too for a question.
-//! Claude Code and Codex also get their plugin's tools, `stop`, `status`,
-//! `announce` and `session`, marked for the app and not the model.
+//! A connected assistant also gets its plugin's tools, `stop`, `status`,
+//! `announce`, `session` and `turn`, kept from its model: marked for the app
+//! for Codex, hidden by the plugin for the others.
 //!
 //! Each call names the session it comes from (`identity`), and the speech
 //! and the recording a session starts are its own
