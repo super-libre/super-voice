@@ -19,11 +19,21 @@ use super_voice_shared::models::assistants::{
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AssistantSwitches {
     /// Whether Super Voice says aloud when it needs the user.
-    pub announces: Option<bool>,
+    pub announce_when_needed: Option<bool>,
     /// Whether its `listen` calls are heard with the context they bring.
-    pub uses_context: Option<bool>,
+    pub conversation_context: Option<bool>,
     /// Whether its plugin shows Talk above the prompt.
-    pub shows_talk: Option<bool>,
+    pub show_talk: Option<bool>,
+}
+
+impl AssistantSwitches {
+    /// Whether it changes nothing.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.announce_when_needed.is_none()
+            && self.conversation_context.is_none()
+            && self.show_talk.is_none()
+    }
 }
 
 /// The key the daemon made for `id`, if it holds one. It names an
@@ -305,20 +315,15 @@ impl SuperSTTDaemon {
         id: AssistantId,
         change: AssistantSwitches,
     ) -> AssistantList {
-        let AssistantSwitches {
-            announces,
-            uses_context,
-            shows_talk,
-        } = change;
         let saved = self
             .set_config_field(|c| {
-                if let Some(on) = announces {
+                if let Some(on) = change.announce_when_needed {
                     c.assistants.set_announces_when_needed(id, on);
                 }
-                if let Some(on) = uses_context {
+                if let Some(on) = change.conversation_context {
                     c.assistants.set_uses_conversation_context(id, on);
                 }
-                if let Some(on) = shows_talk {
+                if let Some(on) = change.show_talk {
                     c.assistants.set_shows_talk(id, on);
                 }
             })

@@ -253,11 +253,11 @@ pub(crate) async fn change_assistant(
         return unknown_assistant();
     };
     let change = AssistantSwitches {
-        announces: body.announce_when_needed,
-        uses_context: body.conversation_context,
-        shows_talk: body.show_talk,
+        announce_when_needed: body.announce_when_needed,
+        conversation_context: body.conversation_context,
+        show_talk: body.show_talk,
     };
-    if change.announces.is_none() && change.uses_context.is_none() && change.shows_talk.is_none() {
+    if change.is_empty() {
         return refusal(
             ErrorCode::InvalidValue,
             "name `announce_when_needed`, `conversation_context` or `show_talk`",
