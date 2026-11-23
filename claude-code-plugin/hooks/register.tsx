@@ -126,6 +126,12 @@ let isTalkShown = true
 /** Super Voice's MCP server as Claude Code names it, once connected. */
 let server = 'plugin:super-voice:voice'
 
+/** Whether `origin`, the one that changed or sent the prompt, is this
+ * plugin. */
+function isOwnOrigin(origin: { kind: string }): boolean {
+  return origin.kind === 'plugin' && (origin as { name?: string }).name === NAME
+}
+
 /** This session as Super Voice's tools take it: `id` when given, else the
  * session's own. */
 async function sessionOf($: EngineInterface, id?: string) {
@@ -476,10 +482,6 @@ async function tick($: EngineInterface) {
     // Said while Claude works: it should hear it now, not when it is done.
     await $.turn.abort({ turnId: runningTurnId }).catch(() => undefined)
   }
-  // Set here too, in case this mod's own `prompt.submit` hook is not told of
-  // its own prompt.
-  isTurnSpoken = true
-  talked = undefined
   // The words are the user's own, so Claude reads them bare. Hooks and
   // permission checks still see this mod as the sender.
   await $.prompt.submit({ text: box.text, asUser: true }).catch(() => {
@@ -636,8 +638,7 @@ export const register: Register = on => {
 
   // A recalled history entry, a clear, another plugin's fill.
   on('prompt.change', async ($, e, next) => {
-    const isOwnFill = e.origin.kind === 'plugin' && e.origin.name === NAME
-    if (phase === 'countdown' && !isOwnFill) {
+    if (phase === 'countdown' && !isOwnOrigin(e.origin)) {
       await stopCountdown($)
     }
     return next(e)
@@ -648,36 +649,31 @@ export const register: Register = on => {
     if (await read($, speaking)) {
       void stopSpeaking($)
     }
-    const isOwn = e.origin.kind === 'plugin' && e.origin.name === NAME
     if (e.origin.kind === 'composer' && pendingAnswer !== undefined) {
       // Enter on an answer to Claude's question: it goes to the waiting
       // `listen` call, not into the queue as a prompt.
       await finishAnswer($, e.text)
       return { drop: "Sent as the answer to Claude's question." }
     }
-    if (e.origin.kind === 'composer') {
-      // Enter before the countdown ended: the prompt is the user's, and still
-      // spoken, so the talk goes on after the reply. Sent while Claude works,
-      // it is delivered into that turn, whose reply answers it.
-      if (phase === 'countdown') {
-        await stopCountdown($)
-      }
-      // Talk's words, or ones the user dictated with Super Voice's shortcut.
-      const isSpoken = await promptWasSpoken($, e.text, false, talked)
-      lastPrompt = e.text
-      isTurnSpoken = isSpoken
-      talked = undefined
-      await setArmed($, false)
-      return next(isSpoken ? { ...e, context: [...(e.context ?? []), SPOKEN_NOTE] } : e)
+    const isOwn = isOwnOrigin(e.origin)
+    // Another plugin's prompt is neither the user's nor Talk's.
+    if (e.origin.kind !== 'composer' && !isOwn) {
+      return next(e)
     }
-    if (isOwn) {
-      await promptWasSpoken($, e.text, true)
-      lastPrompt = e.text
-      isTurnSpoken = true
-      talked = undefined
-      return next({ ...e, context: [...(e.context ?? []), SPOKEN_NOTE] })
+    // Enter before the countdown ended: the prompt is the user's, and still
+    // spoken, so the talk goes on after the reply. Sent while Claude works,
+    // it is delivered into that turn, whose reply answers it.
+    if (phase === 'countdown') {
+      await stopCountdown($)
     }
-    return next(e)
+    // Talk's own prompt is spoken; the user's when it holds Talk's words, or
+    // ones they dictated with Super Voice's shortcut.
+    const isSpoken = await promptWasSpoken($, e.text, isOwn, talked)
+    lastPrompt = e.text
+    isTurnSpoken = isSpoken
+    talked = undefined
+    await setArmed($, false)
+    return next(isSpoken ? { ...e, context: [...(e.context ?? []), SPOKEN_NOTE] } : e)
   })
 
   // A speaker under each block of Claude's replies reads that block aloud
