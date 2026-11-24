@@ -22,7 +22,8 @@ const VOICE_TOOLS: ReadonlySet<string> = new Set(MODEL_TOOL_NAMES.map(tool => `$
 /** The tools this plugin calls itself, kept from the model. */
 const PLUGIN_TOOLS = PLUGIN_TOOL_NAMES.map(tool => `${SERVER}_${tool}`)
 
-/** Whether a stored user message was sent by Talk. */
+/** Whether a stored user message was spoken: sent by Talk, or one Super Voice
+ * knew as dictated. */
 function isSpoken(metadata: unknown): boolean {
   const voice = (metadata as { superVoice?: { spoken?: unknown } } | undefined)?.superVoice
   return voice?.spoken === true
@@ -57,6 +58,19 @@ function tooFarBack(count: number): string {
 function roleOf(message: unknown): string {
   const { type, role } = message as { type?: unknown; role?: unknown }
   return typeof role === 'string' ? role : typeof type === 'string' ? type : ''
+}
+
+/** A spoken user message with the note for the model as its last part, once. */
+function withNote<M>(message: M): M {
+  const { content } = message as { content?: unknown }
+  if (!Array.isArray(content)) {
+    return message
+  }
+  const last = content[content.length - 1] as { type?: unknown; text?: unknown } | undefined
+  if (last?.type === 'text' && last.text === SPOKEN_NOTE) {
+    return message
+  }
+  return { ...message, content: [...content, { type: 'text', text: SPOKEN_NOTE }] }
 }
 
 export default Plugin.define({
@@ -126,15 +140,23 @@ export default Plugin.define({
         text: event.prompt.text,
         ...(isTalk ? { spoken: true } : {}),
       })
-      spoken.set(event.sessionID, isTalk || fieldsOf(answer).spoken === true)
+      const isPromptSpoken = isTalk || fieldsOf(answer).spoken === true
+      spoken.set(event.sessionID, isPromptSpoken)
+      if (isPromptSpoken && !isTalk) {
+        // Kept with the message, so the note goes with it in every request.
+        const voice = (event.metadata?.superVoice ?? {}) as Record<string, unknown>
+        event.metadata = { ...event.metadata, superVoice: { ...voice, spoken: true } }
+      }
     })
 
+    // Each spoken prompt carries the note itself, in every request, rather
+    // than the system prompt carrying it while the last one was spoken: what
+    // goes before the newest message reads the same from one request to the
+    // next, so the model's prompt cache holds.
     const told = await ctx.session.hook('context', event => {
-      const lastPrompt = [...event.messages].reverse().find(message => roleOf(message) === 'user')
-      const isTalk = spoken.get(event.sessionID) ?? isSpoken(lastPrompt?.metadata)
-      if (isTalk) {
-        event.system.push({ type: 'text', text: SPOKEN_NOTE })
-      }
+      event.messages = event.messages.map(message =>
+        roleOf(message) === 'user' && isSpoken(message.metadata) ? withNote(message) : message,
+      )
     })
 
     const guarded = await ctx.tool.hook('execute.before', event => {
