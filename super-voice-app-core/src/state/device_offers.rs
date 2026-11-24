@@ -41,12 +41,14 @@ pub struct DeviceOffers {
 impl DeviceOffers {
     /// The devices `source` can run a stage's models on, or `None` if the
     /// daemon hasn't answered for it.
+    #[must_use]
     pub fn backend(&self, stage: Stage, source: &str) -> Option<&[String]> {
         self.find(stage, source, None)
     }
 
     /// The devices `model` can be loaded onto in this stage, or `None` if the
     /// daemon hasn't answered for it.
+    #[must_use]
     pub fn model(&self, stage: Stage, source: &str, model: &str) -> Option<&[String]> {
         self.find(stage, source, Some(model))
     }

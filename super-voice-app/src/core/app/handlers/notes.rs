@@ -200,7 +200,7 @@ impl AppModel {
                     return Task::none();
                 };
                 let edit = action.is_edit();
-                open.content.perform(action);
+                open.content.0.perform(action);
                 if !edit {
                     return Task::none();
                 }
@@ -231,7 +231,7 @@ impl AppModel {
                     .notes
                     .note(&open.id)
                     .map_or_else(|| format!("{}.md", open.id), notes::export_name);
-                let text = open.content.text();
+                let text = open.content.0.text();
                 let labels = ExportLabels {
                     title: crate::fl!("export-note"),
                     kinds: crate::fl!("markdown-or-text"),
@@ -440,9 +440,10 @@ impl AppModel {
             return (None, Some(said));
         };
         if let Some(open) = self.notes.open.as_mut().filter(|o| o.id == id) {
-            let text = notes::append(&open.content.text(), &said);
-            open.content = text_editor::Content::with_text(&text);
+            let text = notes::append(&open.content.0.text(), &said);
+            open.content = crate::state::Editor(text_editor::Content::with_text(&text));
             open.content
+                .0
                 .perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
             open.edits += 1;
             let job = open.save_job();

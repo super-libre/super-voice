@@ -12,5 +12,5 @@ mod editor;
 mod list;
 mod surface;
 
-pub use editor::{editor_sheet, editor_title};
+pub use editor::{editor_sheet, editor_title, term_id};
 pub use list::page;

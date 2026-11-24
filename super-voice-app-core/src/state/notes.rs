@@ -13,21 +13,22 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
-use cosmic::widget::text_editor;
 use super_voice_shared::models::protocol::PreviewSource;
 
 use crate::notes::Note;
+use crate::state::TextBuffer;
 
-/// Everything the Notes tab holds.
+/// Everything the Notes tab holds. `B` is the open note's editor buffer, the
+/// app's toolkit's own (see [`TextBuffer`]).
 #[derive(Debug, Default)]
-pub struct NotesState {
+pub struct NotesState<B = String> {
     /// The notes, newest first.
     pub items: Vec<Note>,
     /// Whether the first read has landed. Until it has, no notes means "not
     /// read yet", not "none".
     pub loaded: bool,
     /// The note shown in place of the list.
-    pub open: Option<OpenNote>,
+    pub open: Option<OpenNote<B>>,
     /// A take recording a note, or more of one.
     pub take: Option<NoteTake>,
     /// The open note's Delete was pressed once and waits for the second.
@@ -63,7 +64,7 @@ impl FileJob {
     }
 }
 
-impl NotesState {
+impl<B: TextBuffer> NotesState<B> {
     /// The note `id`, if the list has it.
     #[must_use]
     pub fn note(&self, id: &str) -> Option<&Note> {
@@ -148,21 +149,22 @@ impl NotesState {
 
 /// The note open in place of the list, and how far its file is behind it.
 #[derive(Debug)]
-pub struct OpenNote {
+pub struct OpenNote<B = String> {
     pub id: String,
-    pub content: text_editor::Content,
+    /// The editor's buffer.
+    pub content: B,
     /// Counts the edits, so a save knows which it wrote.
     pub edits: u64,
     /// The count of edits the file holds.
     pub saved: u64,
 }
 
-impl OpenNote {
+impl<B: TextBuffer> OpenNote<B> {
     #[must_use]
     pub fn new(note: &Note) -> Self {
         Self {
             id: note.id.clone(),
-            content: text_editor::Content::with_text(&note.text),
+            content: B::from_text(&note.text),
             edits: 0,
             saved: 0,
         }
@@ -228,6 +230,9 @@ impl NoteTake {
 mod tests {
     use super::*;
     use chrono::NaiveDateTime;
+
+    type NotesState = super::NotesState<String>;
+    type OpenNote = super::OpenNote<String>;
 
     fn note(id: &str, created: &str) -> Note {
         Note {
@@ -324,7 +329,7 @@ mod tests {
         state.enqueue(save("b", "running"));
         state.enqueue(save("c", "waiting"));
         let mut open = OpenNote::new(&note("a", "2026-11-14 10:00"));
-        open.content = text_editor::Content::with_text("typed just now");
+        open.content = "typed just now".to_string();
         open.edits = 1;
         state.open = Some(open);
 

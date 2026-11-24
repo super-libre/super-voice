@@ -229,7 +229,7 @@ fn open_note<'a>(app: &'a AppModel, open: &'a OpenNote) -> Vec<Element<'a, Messa
     };
     let about = format!(
         "{} \u{b7} {saved}",
-        words_label(notes::words(&open.content.text()))
+        words_label(notes::words(&open.content.0.text()))
     );
     let heading = row![text::title4(title), muted(text::caption(about))]
         .spacing(spacing.space_s)
@@ -241,7 +241,7 @@ fn open_note<'a>(app: &'a AppModel, open: &'a OpenNote) -> Vec<Element<'a, Messa
         blocks.push(take_section(app, take));
     }
 
-    let editor = widget::text_editor(&open.content)
+    let editor = widget::text_editor(&open.content.0)
         .min_height(EDITOR_MIN_HEIGHT)
         .padding(spacing.space_s)
         .on_action(|action| notes_message(NotesMessage::Edit(action)));
