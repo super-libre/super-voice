@@ -14,17 +14,17 @@
 #[macro_use]
 mod macros;
 
-pub(crate) mod assistants;
-pub(crate) mod backends;
-pub(crate) mod contexts;
-pub(crate) mod gpu_info;
-pub(crate) mod ping;
-pub(crate) mod pipeline;
-pub(crate) mod registry;
-pub(crate) mod settings;
-pub(crate) mod shortcuts;
-pub(crate) mod speak;
-pub(crate) mod synthesize;
-pub(crate) mod transcribe;
-pub(crate) mod update;
-pub(crate) mod voices;
+pub mod assistants;
+pub mod backends;
+pub mod contexts;
+pub mod gpu_info;
+pub mod ping;
+pub mod pipeline;
+pub mod registry;
+pub mod settings;
+pub mod shortcuts;
+pub mod speak;
+pub mod synthesize;
+pub mod transcribe;
+pub mod update;
+pub mod voices;

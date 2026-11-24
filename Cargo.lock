@@ -7122,9 +7122,6 @@ dependencies = [
  "dirs 7.0.0",
  "futures-util",
  "hound",
- "http-body-util",
- "hyper",
- "hyper-util",
  "i18n-embed",
  "i18n-embed-fl",
  "iced_accessibility",
@@ -7149,14 +7146,30 @@ dependencies = [
  "strum",
  "strum_macros",
  "super-engine-forge",
- "super-voice-daemon",
+ "super-voice-app-core",
  "super-voice-registry-types",
  "super-voice-shared",
  "tempfile",
  "tokio",
- "urlencoding",
  "uuid",
  "vergen",
+]
+
+[[package]]
+name = "super-voice-app-core"
+version = "0.3.0-beta.7"
+dependencies = [
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "serde",
+ "serde_json",
+ "super-voice-daemon",
+ "super-voice-shared",
+ "tokio",
+ "urlencoding",
 ]
 
 [[package]]

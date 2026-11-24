@@ -2,7 +2,8 @@
 mod audio;
 mod clips;
 mod core;
-mod daemon;
+// The daemon client lives in the core crate, which every app shares.
+use super_voice_app_core::daemon;
 mod i18n;
 mod notes;
 mod state;
@@ -59,6 +60,11 @@ fn main() -> cosmic::iced::Result {
     // A scene opens at one size, so every shot of it frames the same window;
     // see `core::app::scene`.
     let scene = core::app::scene::requested();
+    if scene.is_some() {
+        // Before any daemon call, so the scene's token never replaces the
+        // installed app's.
+        daemon::client::use_scene_token();
+    }
     let settings = if scene.is_some() {
         settings.size(core::app::scene::WINDOW_SIZE)
     } else {

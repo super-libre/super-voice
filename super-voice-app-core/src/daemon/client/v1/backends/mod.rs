@@ -6,8 +6,8 @@
 //! //! Installing is the registry's job, in [`super::registry`]; filling a *stage*
 //! with one of these backends is [`super::pipeline::stage`]'s.
 
-pub(crate) mod options;
-pub(crate) mod secrets;
+pub mod options;
+pub mod secrets;
 
 use crate::daemon::backends::BackendInfo;
 use crate::daemon::client::internal::response::require_success;

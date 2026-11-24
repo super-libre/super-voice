@@ -12,7 +12,14 @@ mod path_contract;
 mod tests;
 
 pub(crate) mod internal;
-pub(crate) mod v1;
+// Every call under `v1` fails the same way: the daemon could not be reached,
+// refused the settings token, or answered with an error. `HttpError` says
+// which, so no wrapper repeats it in an `# Errors` section.
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "HttpError says how each call fails"
+)]
+pub mod v1;
 
 pub use v1::backends::list_backends;
 pub use v1::backends::options::{clear_backend_option, set_backend_option};
@@ -20,6 +27,7 @@ pub use v1::backends::secrets::{clear_backend_secret, list_backend_secrets, set_
 // Only the two types cross a module boundary — the Contexts page's messages
 // and state name them. Every call goes through `v1::contexts` directly, the way
 // the handler that makes it does.
+pub use internal::session::{SETTINGS_SCOPES, app_id, use_scene_token};
 pub use v1::contexts::backend::{BackendContext, ContextMode};
 pub use v1::gpu_info::get_gpu_info;
 pub use v1::ping::{ping_daemon, test_daemon_connection};

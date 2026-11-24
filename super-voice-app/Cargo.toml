@@ -36,11 +36,12 @@
     strum.workspace = true
     strum_macros.workspace = true
     super-engine-forge.workspace = true
+    # The daemon client and the types it reads, shared by every app.
+    super-voice-app-core = { path = "../super-voice-app-core" }
     super-voice-registry-types = { path = "../super-voice-registry-types" }
     # Workspace dependencies
     super-voice-shared = { path = "../super-voice-shared" }
     tokio.workspace = true
-    urlencoding = "2.1.3"
     uuid.workspace = true
 
 # libcosmic, whose feature set is the one dependency that differs by platform.
@@ -160,18 +161,7 @@
     default = []
 
 [dev-dependencies]
-    # The `v1/` wrapper tests drive each call against a fake daemon served on a
-    # Unix socket (see `daemon/client/tests/fake_daemon.rs`), so the request the
-    # wrapper actually builds is the thing under test. Same HTTP stack the real
-    # daemon serves with.
-    http-body-util = "0.1"
-    hyper = { version = "1", features = ["http1", "server"] }
-    hyper-util = { version = "0.1", features = ["tokio"] }
     mockito = "1.7.2"
-    # The path and response-key contract tests check the client against the
-    # OpenAPI document the daemon builds from its router. Taken from the crate
-    # rather than a file so the tests need nothing generated first.
-    super-voice-daemon = { path = "../super-voice-daemon" }
     # Test directories that remove themselves.
     tempfile = "3.27.0"
 

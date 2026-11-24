@@ -28,6 +28,7 @@ pub struct ListFilters {
 impl ListFilters {
     /// Encode the active filters as a query string (no leading `?`).
     /// Returns an empty string when no filters are set.
+    #[must_use]
     pub fn to_query_string(&self) -> String {
         let mut pairs: Vec<String> = Vec::new();
         if let Some(b) = self.include_incompatible {

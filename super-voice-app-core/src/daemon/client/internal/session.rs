@@ -17,7 +17,7 @@ use super_voice_shared::validation::get_http_socket_path;
 /// (`recording_events` and `playback_events` for the two badges,
 /// `audio_visualization` for the meters, `daemon_status` for model-switch /
 /// download / install progress).
-pub(crate) const SETTINGS_SCOPES: &[&str] = &[
+pub const SETTINGS_SCOPES: &[&str] = &[
     "settings",
     "secrets",
     "transcribe",
@@ -38,10 +38,20 @@ pub(crate) const APP_ID_NAME: AppId = session::app_id("super-voice-app");
 /// installed app cannot use, and its next launch would ask for consent again.
 const SCENE_APP_ID: AppId = session::app_id("super-voice-app-scene");
 
+/// Whether this run keeps its token under [`SCENE_APP_ID`]; set once at start
+/// by [`use_scene_token`].
+static SCENE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Keep this run's token apart from the installed app's, for a `just
+/// screenshots` run. The app calls it at start, before its first daemon call.
+pub fn use_scene_token() {
+    SCENE.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// The keyring entry this run's token lives in: [`APP_ID_NAME`], or
-/// [`SCENE_APP_ID`] while a scene is running (see `core::app::scene`).
-pub(crate) fn app_id() -> AppId {
-    if crate::core::app::scene::requested().is_some() {
+/// [`SCENE_APP_ID`] once [`use_scene_token`] has been called.
+pub fn app_id() -> AppId {
+    if SCENE.load(std::sync::atomic::Ordering::Relaxed) {
         SCENE_APP_ID
     } else {
         APP_ID_NAME

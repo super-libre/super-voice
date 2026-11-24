@@ -161,7 +161,7 @@ pub(crate) fn section(app: &AppModel, stage: BlockStage, width: f32) -> Element<
 
     // A failed save surfaces on the card that owns it rather than only reaching
     // the log.
-    if let Some(message) = app.action_error_for(stage.error_scope()) {
+    if let Some(message) = app.action_error_for(crate::state::ErrorScope::from(stage)) {
         card = card.push(crate::ui::views::common::error_banner(message));
     }
 

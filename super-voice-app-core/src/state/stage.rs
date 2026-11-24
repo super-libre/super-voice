@@ -13,8 +13,6 @@ use std::fmt;
 use super_voice_shared::models::protocol::{POST_PROCESSOR_STAGE, TRANSCRIPTION_STAGE};
 use super_voice_shared::tts::models::protocol::SYNTHESIS_STAGE;
 
-use super::ErrorScope;
-
 /// One pipeline stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Stage {
@@ -119,15 +117,6 @@ impl BlockStage {
         match self {
             Self::PostProcessing => Stage::PostProcessing,
             Self::Synthesis => Stage::Synthesis,
-        }
-    }
-
-    /// Where a failed save of the stage is reported: on its own card.
-    #[must_use]
-    pub const fn error_scope(self) -> ErrorScope {
-        match self {
-            Self::PostProcessing => ErrorScope::PostProcessing,
-            Self::Synthesis => ErrorScope::Synthesis,
         }
     }
 

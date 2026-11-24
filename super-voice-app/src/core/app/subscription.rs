@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use crate::daemon::client::internal::session::SETTINGS_SCOPES;
+use crate::daemon::client::SETTINGS_SCOPES;
 use crate::ui::messages::{DaemonMessage, Message};
 use futures_util::SinkExt;
 use log::{info, warn};
@@ -50,7 +50,7 @@ pub(super) fn audio_events_subscription(
 
     Box::pin(cosmic::iced::stream::channel(100, async |mut channel| {
         let config = WidgetSubscriptionConfig::new(
-            crate::daemon::client::internal::session::app_id(),
+            crate::daemon::client::app_id(),
             SETTINGS_APP_NAME,
             SETTINGS_SCOPES,
             SETTINGS_TOPICS,

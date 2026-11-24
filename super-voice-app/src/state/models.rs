@@ -232,6 +232,16 @@ pub enum ErrorScope {
     Clips,
 }
 
+/// Where a failed save of the stage is reported: on its own card.
+impl From<crate::state::BlockStage> for ErrorScope {
+    fn from(stage: crate::state::BlockStage) -> Self {
+        match stage {
+            crate::state::BlockStage::PostProcessing => Self::PostProcessing,
+            crate::state::BlockStage::Synthesis => Self::Synthesis,
+        }
+    }
+}
+
 /// A scope-tagged, transient action failure rendered as an inline banner on the
 /// page named by [`ErrorScope`]. Set on a failed save, cleared when the user
 /// retries that action, reconnects, or closes the owning surface.
@@ -239,24 +249,6 @@ pub enum ErrorScope {
 pub struct ActionError {
     pub scope: ErrorScope,
     pub message: String,
-}
-
-/// The per-model language resolution block returned by
-/// `GET /stt/pipeline/{stage}/model/{model}/language`, deserialized once at the
-/// client boundary instead of being poked field-by-field as a
-/// `serde_json::Value` in the views. Unknown/absent fields default so a partial
-/// or null block yields an empty, harmless resolution.
-#[derive(Clone, Debug, Default, serde::Deserialize)]
-pub struct LanguageResolution {
-    /// The effective BCP-47 tag in use, if any (`None` when unresolved).
-    #[serde(default)]
-    pub effective: Option<String>,
-    /// How `effective` was resolved: `"override"`, `"global"`, or `"default"`.
-    #[serde(default)]
-    pub source: String,
-    /// The global Primary Language tag used as the default fallback.
-    #[serde(default)]
-    pub primary: String,
 }
 
 /// Which tab of the Models page is active.

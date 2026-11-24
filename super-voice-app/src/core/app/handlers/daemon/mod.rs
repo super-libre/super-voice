@@ -5,7 +5,7 @@ mod events;
 use crate::core::app::events::classify_daemon_error;
 use crate::core::app::handlers::tasks::{build_load_settings_tasks, ping_task};
 use crate::core::app::{AppModel, DeviceState};
-use crate::daemon::client::internal::session::app_id;
+use crate::daemon::client::app_id;
 use crate::daemon::client::test_daemon_connection;
 use crate::state::{AudioTheme, DaemonStatus};
 use crate::ui::messages::{DaemonMessage, Message, ModelMessage};

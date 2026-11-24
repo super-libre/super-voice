@@ -13,12 +13,12 @@
 //! a model that has a runtime — and joining them in the client is cheaper than
 //! the drift that came of joining them on the wire.
 
-pub(crate) mod backend;
-pub(crate) mod device;
-pub(crate) mod language;
-pub(crate) mod model;
-pub(crate) mod stage;
-pub(crate) mod voice;
+pub mod backend;
+pub mod device;
+pub mod language;
+pub mod model;
+pub mod stage;
+pub mod voice;
 
 use crate::state::Stage;
 use super_voice_shared::daemon::http_client::HttpResult;
