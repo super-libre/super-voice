@@ -486,10 +486,12 @@ impl SuperSTTDaemon {
 
         // Phase 5: type the final transcript.
         if write_mode {
+            // An assistant's prompt that holds it was spoken. Known before
+            // the typing starts, so a plugin that asks as soon as the keys
+            // stop arriving finds it, however long the typer takes to return.
+            self.assistants.dictation.remember(&transcription_result);
             info!("Writing transcription via {}", typer.write_method_name());
             typer.process_final_text(&transcription_result).await;
-            // An assistant's prompt that holds it was spoken.
-            self.assistants.dictation.remember(&transcription_result);
         }
 
         // Phase 6: finalize the cycle.
