@@ -6,6 +6,7 @@
   - `super-voice-consent`, `super-voice-registry-types`, `super-voice-indexer`: the consent dialog, the backend manifest spec, the registry indexer.
   - `super-voice-app`: the settings app (COSMIC/iced), for both features.
   - `super-voice-app-core`: what the apps share, with no UI library: the daemon client, the app's state, the notes and clips, and the app's own audio.
+  - `super-voice-ffi`: super-voice-app-core for apps written in other languages, through UniFFI. `super-voice-macos/` is the SwiftUI app on it.
   - `super-voice-cli`: the `voice` command, for both features.
   - `super-voice-shared`: the client library, for both features. Text to speech's own types are its `tts` module.
 - Tests/tooling: Python scripts at repo root (e.g., `test_download_progress.py`).

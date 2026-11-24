@@ -71,7 +71,7 @@ service_dst := systemd_unit_dir / service_file
 # Named as a list rather than reached with `--workspace --exclude` so the
 # macOS gates say what they cover, and so a new portable crate has to be added
 # deliberately rather than silently skipped.
-macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app-core -p super-voice-app'
+macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app-core -p super-voice-ffi -p super-voice-app'
 
 # macOS ships as one app bundle, `Super Voice.app`: the settings app is its
 # executable, and the daemon and the CLI sit beside it in Contents/MacOS. The
@@ -475,6 +475,58 @@ bundle-macos:
         codesign --force --sign "$identity" --identifier {{ macos_sign_prefix }}-cli "$cli"
     done
     codesign --force --sign "$identity" "$bundle"
+    codesign --verify --strict "$bundle"
+
+    echo "✓ Built $bundle ($version)"
+
+# The SwiftUI app for macOS, on super-voice-app-core through the `UniFFI`
+# bindings in super-voice-ffi. An early version: it shows the notes.
+#
+# Four steps: the core as a static library (and a dynamic one, which
+# uniffi-bindgen reads the exported interface from); the Swift bindings and C
+# header generated from it, into super-voice-macos/Generated; the Swift
+# package; and the bundle, `target/release/Super Voice (SwiftUI).app`, signed
+# ad hoc. Beside the libcosmic app, not in place of it.
+#
+# Usage: just macos-swift-app
+macos-swift-app:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "$(uname)" != Darwin ]; then
+        echo "❌ macos-swift-app builds on macOS only" >&2
+        exit 1
+    fi
+
+    # The macOS the Swift package targets (Package.swift), for the Rust code and
+    # the C code its dependencies build too, so they don't target this Mac's.
+    export MACOSX_DEPLOYMENT_TARGET=14.0
+    cargo build -p super-voice-ffi --release --lib
+
+    gen=super-voice-macos/Generated
+    rm -rf "$gen"
+    mkdir -p "$gen/SuperVoiceCore" "$gen/headers" "$gen/bindings"
+    cargo run -p super-voice-ffi --bin uniffi-bindgen -- generate \
+        --library target/release/libsuper_voice_ffi.dylib \
+        --language swift --out-dir "$gen/bindings"
+    mv "$gen/bindings/super_voice_ffi.swift" "$gen/SuperVoiceCore/"
+    mv "$gen/bindings/super_voice_ffiFFI.h" "$gen/headers/"
+    # An xcframework's headers carry their module map under this one name.
+    mv "$gen/bindings/super_voice_ffiFFI.modulemap" "$gen/headers/module.modulemap"
+    xcodebuild -create-xcframework \
+        -library target/release/libsuper_voice_ffi.a -headers "$gen/headers" \
+        -output "$gen/SuperVoiceFFI.xcframework" >/dev/null
+
+    swift build --package-path super-voice-macos -c release
+    bin=$(swift build --package-path super-voice-macos -c release --show-bin-path)
+
+    bundle="target/release/Super Voice (SwiftUI).app"
+    rm -rf "$bundle"
+    mkdir -p "$bundle/Contents/MacOS"
+    version=$(cargo pkgid -p super-voice-ffi | sed 's/.*[#@]//')
+    sed -e "s|__VERSION__|$version|g" -e "s|__BUILD__|${version%%-*}|g" \
+        super-voice-macos/Info.plist > "$bundle/Contents/Info.plist"
+    cp "$bin/SuperVoice" "$bundle/Contents/MacOS/"
+    codesign --force --sign - "$bundle"
     codesign --verify --strict "$bundle"
 
     echo "✓ Built $bundle ($version)"
