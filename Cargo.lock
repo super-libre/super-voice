@@ -7118,7 +7118,6 @@ dependencies = [
  "anyhow",
  "block2 0.6.2",
  "chrono",
- "cpal",
  "dirs 7.0.0",
  "futures-util",
  "hound",
@@ -7159,7 +7158,10 @@ dependencies = [
 name = "super-voice-app-core"
 version = "0.3.0-beta.7"
 dependencies = [
+ "chrono",
+ "cpal",
  "futures-util",
+ "hound",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -7168,6 +7170,7 @@ dependencies = [
  "serde_json",
  "super-voice-daemon",
  "super-voice-shared",
+ "tempfile",
  "tokio",
  "urlencoding",
 ]
