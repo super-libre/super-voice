@@ -287,13 +287,20 @@ fn actions(app: &AppModel) -> Element<'_, Message> {
     };
     let dictate = button::suggested(crate::fl!("dictate-more"))
         .on_press_maybe(free.then(|| notes_input(Input::DictateMore)));
+    // A row lays out the children that shrink first, in order, each in the
+    // width still left, and fills what remains after. So the reason fills:
+    // it takes only the width the buttons leave and wraps there, as a
+    // settings item's description does, and every button keeps its label.
     let why: Element<'_, Message> = match unready {
-        Some(reason) => muted(text::caption(reason)),
+        Some(reason) => muted(
+            text::caption(reason)
+                .width(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Right),
+        ),
         None => horizontal_space().into(),
     };
     row![
         delete,
-        horizontal_space(),
         why,
         button::standard(crate::fl!("export")).on_press(notes_input(Input::Export)),
         dictate,
