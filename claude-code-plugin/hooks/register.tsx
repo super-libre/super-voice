@@ -61,6 +61,10 @@ const START_WAIT_MS = 10_000
 const SEND_AFTER_MS = 5_000
 /** How often the countdown checks the box and redraws. */
 const COUNTDOWN_TICK_MS = 500
+/** How long the box stays still after a key before Super Voice is asked
+ * whether it holds what the user just dictated: its shortcut types the words
+ * in as keys, so they come in a run. */
+const DRAFT_SETTLE_MS = 800
 /** Super Voice's MCP server, by its key in this plugin's `.mcp.json`. */
 const SERVER_KEY = 'voice'
 /** How often the session checks in: until Super Voice has heard it started,
@@ -93,9 +97,11 @@ let sawSpeech = false
 let phase: SuperVoiceTalk['phase'] = 'idle'
 let countdownTimer: Timer | undefined
 let sendAt = 0
-/** The prompt box as the fill left it. Anything else means the user is
+/** The prompt box as the countdown found it. Anything else means the user is
  * editing, which stops the countdown. */
 let filled: { text: string; cursor: number } | undefined
+/** Waits for the box to stay still after a key, to check it for a dictation. */
+let draftTimer: Timer | undefined
 /** Claude's `listen` call waiting on the user's answer, which they can check
  * in the prompt box first: what to hand it once it is sent. */
 let pendingAnswer: ((text: string | undefined) => void) | undefined
@@ -184,20 +190,30 @@ async function promptWasSpoken(
   return isTalk || fieldsOf(answer).spoken === true
 }
 
-type VoiceStatus = { isSpeaking: boolean; isListening: boolean }
+type VoiceStatus = { isSpeaking: boolean; isListening: boolean; autosends: boolean }
 
-/** Whether this session's own speech plays, and whether it records; nothing
+/** Whether this session's own speech plays, and whether it records; and
+ * whether the user lets a prompt dictated into it be sent by itself. Nothing
  * when Super Voice can't say. */
 async function voiceStatus($: EngineInterface): Promise<VoiceStatus | undefined> {
   const answer = await call($, 'status')
   if (answer.isError) {
     return undefined
   }
-  const { speaking: isSpeaking, listening: isListening, talk: isShown } = fieldsOf(answer)
+  const {
+    speaking: isSpeaking,
+    listening: isListening,
+    talk: isShown,
+    autosend,
+  } = fieldsOf(answer)
   if (typeof isShown === 'boolean' && isShown !== (await read($, showsTalk))) {
     await update($, showsTalk, () => isShown)
   }
-  return { isSpeaking: isSpeaking === true, isListening: isListening === true }
+  return {
+    isSpeaking: isSpeaking === true,
+    isListening: isListening === true,
+    autosends: autosend !== false,
+  }
 }
 
 /** Tell Super Voice this session is open, and check in while it is, which
@@ -451,10 +467,47 @@ async function fillAndCount($: EngineInterface, words: string) {
   if (pendingAnswer === undefined) {
     talked = talked ? `${talked} ${words}` : words
   }
+  await startCountdown($, box)
+}
+
+/** Send the box as it stands once the countdown runs out, unless the user
+ * starts editing first. */
+async function startCountdown($: EngineInterface, box: { text: string; cursor: number }) {
   filled = { text: box.text, cursor: box.cursor }
   sendAt = (await $.clock.now()) + SEND_AFTER_MS
   await setTalk($, { phase: 'countdown', secondsLeft: Math.ceil(SEND_AFTER_MS / 1000) })
   countdownTimer = $.clock.every(COUNTDOWN_TICK_MS, () => void tick($))
+}
+
+/** The box stayed still after the user's keys. When it holds what they just
+ * dictated with Super Voice's shortcut, it counts down and is sent as
+ * spoken, as Talk's words are, unless the user turned that off: then the
+ * dictation is left for Enter, which still counts it as spoken. */
+async function checkDraft($: EngineInterface) {
+  draftTimer = undefined
+  if (phase !== 'idle' || pendingAnswer !== undefined) {
+    return
+  }
+  if (!(await voiceStatus($))?.autosends) {
+    return
+  }
+  const box = await $.prompt.read()
+  if (!box.text.trim()) {
+    return
+  }
+  const answer = await call($, 'turn', { event: 'draft', text: box.text })
+  if (fieldsOf(answer).dictated !== true) {
+    return
+  }
+  // The match used the dictation up: Enter counts it as spoken from here on,
+  // the user's words held against these.
+  talked = box.text
+  // The user may have gone on typing while Super Voice was asked.
+  const now = await $.prompt.read()
+  if (phase !== 'idle' || now.text !== box.text || now.cursor !== box.cursor) {
+    return
+  }
+  await startCountdown($, now)
 }
 
 async function tick($: EngineInterface) {
@@ -487,12 +540,18 @@ async function tick($: EngineInterface) {
     await $.turn.abort({ turnId: runningTurnId }).catch(() => undefined)
   }
   // Claude Code runs none of this mod's own hooks for a prompt it sends
-  // itself, `prompt.submit` included, so Talk's prompt is told here.
+  // itself, `prompt.submit` included, so the prompt is told here: Talk's, or
+  // one dictated into the box.
   await promptWasSpoken($, box.text, true)
   lastPrompt = box.text
   isTurnSpoken = true
   talked = undefined
   await setArmed($, false)
+  // Nor can the prompt carry the note a hook adds to a spoken one: Claude
+  // gets it as a row of its own, which goes out with the prompt's turn.
+  await $.session
+    .append({ message: { type: 'user', content: [{ type: 'text', text: SPOKEN_NOTE }] } })
+    .catch(() => undefined)
   // The words are the user's own, so Claude reads them bare. Hooks and
   // permission checks still see this mod as the sender.
   await $.prompt.submit({ text: box.text, asUser: true }).catch(() => {
@@ -635,12 +694,15 @@ export const register: Register = on => {
   })
 
   // A key in the box, a cursor move included: the user is editing, or about
-  // to type instead of talk.
+  // to type instead of talk. Super Voice's shortcut types the words it heard
+  // in as keys too, so once they stop the box is checked for them.
   on('prompt.edit', async ($, e, next) => {
     await setArmed($, false)
     if (phase === 'countdown') {
       await stopCountdown($)
     }
+    draftTimer?.cancel()
+    draftTimer = $.clock.after(DRAFT_SETTLE_MS, () => void checkDraft($))
     return next(e)
   })
 
@@ -713,13 +775,14 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    // The user turned Talk off on the Assistants page: nothing at all here,
-    // and the 0 key types a 0.
-    if (e.props.hasSurvey || !(await read($, showsTalk))) {
+    // The user turned Talk off on the Assistants page: nothing here, and the
+    // 0 key types a 0. A dictated prompt's countdown still shows, as it sends
+    // the prompt by itself.
+    const state = await read($, talk)
+    if (e.props.hasSurvey || (!(await read($, showsTalk)) && state.phase !== 'countdown')) {
       return next(e)
     }
     const { Box, Button, Text } = $.ui.resolve(e)
-    const state = await read($, talk)
     if (state.phase === 'recording') {
       return (
         <Box>

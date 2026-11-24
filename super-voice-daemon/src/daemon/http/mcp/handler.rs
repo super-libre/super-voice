@@ -18,7 +18,7 @@
 //! daemon answers one.
 
 use super::identity::identity;
-use super::protocol::{self, Access, Handled, Plugin, Tool};
+use super::protocol::{self, Access, Handled, Plugin, Tool, TurnEvent};
 use super::tools;
 use crate::assistants::calls::Caller;
 use crate::assistants::sessions::Who;
@@ -78,22 +78,24 @@ async fn call_context(
     };
     sessions.touch(&who);
     // A key made by hand, and the user's own client, have no switches.
-    let (announces, uses_context, shows_talk) = match assistant {
+    let (announces, uses_context, shows_talk, autosends) = match assistant {
         Some(id) => {
             let config = state.daemon.config.read().await;
             (
                 config.assistants.announces_when_needed(id),
                 config.assistants.uses_conversation_context(id),
                 config.assistants.shows_talk(id),
+                config.assistants.autosends_dictated_prompts(id),
             )
         }
-        None => (true, true, true),
+        None => (true, true, true, true),
     };
     tools::CallContext {
         who,
         announces,
         uses_context,
         shows_talk,
+        autosends,
         hook: protocol::hook_of(params),
     }
 }
@@ -214,8 +216,9 @@ fn stream_call(
     tool: Tool,
 ) -> Response {
     let name = tool.name();
-    // The plugin's checks come every second or so: not worth a line each.
-    if !matches!(tool, Tool::Status) {
+    // The plugin's checks come every second or so, and a draft's at each
+    // pause in typing: not worth a line each.
+    if !matches!(tool, Tool::Status | Tool::Turn(TurnEvent::Draft { .. })) {
         info!("MCP {name} from {}", describe(&caller));
     }
     let in_flight = daemon

@@ -126,7 +126,7 @@ pub(crate) enum SessionEvent {
 }
 
 /// A turn of a session: the prompt that starts it, and the reply that ends
-/// it.
+/// it; and the prompt box before it is sent.
 #[derive(Debug, PartialEq)]
 pub(crate) enum TurnEvent {
     /// The user sent `text`. `spoken` when the plugin knows whether it was
@@ -144,6 +144,10 @@ pub(crate) enum TurnEvent {
     /// The assistant answered with `text`, kept to read again, and read
     /// aloud when the turn was spoken.
     Reply { text: String },
+    /// The prompt box holds `text`, not sent yet: whether it holds what the
+    /// user just dictated with Super Voice's shortcut, which a plugin sends
+    /// as spoken. A match uses the dictation up. No turn changes.
+    Draft { text: String },
 }
 
 /// The form a hook takes a tool's answer in, when a hook calls the tool
@@ -321,8 +325,9 @@ impl Tool {
                         again: args["again"].as_bool() == Some(true),
                     })),
                     Some("reply") => Ok(Self::Turn(TurnEvent::Reply { text })),
+                    Some("draft") => Ok(Self::Turn(TurnEvent::Draft { text })),
                     _ => Err(CallError::Arguments(
-                        "`event` is \"prompt\" or \"reply\"".to_string(),
+                        "`event` is \"prompt\", \"reply\" or \"draft\"".to_string(),
                     )),
                 }
             }
@@ -509,11 +514,12 @@ fn plugin_tools(may_speak: bool, marked: bool) -> Vec<Value> {
             "description": "Say that the user sent a prompt, and whether it was spoken, or that the \
                 assistant answered it. A spoken turn's reply is read aloud. A prompt of `/read` or \
                 `$read`, with a number from 0 to 9, reads one of the last replies aloud again \
-                instead, and is answered here rather than by the assistant.",
+                instead, and is answered here rather than by the assistant. A draft, the prompt \
+                box not sent yet, is answered with whether it holds what the user just dictated.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "event": { "type": "string", "enum": ["prompt", "reply"] },
+                    "event": { "type": "string", "enum": ["prompt", "reply", "draft"] },
                     "text": { "type": "string" },
                     "spoken": { "type": "boolean" },
                     "heard": { "type": "string" },
@@ -718,6 +724,15 @@ mod tests {
                 }
             );
         }
+        assert_eq!(
+            call("turn", json!({ "event": "draft", "text": "Go." })),
+            Handled::Call {
+                id: json!(1),
+                tool: Tool::Turn(TurnEvent::Draft {
+                    text: "Go.".to_string()
+                })
+            }
+        );
         let Handled::Reply(refused) = call("session", json!({ "event": "later" })) else {
             panic!("a bad event is the model's error");
         };

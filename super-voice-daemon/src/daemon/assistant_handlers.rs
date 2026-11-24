@@ -24,6 +24,8 @@ pub struct AssistantSwitches {
     pub conversation_context: Option<bool>,
     /// Whether its plugin shows Talk above the prompt.
     pub show_talk: Option<bool>,
+    /// Whether its plugin sends a prompt dictated into it by itself.
+    pub autosend_dictated_prompts: Option<bool>,
 }
 
 impl AssistantSwitches {
@@ -33,6 +35,7 @@ impl AssistantSwitches {
         self.announce_when_needed.is_none()
             && self.conversation_context.is_none()
             && self.show_talk.is_none()
+            && self.autosend_dictated_prompts.is_none()
     }
 }
 
@@ -130,6 +133,7 @@ impl SuperSTTDaemon {
                 announce_when_needed: config.assistants.announces_when_needed(id),
                 conversation_context: config.assistants.uses_conversation_context(id),
                 show_talk: config.assistants.shows_talk(id),
+                autosend_dictated_prompts: config.assistants.autosends_dictated_prompts(id),
                 sessions: sessions_of(key_of(&keys, id)),
             })
             .collect();
@@ -325,6 +329,9 @@ impl SuperSTTDaemon {
                 }
                 if let Some(on) = change.show_talk {
                     c.assistants.set_shows_talk(id, on);
+                }
+                if let Some(on) = change.autosend_dictated_prompts {
+                    c.assistants.set_autosends_dictated_prompts(id, on);
                 }
             })
             .await;

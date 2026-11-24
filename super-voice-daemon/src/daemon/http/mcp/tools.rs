@@ -42,13 +42,18 @@ const TICK: Duration = Duration::from_millis(100);
 
 /// Who a call is for: its session, whether the user lets its assistant
 /// announce, whether its `listen` calls are heard with the context they
-/// bring, whether its plugin shows Talk, and the hook that made the call, if
-/// one did.
+/// bring, whether its plugin shows Talk, whether it sends a prompt dictated
+/// into it by itself, and the hook that made the call, if one did.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each flag is one of the assistant's switches, as the call found them"
+)]
 pub(crate) struct CallContext {
     pub(crate) who: Who,
     pub(crate) announces: bool,
     pub(crate) uses_context: bool,
     pub(crate) shows_talk: bool,
+    pub(crate) autosends: bool,
     pub(crate) hook: Option<Hook>,
 }
 
@@ -56,9 +61,11 @@ pub(crate) struct CallContext {
 const NOT_SPOKEN_TO: &str = "The user typed this prompt, so answer in writing. Super Voice \
     speaks and listens only while the user is talking to you by voice.";
 
-/// What the assistant is told beside a prompt the user said aloud.
-const SPOKEN_NOTE: &str = "The user said this aloud, through Super Voice. Your reply will be \
-    read aloud to them: keep it short and plain to listen to, and end with any question you have.";
+/// What the assistant is told beside a prompt the user said aloud, so it
+/// answers for listening and works as it always does.
+const SPOKEN_NOTE: &str = "The user said this aloud, through Super Voice. Do the work as you \
+    normally would. Only your final reply is read aloud to them: keep that reply short and \
+    plain to listen to, and end it with any question you have.";
 
 /// Whether `who`'s plugin said the turn under way was typed.
 fn is_typed_turn(daemon: &SuperSTTDaemon, who: &Who) -> bool {
@@ -99,7 +106,7 @@ pub(crate) async fn run(
             listen(daemon, who, question, extra, cancel).await
         }
         Tool::Stop => Some(Ok(stop(daemon, who).await)),
-        Tool::Status => Some(Ok(status(daemon, who, call.shows_talk))),
+        Tool::Status => Some(Ok(status(daemon, who, call))),
         Tool::Announce { text } if call.announces => speak(daemon, who, text, cancel)
             .await
             .map(|said| said.map(|answer| for_caller(call, answer))),
@@ -163,6 +170,13 @@ pub(crate) async fn run(
                 serde_json::json!({ "read": read }).to_string(),
             )))
         }
+        Tool::Turn(TurnEvent::Draft { text }) => Some(Ok(serde_json::json!({
+            "dictated": daemon
+                .assistants
+                .dictation
+                .matches(&text, std::time::Instant::now()),
+        })
+        .to_string())),
     }
 }
 
@@ -353,13 +367,15 @@ fn is_speaking(daemon: &SuperSTTDaemon, who: &Who) -> bool {
             .is_some_and(|utterance| is_playing(daemon, &utterance))
 }
 
-/// Whether `who`'s own speech plays and whether it records, and whether the
-/// user shows its plugin's Talk, as JSON.
-fn status(daemon: &SuperSTTDaemon, who: &Who, shows_talk: bool) -> String {
+/// Whether `who`'s own speech plays and whether it records; whether the user
+/// shows its plugin's Talk, and lets it send a prompt dictated into it by
+/// itself; as JSON.
+fn status(daemon: &SuperSTTDaemon, who: &Who, call: &CallContext) -> String {
     serde_json::json!({
         "speaking": is_speaking(daemon, who),
         "listening": daemon.assistants.sessions.is_recording(who),
-        "talk": shows_talk,
+        "talk": call.shows_talk,
+        "autosend": call.autosends,
     })
     .to_string()
 }
@@ -617,6 +633,7 @@ mod tests {
             announces: true,
             uses_context: true,
             shows_talk: true,
+            autosends: true,
             hook: None,
         }
     }
@@ -713,7 +730,12 @@ mod tests {
         };
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&status).expect("JSON"),
-            serde_json::json!({ "speaking": false, "listening": false, "talk": true })
+            serde_json::json!({
+                "speaking": false,
+                "listening": false,
+                "talk": true,
+                "autosend": true,
+            })
         );
         // An utterance of its own that is not the one playing is not stopped.
         daemon
@@ -914,6 +936,29 @@ mod tests {
             let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
             assert_eq!(answer["spoken"], spoken, "{text}");
         }
+    }
+
+    /// A draft that holds what the user just dictated is said to, once: the
+    /// match uses the dictation up. A draft changes no turn.
+    #[tokio::test]
+    async fn a_draft_holding_the_dictation_is_said_to_once() {
+        let daemon = Arc::new(test_daemon().await);
+        let cancel = CancellationToken::new();
+        let draft = async |text: &str| -> serde_json::Value {
+            let tool = Tool::Turn(TurnEvent::Draft {
+                text: text.to_string(),
+            });
+            let answer = run(&daemon, tool, &call(), &cancel).await.unwrap().unwrap();
+            serde_json::from_str(&answer).unwrap()
+        };
+        assert_eq!(
+            draft("Please open the notes.").await,
+            serde_json::json!({ "dictated": false })
+        );
+        daemon.assistants.dictation.remember("Open the notes");
+        assert_eq!(draft("Please open the notes.").await["dictated"], true);
+        assert_eq!(draft("Please open the notes.").await["dictated"], false);
+        assert_eq!(daemon.assistants.sessions.spoken(&call().who), None);
     }
 
     /// A Codex hook reads the answer as its own output: the context beside a

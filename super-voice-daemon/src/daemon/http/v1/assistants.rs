@@ -27,7 +27,7 @@ use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
 
-/// The body of `PATCH /assistants/{id}`: any of the three switches.
+/// The body of `PATCH /assistants/{id}`: any of the switches.
 #[derive(Deserialize, ToSchema)]
 pub(crate) struct AssistantChange {
     /// Whether Super Voice says aloud when the assistant needs the user.
@@ -41,6 +41,10 @@ pub(crate) struct AssistantChange {
     /// Code's and `OpenCode`'s.
     #[serde(default)]
     pub(crate) show_talk: Option<bool>,
+    /// Whether the assistant's plugin sends a prompt the user dictated into
+    /// it by itself, after a countdown: Claude Code's.
+    #[serde(default)]
+    pub(crate) autosend_dictated_prompts: Option<bool>,
 }
 
 /// The body of `POST /assistants/keys`.
@@ -118,9 +122,10 @@ its config, and `connected` when Super Voice is in its config with a key of its 
 user. Claude Code, Codex and OpenCode announce, through their plugins. `conversation_context` says whether \
 its `listen` calls are heard with the context they bring from the conversation, on top of \
 the user's own. `show_talk` says whether its plugin shows Talk above the prompt, for Claude \
-Code and OpenCode, which have one. `sessions` are its open sessions on \
-the MCP server, oldest first: one conversation each, with its folder when the assistant \
-says, and whether speech it started is playing or it is recording.
+Code and OpenCode, which have one. `autosend_dictated_prompts` says whether its plugin sends \
+a prompt the user dictated into it by itself, after a countdown, for Claude Code. `sessions` \
+are its open sessions on the MCP server, oldest first: one conversation each, with its \
+folder when the assistant says, and whether speech it started is playing or it is recording.
 
 Also the keys made by hand for other MCP clients, without the keys themselves, each with \
 its sessions, and `address`, where an MCP client reaches Super Voice.
@@ -230,7 +235,10 @@ aloud when the assistant needs the user, like Claude Code's own notices that it 
 permission or an answer. `conversation_context`: whether its `listen` calls are heard \
 with the context they bring from the conversation. `show_talk`: whether its plugin shows \
 Talk above the prompt, for Claude Code and OpenCode; off, the plugin shows nothing there, \
-and the microphone does not open after a reply. Each is on until the user turns it off, \
+and the microphone does not open after a reply. `autosend_dictated_prompts`: whether Claude \
+Code's plugin sends a prompt the user dictated into it with Super Voice's shortcut by \
+itself, as spoken, after a 5 second countdown the user can stop by editing it; off, it waits \
+for Enter, and still counts as spoken. Each is on until the user turns it off, \
 and the next call reads it, in every session. Answers the whole list, as \
 `GET /assistants` does.",
     params(("id" = AssistantId, Path, description = "`claude-code`, `codex`, `opencode` or `antigravity`.")),
@@ -257,11 +265,13 @@ pub(crate) async fn change_assistant(
         announce_when_needed: body.announce_when_needed,
         conversation_context: body.conversation_context,
         show_talk: body.show_talk,
+        autosend_dictated_prompts: body.autosend_dictated_prompts,
     };
     if change.is_empty() {
         return refusal(
             ErrorCode::InvalidValue,
-            "name `announce_when_needed`, `conversation_context` or `show_talk`",
+            "name `announce_when_needed`, `conversation_context`, `show_talk` or \
+             `autosend_dictated_prompts`",
         );
     }
     answer(Ok(state

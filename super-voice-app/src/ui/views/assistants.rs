@@ -247,6 +247,16 @@ fn assistant_page<'a>(
                 }),
         );
     }
+    // Only Claude Code's plugin can read and send its prompt box.
+    if id == AssistantId::ClaudeCode {
+        switches = switches.add(
+            settings::item::builder(crate::fl!("autosend-dictated-prompts"))
+                .description(crate::fl!("autosend-dictated-prompts-description"))
+                .toggler(assistant.autosend_dictated_prompts, move |on| {
+                    message(AssistantsMessage::SetAutosendDictatedPrompts(id, on))
+                }),
+        );
+    }
     // The Antigravity CLI has no hook for when it needs the user.
     if id != AssistantId::Antigravity {
         switches = switches.add(
