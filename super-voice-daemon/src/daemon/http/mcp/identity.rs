@@ -6,8 +6,8 @@
 //! ([`crate::assistants::sessions::Sessions::resolve`]):
 //!
 //! 1. The argument `session`, `{ "id", "agent", "folder" }`, which Super
-//!    Voice's plugins add to every call. No tool declares it, so a model
-//!    never fills it.
+//!    Voice's plugins add to their own calls, and some to the model's. No
+//!    tool declares it.
 //! 2. Claude Code's `claudecode/sessionId` and `claudecode/agentId`.
 //! 3. Codex's `sessionId`, the conversation's root thread, and `threadId`,
 //!    an agent's own thread within it; the folder is the first git root in
