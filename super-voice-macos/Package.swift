@@ -22,7 +22,13 @@ let package = Package(
             dependencies: ["SuperVoiceFFI"],
             path: "Generated/SuperVoiceCore",
             swiftSettings: [.swiftLanguageMode(.v5)],
+            // What the core's library calls into. The audio frameworks are
+            // for cpal, the core's recorder and player: a release build
+            // strips that code when the app doesn't use it, a debug build
+            // keeps every object and needs them.
             linkerSettings: [
+                .linkedFramework("AudioToolbox"),
+                .linkedFramework("CoreAudio"),
                 .linkedFramework("CoreFoundation"),
                 .linkedFramework("Security"),
                 .linkedFramework("SystemConfiguration"),

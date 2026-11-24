@@ -48,6 +48,9 @@ struct NotesView: View {
             failure = "\(error)"
         }
         loaded = true
+        #if DEBUG
+        await Snapshot.pageReady()
+        #endif
     }
 
     /// The note's first line, which the list shows as its title.
