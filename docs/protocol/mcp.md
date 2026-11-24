@@ -124,9 +124,13 @@ The daemon tells apart the sessions of one assistant: one Claude Code session,
 one Codex thread. A tool call names its session by what the client says of
 itself, first match wins:
 
-1. The argument `session`, `{"id", "agent", "folder"}`. Super Voice's own
-   plugins add it to every call. No tool declares it, so a model never fills
-   it, and it is not a tool's own argument.
+1. The argument `session`, `{"id", "agent", "folder"}`. No tool declares
+   it, and it is not a tool's own argument. Super Voice's plugins add it to
+   every call they make themselves. OpenCode's and the Antigravity CLI's set
+   it on the model's calls too, over anything the model put there. Claude
+   Code's leaves the model's calls as they are, since auto mode approves a
+   call only as the model made it, and refuses one that fills `session`. The
+   daemon names the model's calls by their connection, item 3.
 2. `_meta`: Claude Code's `claudecode/sessionId` and `claudecode/agentId`;
    Codex's `sessionId` (the conversation) and `threadId` (an agent's thread,
    when it differs), with the folder from the first git root in

@@ -52,8 +52,10 @@ connecting sets to Super Voice's own (`http://127.0.0.1:7300/v1/mcp` unless
 you changed its port), with a key only Claude Code has: the plugin's secret
 `key` option, which connecting sets too, and Claude Code keeps with its own
 credentials. The plugin talks through that same connection, and names
-the session on every call, so Super Voice lists each open Claude Code session
-on the Assistants page, and `0` in one session never stops another's speech.
+the session on its own calls, which ties the connection to it. So Super Voice
+knows the session of Claude's own calls too, lists each open Claude Code
+session on the Assistants page, and `0` in one session never stops another's
+speech.
 Disconnecting Claude Code on the Assistants page takes the key away.
 
 ## Settings

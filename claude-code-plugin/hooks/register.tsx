@@ -48,8 +48,12 @@ const talk = atom(
 )
 const showsTalk = atom({ plugin: 'super-voice', key: 'showsTalk' } as const, true)
 
-/** This plugin's name, as `prompt.change` and `prompt.submit` name a plugin. */
+/** This plugin's name, as `prompt.change` and `prompt.submit` name a plugin,
+ * and `next.origin` the plugin that made a call. */
 const NAME = 'super-voice'
+/** Why Claude's call that names a session is refused. */
+const SESSION_NOT_AN_ARGUMENT =
+  '`session` is not an argument of this tool. Call it again without it.'
 /** How often to ask the daemon while speech may be playing. */
 const POLL_MS = 500
 /**
@@ -631,27 +635,31 @@ export const register: Register = on => {
     if (!MODEL_TOOLS.has(e.tool)) {
       return next(e)
     }
-    // This plugin's own calls, as Talk and reading a reply make them, name
-    // their session; Claude's never do, as no tool declares it. Claude Code
-    // runs a call this plugin makes inside one of its own hooks through this
-    // hook too, and reading a reply comes after its turn is over.
-    if ('session' in e) {
+    // This plugin's own calls, as Talk and reading a reply make them. Claude
+    // Code runs a call this plugin makes inside one of its own hooks through
+    // this hook too, and reading a reply comes after its turn is over.
+    if (next.origin.plugin === NAME) {
       return next(e)
+    }
+    // The session is this plugin's to name, and no tool declares it.
+    if ('session' in e) {
+      return { deny: SESSION_NOT_AN_ARGUMENT }
     }
     // Claude speaks only after being spoken to.
     if (!isTurnSpoken) {
       return { deny: NOT_SPOKEN_TO }
     }
-    // Named as this session, as the plugin's own calls are.
-    const named = { ...e, session: await sessionOf($) }
+    // The call goes on as Claude made it: auto mode's verdict holds only for
+    // that. Super Voice knows its session by its connection, which this
+    // plugin's own calls name.
     await watchSpeech($)
     if (e.tool !== LISTEN_TOOL) {
-      return next(named)
+      return next(e)
     }
     // Claude has the microphone: no Talk button until it is done.
     await update($, claudeListening, () => true)
     try {
-      return await next(named)
+      return await next(e)
     } finally {
       await update($, claudeListening, () => false)
     }
