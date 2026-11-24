@@ -36,7 +36,7 @@
           "assistants"
         ],
         "summary": "List the AI assistants (scope: settings)",
-        "description": "The AI assistants Super Voice can connect to, `claude-code`, `codex`, `opencode` and `antigravity`, and where each stands on this computer: `not_found` when the daemon finds neither its program nor its config, `found` when it is here and Super Voice is not in its config, and `connected` when Super Voice is in its config with a key of its own. `announce_when_needed` says whether Super Voice says aloud when the assistant needs the user. Claude Code, Codex and OpenCode announce, through their plugins. `conversation_context` says whether its `listen` calls are heard with the context they bring from the conversation, on top of the user's own. `show_talk` says whether its plugin shows Talk above the prompt, for Claude Code and OpenCode, which have one. `sessions` are its open sessions on the MCP server, oldest first: one conversation each, with its folder when the assistant says, and whether speech it started is playing or it is recording.\n\nAlso the keys made by hand for other MCP clients, without the keys themselves, each with its sessions, and `address`, where an MCP client reaches Super Voice.\n\nRead from the assistants' configs on every request, so an entry changed by hand shows here at once.",
+        "description": "The AI assistants Super Voice can connect to, `claude-code`, `codex`, `opencode` and `antigravity`, and where each stands on this computer: `not_found` when the daemon finds neither its program nor its config, `found` when it is here and Super Voice is not in its config, and `connected` when Super Voice is in its config with a key of its own. `announce_when_needed` says whether Super Voice says aloud when the assistant needs the user. Claude Code, Codex and OpenCode announce, through their plugins. `conversation_context` says whether its `listen` calls are heard with the context they bring from the conversation, on top of the user's own. `show_talk` says whether its plugin shows Talk above the prompt, for Claude Code and OpenCode, which have one. `autosend_dictated_prompts` says whether its plugin sends a prompt the user dictated into it by itself, after a countdown, for Claude Code. `sessions` are its open sessions on the MCP server, oldest first: one conversation each, with its folder when the assistant says, and whether speech it started is playing or it is recording.\n\nAlso the keys made by hand for other MCP clients, without the keys themselves, each with its sessions, and `address`, where an MCP client reaches Super Voice.\n\nRead from the assistants' configs on every request, so an entry changed by hand shows here at once.",
         "operationId": "list_assistants",
         "responses": {
           "200": {
@@ -363,7 +363,7 @@
           "assistants"
         ],
         "summary": "Change an assistant's switches (scope: settings)",
-        "description": "Sets any of the assistant's switches. `announce_when_needed`: whether Super Voice says aloud when the assistant needs the user, like Claude Code's own notices that it needs a permission or an answer. `conversation_context`: whether its `listen` calls are heard with the context they bring from the conversation. `show_talk`: whether its plugin shows Talk above the prompt, for Claude Code and OpenCode; off, the plugin shows nothing there, and the microphone does not open after a reply. Each is on until the user turns it off, and the next call reads it, in every session. Answers the whole list, as `GET /assistants` does.",
+        "description": "Sets any of the assistant's switches. `announce_when_needed`: whether Super Voice says aloud when the assistant needs the user, like Claude Code's own notices that it needs a permission or an answer. `conversation_context`: whether its `listen` calls are heard with the context they bring from the conversation. `show_talk`: whether its plugin shows Talk above the prompt, for Claude Code and OpenCode; off, the plugin shows nothing there, and the microphone does not open after a reply. `autosend_dictated_prompts`: whether Claude Code's plugin sends a prompt the user dictated into it with Super Voice's shortcut by itself, as spoken, after a 5 second countdown the user can stop by editing it; off, it waits for Enter, and still counts as spoken. Each is on until the user turns it off, and the next call reads it, in every session. Answers the whole list, as `GET /assistants` does.",
         "operationId": "change_assistant",
         "parameters": [
           {
@@ -10513,12 +10513,17 @@
           "state",
           "announce_when_needed",
           "conversation_context",
-          "show_talk"
+          "show_talk",
+          "autosend_dictated_prompts"
         ],
         "properties": {
           "announce_when_needed": {
             "type": "boolean",
             "description": "Whether Super Voice says aloud when the assistant needs the user, like\nClaude Code's own notices that it needs a permission or an answer.\nClaude Code, Codex and `OpenCode` announce, through their plugins."
+          },
+          "autosend_dictated_prompts": {
+            "type": "boolean",
+            "description": "Whether its plugin sends a prompt the user dictated into it with\nSuper Voice's shortcut by itself, after a countdown: Claude Code's."
           },
           "conversation_context": {
             "type": "boolean",
@@ -10545,7 +10550,7 @@
       },
       "AssistantChange": {
         "type": "object",
-        "description": "The body of `PATCH /assistants/{id}`: any of the three switches.",
+        "description": "The body of `PATCH /assistants/{id}`: any of the switches.",
         "properties": {
           "announce_when_needed": {
             "type": [
@@ -10553,6 +10558,13 @@
               "null"
             ],
             "description": "Whether Super Voice says aloud when the assistant needs the user."
+          },
+          "autosend_dictated_prompts": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the assistant's plugin sends a prompt the user dictated into\nit by itself, after a countdown: Claude Code's."
           },
           "conversation_context": {
             "type": [
