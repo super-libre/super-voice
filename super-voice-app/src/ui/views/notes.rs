@@ -10,6 +10,7 @@ use cosmic::Element;
 use cosmic::iced::widget::{column, row};
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, icon, settings, space::horizontal as horizontal_space, text};
+use super_voice_app_core::pages::notes::Input;
 use super_voice_shared::models::recording_stop_mode::RecordingStopMode;
 
 use super::common::{LEVEL_METER_WIDTH, error_banner, muted};
@@ -31,6 +32,11 @@ const EDITOR_MIN_HEIGHT: f32 = 320.0;
 
 fn notes_message(message: NotesMessage) -> Message {
     Message::Notes(message)
+}
+
+/// A press the page's logic handles.
+fn notes_input(input: Input) -> Message {
+    Message::Notes(NotesMessage::Page(input))
 }
 
 /// The Notes tab.
@@ -85,7 +91,7 @@ fn recorder<'a>(app: &'a AppModel, take: Option<&'a NoteTake>) -> Element<'a, Me
                 .description(description)
                 .control(
                     button::suggested(crate::fl!("record"))
-                        .on_press_maybe(free.then(|| notes_message(NotesMessage::Record))),
+                        .on_press_maybe(free.then(|| notes_input(Input::Record))),
                 ),
         )
         .into()
@@ -122,7 +128,7 @@ fn take_section<'a>(app: &'a AppModel, take: &'a NoteTake) -> Element<'a, Messag
     let stop = if take.stopping {
         button::destructive(crate::fl!("stopping"))
     } else {
-        button::destructive(crate::fl!("stop")).on_press(notes_message(NotesMessage::Stop))
+        button::destructive(crate::fl!("stop")).on_press(notes_input(Input::Stop))
     };
     let status = row![text::body(heard), stop]
         .spacing(spacing.space_s)
@@ -205,7 +211,7 @@ fn note_row(note: &Note, today: NaiveDate) -> widget::list::ListButton<'_, Messa
     .spacing(spacing.space_s)
     .align_y(Alignment::Center)
     .padding([spacing.space_xxs, 0]);
-    widget::list::button(content).on_press(notes_message(NotesMessage::Open(note.id.clone())))
+    widget::list::button(content).on_press(notes_input(Input::Open(note.id.clone())))
 }
 
 /// The open note, in the list's place: back to the list, when it was made,
@@ -217,7 +223,7 @@ fn open_note<'a>(app: &'a AppModel, open: &'a OpenNote) -> Vec<Element<'a, Messa
 
     let back = button::text(crate::fl!("all-notes"))
         .leading_icon(icon::from_name("go-previous-symbolic"))
-        .on_press(notes_message(NotesMessage::Close));
+        .on_press(notes_input(Input::Close));
 
     let title = state
         .note(&open.id)
@@ -268,21 +274,19 @@ fn actions(app: &AppModel) -> Element<'_, Message> {
     let delete: Element<'_, Message> = if state.confirming_delete {
         row![
             text::body(crate::fl!("delete-this-note")),
-            button::text(crate::fl!("cancel"))
-                .on_press(notes_message(NotesMessage::DeleteCancelled)),
-            button::destructive(crate::fl!("delete"))
-                .on_press(notes_message(NotesMessage::DeleteConfirmed)),
+            button::text(crate::fl!("cancel")).on_press(notes_input(Input::DeleteCancelled)),
+            button::destructive(crate::fl!("delete")).on_press(notes_input(Input::DeleteConfirmed)),
         ]
         .spacing(spacing.space_xs)
         .align_y(Alignment::Center)
         .into()
     } else {
         button::destructive(crate::fl!("delete"))
-            .on_press(notes_message(NotesMessage::DeleteRequested))
+            .on_press(notes_input(Input::DeleteRequested))
             .into()
     };
     let dictate = button::suggested(crate::fl!("dictate-more"))
-        .on_press_maybe(free.then(|| notes_message(NotesMessage::DictateMore)));
+        .on_press_maybe(free.then(|| notes_input(Input::DictateMore)));
     let why: Element<'_, Message> = match unready {
         Some(reason) => muted(text::caption(reason)),
         None => horizontal_space().into(),
@@ -291,7 +295,7 @@ fn actions(app: &AppModel) -> Element<'_, Message> {
         delete,
         horizontal_space(),
         why,
-        button::standard(crate::fl!("export")).on_press(notes_message(NotesMessage::Export)),
+        button::standard(crate::fl!("export")).on_press(notes_input(Input::Export)),
         dictate,
     ]
     .spacing(spacing.space_xs)

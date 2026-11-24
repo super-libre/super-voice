@@ -15,6 +15,10 @@ pub trait TextBuffer {
 
     /// The text the buffer holds.
     fn text(&self) -> String;
+
+    /// Replace the whole text, leaving the cursor at its end: where words
+    /// dictated into an open note go, and where the user carries on typing.
+    fn replace_text(&mut self, text: &str);
 }
 
 /// The plain buffer, for an app with nothing better and for the tests.
@@ -25,5 +29,9 @@ impl TextBuffer for String {
 
     fn text(&self) -> String {
         self.clone()
+    }
+
+    fn replace_text(&mut self, text: &str) {
+        text.clone_into(self);
     }
 }
