@@ -245,7 +245,7 @@ Super Voice is a Rust workspace:
 |----------------------------|------------------------------------------------------------------|
 | `super-voice-daemon`         | The engine: installs backends, loads models, serves the protocol |
 | `super-voice-app`          | Desktop settings & management app                                |
-| `super-voice-app-core`     | What the apps share, with no UI library: the daemon client       |
+| `super-voice-app-core`     | What the apps share, with no UI library: client, notes, audio    |
 | `super-voice-cli`          | The `voice` command-line client, for both features               |
 | `super-voice-consent`        | Consent-popup helper for the auth handshake                      |
 | `super-voice-shared`         | Common types, protocol definitions, validation                   |
