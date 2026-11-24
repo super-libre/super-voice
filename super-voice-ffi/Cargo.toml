@@ -18,14 +18,14 @@
     path = "src/bin/uniffi-bindgen.rs"
 
 [dependencies]
-    super-voice-app-core = { path = "../super-voice-app-core" }
-    thiserror.workspace = true
-    # `tokio`: the core's async calls run on tokio, so an exported async
-    # function needs a tokio runtime under it. `cli`: the bindgen binary.
-    uniffi = { version = "0.32.2", features = ["cli", "tokio"] }
-
-[dev-dependencies]
+    # Note times go out as seconds since 1970, read in local time.
     chrono.workspace = true
+    futures-util.workspace = true
+    super-voice-app-core = { path = "../super-voice-app-core" }
+    # The stores run their work on a runtime of their own.
+    tokio.workspace = true
+    # `cli`: the bindgen binary.
+    uniffi = { version = "0.32.2", features = ["cli"] }
 
 [lints]
     workspace = true
