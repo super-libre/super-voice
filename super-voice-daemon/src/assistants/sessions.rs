@@ -89,6 +89,9 @@ struct Entry {
     /// its speech while it waits for the model and is made, before any
     /// utterance plays.
     speaking: Option<AbortHandle>,
+    /// How many times its speech was stopped, so a speech of its own waiting
+    /// its turn knows the user asked for quiet.
+    stops: u64,
     recordings: usize,
     /// Whether the turn under way was spoken, once its plugin has said.
     spoken: Option<bool>,
@@ -214,6 +217,18 @@ impl Sessions {
     /// `who` asked to speak, on `task`.
     pub fn asked_to_speak(&self, who: &Who, task: AbortHandle) {
         self.with(who, |entry| entry.speaking = Some(task));
+    }
+
+    /// `who`'s speech was stopped: a speech of its own waiting its turn is
+    /// not said.
+    pub fn speech_stopped(&self, who: &Who) {
+        self.with(who, |entry| entry.stops += 1);
+    }
+
+    /// How many times `who`'s speech was stopped.
+    #[must_use]
+    pub fn stops(&self, who: &Who) -> u64 {
+        self.read(who, |entry| entry.stops).unwrap_or(0)
     }
 
     /// The task making `who`'s last speech, while it is still at it.
@@ -364,6 +379,7 @@ impl Sessions {
                 opened: false,
                 utterance: None,
                 speaking: None,
+                stops: 0,
                 recordings: 0,
                 spoken: None,
                 prompt: None,

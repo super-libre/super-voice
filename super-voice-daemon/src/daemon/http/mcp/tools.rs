@@ -61,6 +61,9 @@ pub(crate) struct CallContext {
 const NOT_SPOKEN_TO: &str = "The user typed this prompt, so answer in writing. Super Voice \
     speaks and listens only while the user is talking to you by voice.";
 
+/// Why a `speak` waiting for the session's speech to end was not said.
+const NOT_SAID_STOPPED: &str = "Not said: the user stopped your speech while this waited its turn.";
+
 /// What the assistant is told beside a prompt the user said aloud, so it
 /// answers for listening and works as it always does.
 const SPOKEN_NOTE: &str = "The user said this aloud, through Super Voice. Do the work as you \
@@ -98,10 +101,21 @@ pub(crate) async fn run(
         {
             Some(Err(NOT_SPOKEN_TO.to_string()))
         }
-        Tool::Speak { text, .. } => speak(daemon, who, text, cancel).await,
+        // What the user asked to hear, like a reply read again, speaks at once.
+        Tool::Speak { text, asked: true } => speak(daemon, who, text, cancel).await,
+        Tool::Speak { text, asked: false } => speak_in_turn(daemon, who, text, cancel).await,
         Tool::Listen {
-            question, context, ..
+            question,
+            context,
+            asked,
         } => {
+            // The model's own speech plays to its end first: `speak` answers
+            // as soon as the speech starts, and a question or a recording
+            // would cut it off. What the user asked for, like Talk, does not
+            // wait: they mean to talk over it.
+            if !asked && !own_speech_ended(daemon, who, cancel).await {
+                return None;
+            }
             let extra = take_context(question.as_deref(), context, call.uses_context);
             listen(daemon, who, question, extra, cancel).await
         }
@@ -317,6 +331,26 @@ async fn speak(
     }
 }
 
+/// The model's `speak`: said once `who`'s own speech has ended, not over it,
+/// as `speak` answers as soon as the speech starts. Stopped meanwhile, it is
+/// not said at all.
+async fn speak_in_turn(
+    daemon: &Arc<SuperSTTDaemon>,
+    who: &Who,
+    text: String,
+    cancel: &CancellationToken,
+) -> Option<Result<String, String>> {
+    let sessions = &daemon.assistants.sessions;
+    let stops = sessions.stops(who);
+    if !own_speech_ended(daemon, who, cancel).await {
+        return None;
+    }
+    if sessions.stops(who) != stops {
+        return Some(Ok(NOT_SAID_STOPPED.to_string()));
+    }
+    speak(daemon, who, text, cancel).await
+}
+
 /// Stop `who`'s own speech, if it still plays, and end its own recording,
 /// which is transcribed all the same. Another session's are left alone.
 async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
@@ -324,14 +358,18 @@ async fn stop(daemon: &SuperSTTDaemon, who: &Who) -> String {
     let mut stopped = Vec::new();
     // Its speech still waiting for the model, or still being made, is called
     // off; what of it already plays is silenced.
+    // Each stop is counted before the speech ends, so a speech of the
+    // session's waiting its turn sees why it ended.
     let making = sessions.speaking(who);
     if let Some(task) = &making {
+        sessions.speech_stopped(who);
         task.abort();
     }
     let playing = sessions
         .utterance(who)
         .filter(|utterance| is_playing(daemon, utterance));
     if let Some(utterance) = &playing {
+        sessions.speech_stopped(who);
         silence_if_speaking(daemon, utterance).await;
     }
     if making.is_some() || playing.is_some() {
@@ -365,6 +403,28 @@ fn is_speaking(daemon: &SuperSTTDaemon, who: &Who) -> bool {
         || sessions
             .utterance(who)
             .is_some_and(|utterance| is_playing(daemon, &utterance))
+}
+
+/// Wait until `who`'s own speech has ended: waited for the model, been made,
+/// and played. `false` when the call was cancelled first.
+async fn own_speech_ended(daemon: &SuperSTTDaemon, who: &Who, cancel: &CancellationToken) -> bool {
+    // Before looking, so the speech's end is never missed.
+    let mut states = daemon.events.subscribe(Topic::SpeakingState);
+    let mut listening = true;
+    while is_speaking(daemon, who) {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => return false,
+            // Speech started or stopped: look again.
+            changed = states.recv_json_str(), if listening => {
+                if matches!(changed, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
+                    listening = false;
+                }
+            }
+            () = tokio::time::sleep(TICK) => {}
+        }
+    }
+    true
 }
 
 /// Whether `who`'s own speech plays and whether it records; whether the user
@@ -787,6 +847,219 @@ mod tests {
             stop(&daemon, &mine.who).await,
             "Nothing of this session's was playing or recording."
         );
+    }
+
+    /// The model's `listen` lets the session's own speech finish first, so
+    /// its question or recording never cuts off what the model just said.
+    #[tokio::test]
+    async fn a_models_listen_waits_for_its_own_speech() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = call();
+        let speech = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, speech.abort_handle());
+        let listening = tokio::spawn({
+            let daemon = Arc::clone(&daemon);
+            async move {
+                run(
+                    &daemon,
+                    Tool::Listen {
+                        question: Some("Did you hear it?".to_string()),
+                        context: None,
+                        asked: false,
+                    },
+                    &call(),
+                    &CancellationToken::new(),
+                )
+                .await
+            }
+        });
+        tokio::time::sleep(TICK * 3).await;
+        assert!(!listening.is_finished(), "it waits while the speech plays");
+
+        speech.abort();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), listening)
+            .await
+            .expect("it goes on once the speech ends")
+            .expect("the call runs to its end");
+        assert!(matches!(outcome, Some(Err(_))), "{outcome:?}");
+    }
+
+    /// The user's own `listen`, as Talk asks for it, records at once: the
+    /// user means to talk over the speech.
+    #[tokio::test]
+    async fn a_listen_the_user_asked_for_does_not_wait() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = call();
+        let speech = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, speech.abort_handle());
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(5),
+            run(
+                &daemon,
+                Tool::Listen {
+                    question: None,
+                    context: None,
+                    asked: true,
+                },
+                &mine,
+                &CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("it does not wait for the speech");
+        let Some(Err(text)) = outcome else {
+            panic!("expected an error, got {outcome:?}");
+        };
+        assert!(text.contains("speech to text model"), "{text}");
+        speech.abort();
+    }
+
+    /// A model's `listen` cancelled while it waits for the session's speech
+    /// answers nothing, and never asks or records.
+    #[tokio::test]
+    async fn a_listen_cancelled_while_it_waits_answers_nothing() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = call();
+        let speech = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, speech.abort_handle());
+        let cancel = CancellationToken::new();
+        let listening = tokio::spawn({
+            let daemon = Arc::clone(&daemon);
+            let cancel = cancel.clone();
+            async move {
+                run(
+                    &daemon,
+                    Tool::Listen {
+                        question: None,
+                        context: None,
+                        asked: false,
+                    },
+                    &call(),
+                    &cancel,
+                )
+                .await
+            }
+        });
+        tokio::time::sleep(TICK * 3).await;
+        cancel.cancel();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), listening)
+            .await
+            .expect("the cancel ends the wait")
+            .expect("the call runs to its end");
+        assert_eq!(outcome, None);
+        assert!(!daemon.recording.is_busy());
+        speech.abort();
+    }
+
+    /// The model's `speak` lets the session's own speech finish first, so
+    /// two in a row are both heard, in order.
+    #[tokio::test]
+    async fn a_models_speak_waits_for_its_own_speech() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = call();
+        let speech = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, speech.abort_handle());
+        let speaking = tokio::spawn({
+            let daemon = Arc::clone(&daemon);
+            async move {
+                run(
+                    &daemon,
+                    Tool::Speak {
+                        text: "And then this.".to_string(),
+                        asked: false,
+                    },
+                    &call(),
+                    &CancellationToken::new(),
+                )
+                .await
+            }
+        });
+        tokio::time::sleep(TICK * 3).await;
+        assert!(!speaking.is_finished(), "it waits while the speech plays");
+
+        speech.abort();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), speaking)
+            .await
+            .expect("it goes on once the speech ends")
+            .expect("the call runs to its end");
+        // There is no model to speak with: it tried.
+        assert!(matches!(outcome, Some(Err(_))), "{outcome:?}");
+    }
+
+    /// What the user asked to hear, like a reply read again, speaks at once.
+    #[tokio::test]
+    async fn a_speak_the_user_asked_for_does_not_wait() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = call();
+        let speech = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, speech.abort_handle());
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(5),
+            run(
+                &daemon,
+                Tool::Speak {
+                    text: "Read again.".to_string(),
+                    asked: true,
+                },
+                &mine,
+                &CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("it does not wait for the speech");
+        assert!(matches!(outcome, Some(Err(_))), "{outcome:?}");
+        speech.abort();
+    }
+
+    /// A `speak` waiting its turn when the user stops the session's speech is
+    /// not said: the user asked for quiet.
+    #[tokio::test]
+    async fn a_waiting_speak_is_not_said_once_the_user_stops() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = call();
+        let speech = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, speech.abort_handle());
+        let speaking = tokio::spawn({
+            let daemon = Arc::clone(&daemon);
+            async move {
+                run(
+                    &daemon,
+                    Tool::Speak {
+                        text: "And then this.".to_string(),
+                        asked: false,
+                    },
+                    &call(),
+                    &CancellationToken::new(),
+                )
+                .await
+            }
+        });
+        tokio::time::sleep(TICK * 3).await;
+        assert_eq!(stop(&daemon, &mine.who).await, "Stopped its speech.");
+        let outcome = tokio::time::timeout(Duration::from_secs(5), speaking)
+            .await
+            .expect("the stop ends the wait")
+            .expect("the call runs to its end");
+        // Ok, not the missing model's error: it never tried to speak.
+        assert_eq!(outcome, Some(Ok(NOT_SAID_STOPPED.to_string())));
     }
 
     /// A question whose `listen` was cancelled while it waited for the model
