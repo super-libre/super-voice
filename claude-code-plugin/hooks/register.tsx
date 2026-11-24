@@ -493,6 +493,11 @@ async function tick($: EngineInterface) {
   isTurnSpoken = true
   talked = undefined
   await setArmed($, false)
+  // Nor can the prompt carry the note a hook adds to a spoken one: Claude
+  // gets it as a row of its own, which goes out with the prompt's turn.
+  await $.session
+    .append({ message: { type: 'user', content: [{ type: 'text', text: SPOKEN_NOTE }] } })
+    .catch(() => undefined)
   // The words are the user's own, so Claude reads them bare. Hooks and
   // permission checks still see this mod as the sender.
   await $.prompt.submit({ text: box.text, asUser: true }).catch(() => {
