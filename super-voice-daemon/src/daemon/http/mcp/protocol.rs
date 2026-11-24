@@ -395,8 +395,8 @@ fn tools(access: Access) -> Vec<Value> {
             "name": "speak",
             "title": "Speak",
             "description": "Say text aloud on the user's speakers, in the voice they chose in Super Voice. \
-                Returns once all of it is made, while its end may still be playing. Newer speech \
-                interrupts older.",
+                Returns once all of it is made, while its end may still be playing. Your own \
+                speech still playing finishes first; other speech can interrupt it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
