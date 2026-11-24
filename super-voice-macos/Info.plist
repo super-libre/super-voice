@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist for the SwiftUI app, which `just macos-swift-app` assembles.
+
+  Its own identifier, apart from the libcosmic app's, while the two exist side
+  by side: the Keychain grants access by signature, and the two must not
+  replace each other's session token.
+
+  Two placeholders are substituted when the bundle is built:
+
+    __VERSION__   the workspace version, as the version users see
+    __BUILD__     the same without any pre-release suffix (0.2.2-beta.3 ->
+                  0.2.2), since LaunchServices compares this one as numbers
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Super Voice</string>
+    <key>CFBundleName</key>
+    <string>Super Voice</string>
+    <key>CFBundleExecutable</key>
+    <string>SuperVoice</string>
+    <key>CFBundleIdentifier</key>
+    <string>ai.menjivar.super-voice-swift</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__BUILD__</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>

@@ -1,0 +1,31 @@
+[package]
+    name = "super-voice-ffi"
+    version.workspace = true
+    authors.workspace = true
+    edition.workspace = true
+    description = "super-voice-app-core for apps written in other languages, through UniFFI"
+    repository = "https://github.com/super-libre/super-voice"
+    license = "GPL-3.0-only"
+
+# `staticlib` is what the SwiftUI app links. `cdylib` is what `uniffi-bindgen`
+# reads the exported interface from (`--library`). `lib` keeps the crate
+# usable from Rust, for the bindgen binary and the tests.
+[lib]
+    crate-type = ["lib", "staticlib", "cdylib"]
+
+[[bin]]
+    name = "uniffi-bindgen"
+    path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+    super-voice-app-core = { path = "../super-voice-app-core" }
+    thiserror.workspace = true
+    # `tokio`: the core's async calls run on tokio, so an exported async
+    # function needs a tokio runtime under it. `cli`: the bindgen binary.
+    uniffi = { version = "0.32.2", features = ["cli", "tokio"] }
+
+[dev-dependencies]
+    chrono.workspace = true
+
+[lints]
+    workspace = true

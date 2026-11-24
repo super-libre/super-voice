@@ -71,7 +71,7 @@ service_dst := systemd_unit_dir / service_file
 # Named as a list rather than reached with `--workspace --exclude` so the
 # macOS gates say what they cover, and so a new portable crate has to be added
 # deliberately rather than silently skipped.
-macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app-core -p super-voice-app'
+macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app-core -p super-voice-ffi -p super-voice-app'
 
 # macOS ships as one app bundle, `Super Voice.app`: the settings app is its
 # executable, and the daemon and the CLI sit beside it in Contents/MacOS. The
@@ -478,6 +478,86 @@ bundle-macos:
     codesign --verify --strict "$bundle"
 
     echo "✓ Built $bundle ($version)"
+
+# The SwiftUI app for macOS, on super-voice-app-core through the `UniFFI`
+# bindings in super-voice-ffi. An early version: it shows the notes.
+#
+# Four steps: the core as a static library (and a dynamic one, which
+# uniffi-bindgen reads the exported interface from); the Swift bindings and C
+# header generated from it, into super-voice-macos/Generated; the Swift
+# package; and the bundle, `target/<config>/Super Voice (SwiftUI).app`, signed
+# ad hoc. Beside the libcosmic app, not in place of it.
+#
+# `config` is the Swift package's: `release`, or `debug` for a build that can
+# take a screenshot of itself (see `macos-swift-shot`). The core is always a
+# release build.
+#
+# Usage: just macos-swift-app [release|debug]
+macos-swift-app config="release":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "$(uname)" != Darwin ]; then
+        echo "❌ macos-swift-app builds on macOS only" >&2
+        exit 1
+    fi
+
+    # The macOS the Swift package targets (Package.swift), for the Rust code and
+    # the C code its dependencies build too, so they don't target this Mac's.
+    export MACOSX_DEPLOYMENT_TARGET=14.0
+    cargo build -p super-voice-ffi --release --lib
+
+    gen=super-voice-macos/Generated
+    rm -rf "$gen"
+    mkdir -p "$gen/SuperVoiceCore" "$gen/headers" "$gen/bindings"
+    cargo run -p super-voice-ffi --bin uniffi-bindgen -- generate \
+        --library target/release/libsuper_voice_ffi.dylib \
+        --language swift --out-dir "$gen/bindings"
+    mv "$gen/bindings/super_voice_ffi.swift" "$gen/SuperVoiceCore/"
+    mv "$gen/bindings/super_voice_ffiFFI.h" "$gen/headers/"
+    # An xcframework's headers carry their module map under this one name.
+    mv "$gen/bindings/super_voice_ffiFFI.modulemap" "$gen/headers/module.modulemap"
+    xcodebuild -create-xcframework \
+        -library target/release/libsuper_voice_ffi.a -headers "$gen/headers" \
+        -output "$gen/SuperVoiceFFI.xcframework" >/dev/null
+
+    swift build --package-path super-voice-macos -c {{ config }}
+    bin=$(swift build --package-path super-voice-macos -c {{ config }} --show-bin-path)
+
+    bundle="target/{{ config }}/Super Voice (SwiftUI).app"
+    rm -rf "$bundle"
+    mkdir -p "$bundle/Contents/MacOS"
+    version=$(cargo pkgid -p super-voice-ffi | sed 's/.*[#@]//')
+    sed -e "s|__VERSION__|$version|g" -e "s|__BUILD__|${version%%-*}|g" \
+        super-voice-macos/Info.plist > "$bundle/Contents/Info.plist"
+    cp "$bin/SuperVoice" "$bundle/Contents/MacOS/"
+    codesign --force --sign - "$bundle"
+    codesign --verify --strict "$bundle"
+
+    echo "✓ Built $bundle ($version)"
+
+# Screenshot the SwiftUI app's window into `out`, a PNG.
+#
+# A debug build draws its own window once the page has loaded, at one size,
+# and quits: no Screen Recording permission, so it works over ssh. It reads the
+# sample notes in super-voice-macos/Fixtures, not yours.
+#
+# Usage: just macos-swift-shot notes.png
+macos-swift-shot out: (macos-swift-app "debug")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="$(cd "$(dirname "{{ out }}")" && pwd)/$(basename "{{ out }}")"
+    rm -f "$out"
+    # A new instance (-n), so a copy already open can't take the request and
+    # ignore the environment; -W waits for it to quit.
+    open -n -W \
+        --env SUPER_VOICE_SNAPSHOT="$out" \
+        --env XDG_DATA_HOME="$PWD/super-voice-macos/Fixtures" \
+        "target/debug/Super Voice (SwiftUI).app"
+    if [ ! -s "$out" ]; then
+        echo "❌ no screenshot at $out" >&2
+        exit 1
+    fi
+    echo "✓ $out"
 
 # Render the macOS app icon into an .icns at `out`, from the SVG the Linux
 # desktop entry uses. See super-voice-app/resources/macos/app-icon.swift.
