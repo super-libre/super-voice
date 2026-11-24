@@ -128,7 +128,7 @@ impl AppModel {
             StageMessage::BlockFailed { stage, message } => {
                 log::warn!("Could not read the {stage:?} stage: {message}");
                 self.set_action_error(
-                    stage.error_scope(),
+                    crate::state::ErrorScope::from(stage),
                     format!("Couldn't save the {}: {message}", stage.noun()),
                 );
                 // The failure ends the operation too, and the banner above is
@@ -163,7 +163,7 @@ impl AppModel {
             BlockStage::PostProcessing => self.post_processor = block,
             BlockStage::Synthesis => self.synthesis = block,
         }
-        self.clear_action_error(stage.error_scope());
+        self.clear_action_error(crate::state::ErrorScope::from(stage));
         // These stages have no completion event of their own: the daemon's
         // `ready` reports transcription's load, and nothing reports theirs,
         // so the progress and loading lines would otherwise sit on the card
@@ -459,7 +459,7 @@ impl AppModel {
         self.staged_picks
             .stage_model(stage, source.clone(), model.clone());
         if let Some(block) = stage.block() {
-            self.clear_action_error(block.error_scope());
+            self.clear_action_error(crate::state::ErrorScope::from(block));
         }
         Task::batch([
             Self::load_staged_devices(stage, source.clone(), model.clone()),

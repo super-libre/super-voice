@@ -15,18 +15,18 @@ pub mod registry;
 pub mod scripts;
 pub mod shortcuts;
 pub mod speech;
-pub mod stage;
 pub mod stage_catalog;
 pub mod staged_picks;
 pub mod update;
-pub mod voice;
 pub mod voices;
 
 // Re-export commonly used types
 pub use models::{
-    ActionError, AudioTheme, ContextPage, DaemonStatus, ErrorScope, LanguageResolution, MenuAction,
-    ModelsTab, Page, RecordingStatus, Section,
+    ActionError, AudioTheme, ContextPage, DaemonStatus, ErrorScope, MenuAction, ModelsTab, Page,
+    RecordingStatus, Section,
 };
 pub use speech::{SpeakingStatus, SpeechState};
-pub use stage::{BlockStage, Stage};
-pub use voice::{VoiceChoice, VoiceResolution, VoiceState};
+// The types the daemon client reads into live with it, in the core crate.
+pub use super_voice_app_core::state::{
+    BlockStage, LanguageResolution, Stage, VoiceChoice, VoiceResolution, VoiceState,
+};

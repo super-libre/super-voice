@@ -9,14 +9,14 @@
 //! Neighbours that are about settings without being one: [`super::gpu_info`],
 //! [`super::models`], [`super::update`].
 
-pub(crate) mod audio_theme;
-pub(crate) mod idle_unload;
-pub(crate) mod language;
-pub(crate) mod notification_method;
-pub(crate) mod preview_typing;
-pub(crate) mod read_method;
-pub(crate) mod recording_stop_mode;
-pub(crate) mod update_beta_optin;
-pub(crate) mod update_check_enabled;
-pub(crate) mod volume;
-pub(crate) mod write_method;
+pub mod audio_theme;
+pub mod idle_unload;
+pub mod language;
+pub mod notification_method;
+pub mod preview_typing;
+pub mod read_method;
+pub mod recording_stop_mode;
+pub mod update_beta_optin;
+pub mod update_check_enabled;
+pub mod volume;
+pub mod write_method;

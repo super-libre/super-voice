@@ -1,0 +1,35 @@
+[package]
+    name = "super-voice-app-core"
+    version.workspace = true
+    authors.workspace = true
+    edition.workspace = true
+    description = "What Super Voice's apps share, with no UI library: the daemon client and the types it reads"
+    repository = "https://github.com/super-libre/super-voice"
+    license = "GPL-3.0-only"
+
+# No UI library here, on purpose. Each app (libcosmic on Linux today) draws on
+# top of this crate, so whatever lands here has to work for all of them.
+[dependencies]
+    futures-util.workspace = true
+    log.workspace = true
+    serde.workspace = true
+    serde_json.workspace = true
+    super-voice-shared = { path = "../super-voice-shared" }
+    tokio.workspace = true
+    urlencoding = "2.1.3"
+
+[dev-dependencies]
+    # The `v1/` wrapper tests drive each call against a fake daemon served on a
+    # Unix socket (see `daemon/client/tests/fake_daemon.rs`), so the request the
+    # wrapper actually builds is the thing under test. Same HTTP stack the real
+    # daemon serves with.
+    http-body-util = "0.1"
+    hyper = { version = "1", features = ["http1", "server"] }
+    hyper-util = { version = "0.1", features = ["tokio"] }
+    # The path and response-key contract tests check the client against the
+    # OpenAPI document the daemon builds from its router. Taken from the crate
+    # rather than a file so the tests need nothing generated first.
+    super-voice-daemon = { path = "../super-voice-daemon" }
+
+[lints]
+    workspace = true

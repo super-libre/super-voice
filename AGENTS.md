@@ -5,6 +5,7 @@
   - `super-voice-daemon`: the one daemon, for speech to text and text to speech (ML, audio, D-Bus, model mgmt). Text to speech is its `tts` module.
   - `super-voice-consent`, `super-voice-registry-types`, `super-voice-indexer`: the consent dialog, the backend manifest spec, the registry indexer.
   - `super-voice-app`: the settings app (COSMIC/iced), for both features.
+  - `super-voice-app-core`: what the apps share, with no UI library: the daemon client and the types it reads.
   - `super-voice-cli`: the `voice` command, for both features.
   - `super-voice-shared`: the client library, for both features. Text to speech's own types are its `tts` module.
 - Tests/tooling: Python scripts at repo root (e.g., `test_download_progress.py`).

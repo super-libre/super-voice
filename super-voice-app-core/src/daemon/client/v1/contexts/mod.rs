@@ -12,7 +12,7 @@
 //! reason the daemon's side is: those macros are for a path with one value and
 //! no parameter, and every path here has an id in it.
 
-pub(crate) mod backend;
+pub mod backend;
 
 use crate::daemon::client::internal::response::require_unit;
 use crate::daemon::client::internal::session::with_settings_token;

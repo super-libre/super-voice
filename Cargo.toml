@@ -2,6 +2,7 @@
   resolver        = "2"
   members         = [
     "super-voice-app",
+    "super-voice-app-core",
     "super-voice-cli",
     "super-voice-consent",
     "super-voice-daemon",
@@ -25,6 +26,7 @@
   # `cargo build`/`run`/`test` (no `--workspace`) stays lean.
   default-members = [
     "super-voice-app",
+    "super-voice-app-core",
     "super-voice-cli",
     "super-voice-consent",
     "super-voice-daemon",
