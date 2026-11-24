@@ -100,8 +100,17 @@ pub(crate) async fn run(
         }
         Tool::Speak { text, .. } => speak(daemon, who, text, cancel).await,
         Tool::Listen {
-            question, context, ..
+            question,
+            context,
+            asked,
         } => {
+            // The model's own speech plays to its end first: `speak` answers
+            // as soon as the speech starts, and a question or a recording
+            // would cut it off. What the user asked for, like Talk, does not
+            // wait: they mean to talk over it.
+            if !asked && !own_speech_ended(daemon, who, cancel).await {
+                return None;
+            }
             let extra = take_context(question.as_deref(), context, call.uses_context);
             listen(daemon, who, question, extra, cancel).await
         }
@@ -365,6 +374,28 @@ fn is_speaking(daemon: &SuperSTTDaemon, who: &Who) -> bool {
         || sessions
             .utterance(who)
             .is_some_and(|utterance| is_playing(daemon, &utterance))
+}
+
+/// Wait until `who`'s own speech has ended: waited for the model, been made,
+/// and played. `false` when the call was cancelled first.
+async fn own_speech_ended(daemon: &SuperSTTDaemon, who: &Who, cancel: &CancellationToken) -> bool {
+    // Before looking, so the speech's end is never missed.
+    let mut states = daemon.events.subscribe(Topic::SpeakingState);
+    let mut listening = true;
+    while is_speaking(daemon, who) {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => return false,
+            // Speech started or stopped: look again.
+            changed = states.recv_json_str(), if listening => {
+                if matches!(changed, Err(tokio::sync::broadcast::error::RecvError::Closed)) {
+                    listening = false;
+                }
+            }
+            () = tokio::time::sleep(TICK) => {}
+        }
+    }
+    true
 }
 
 /// Whether `who`'s own speech plays and whether it records; whether the user
@@ -787,6 +818,117 @@ mod tests {
             stop(&daemon, &mine.who).await,
             "Nothing of this session's was playing or recording."
         );
+    }
+
+    /// The model's `listen` lets the session's own speech finish first, so
+    /// its question or recording never cuts off what the model just said.
+    #[tokio::test]
+    async fn a_models_listen_waits_for_its_own_speech() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = call();
+        let speech = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, speech.abort_handle());
+        let listening = tokio::spawn({
+            let daemon = Arc::clone(&daemon);
+            async move {
+                run(
+                    &daemon,
+                    Tool::Listen {
+                        question: Some("Did you hear it?".to_string()),
+                        context: None,
+                        asked: false,
+                    },
+                    &call(),
+                    &CancellationToken::new(),
+                )
+                .await
+            }
+        });
+        tokio::time::sleep(TICK * 3).await;
+        assert!(!listening.is_finished(), "it waits while the speech plays");
+
+        speech.abort();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), listening)
+            .await
+            .expect("it goes on once the speech ends")
+            .expect("the call runs to its end");
+        assert!(matches!(outcome, Some(Err(_))), "{outcome:?}");
+    }
+
+    /// The user's own `listen`, as Talk asks for it, records at once: the
+    /// user means to talk over the speech.
+    #[tokio::test]
+    async fn a_listen_the_user_asked_for_does_not_wait() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = call();
+        let speech = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, speech.abort_handle());
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(5),
+            run(
+                &daemon,
+                Tool::Listen {
+                    question: None,
+                    context: None,
+                    asked: true,
+                },
+                &mine,
+                &CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("it does not wait for the speech");
+        let Some(Err(text)) = outcome else {
+            panic!("expected an error, got {outcome:?}");
+        };
+        assert!(text.contains("speech to text model"), "{text}");
+        speech.abort();
+    }
+
+    /// A model's `listen` cancelled while it waits for the session's speech
+    /// answers nothing, and never asks or records.
+    #[tokio::test]
+    async fn a_listen_cancelled_while_it_waits_answers_nothing() {
+        let daemon = Arc::new(test_daemon().await);
+        let mine = call();
+        let speech = tokio::spawn(std::future::pending::<SpeechResponse>());
+        daemon
+            .assistants
+            .sessions
+            .asked_to_speak(&mine.who, speech.abort_handle());
+        let cancel = CancellationToken::new();
+        let listening = tokio::spawn({
+            let daemon = Arc::clone(&daemon);
+            let cancel = cancel.clone();
+            async move {
+                run(
+                    &daemon,
+                    Tool::Listen {
+                        question: None,
+                        context: None,
+                        asked: false,
+                    },
+                    &call(),
+                    &cancel,
+                )
+                .await
+            }
+        });
+        tokio::time::sleep(TICK * 3).await;
+        cancel.cancel();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), listening)
+            .await
+            .expect("the cancel ends the wait")
+            .expect("the call runs to its end");
+        assert_eq!(outcome, None);
+        assert!(!daemon.recording.is_busy());
+        speech.abort();
     }
 
     /// A question whose `listen` was cancelled while it waited for the model

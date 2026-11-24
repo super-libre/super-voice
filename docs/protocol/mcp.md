@@ -52,7 +52,7 @@ Each assistant is rate-limited by its key, apart from every other client.
 | Tool     | What it does                                                                                       | Scope it takes |
 |----------|----------------------------------------------------------------------------------------------------|----------------|
 | `speak`  | Says `text` aloud, in the voice the user chose. Returns once the speech is queued and playing.    | `speak`        |
-| `listen` | Records the user until they stop talking, and returns what they said. With a `question`, asks it aloud first, and starts recording once it has finished playing. With a `context`, hears them with it. | `transcribe`, and `speak` for a question |
+| `listen` | Records the user until they stop talking, and returns what they said. With a `question`, asks it aloud first, and starts recording once it has finished playing. With a `context`, hears them with it. Waits first for the session's own speech to finish playing, so it never cuts off what the assistant just said. | `transcribe`, and `speak` for a question |
 
 `tools/list` lists only the tools the caller's key or token may use, and a tool
 call names only one of those: any other is the JSON-RPC error `-32602`. A key
@@ -111,7 +111,9 @@ Once a plugin has said a turn was typed, `speak` and `listen` refuse in it, so
 the assistant answers in writing. A session whose plugin says nothing of its
 turns is not held to it. A plugin's own call for what the user asked for
 themselves, as Talk's `listen` or a button that reads a reply again, takes
-`"asked": true` and is not refused. No tool declares it, as with `session`.
+`"asked": true` and is not refused. Talk's `listen` doesn't wait for the
+session's speech either: the user means to talk over it. No tool declares
+`asked`, as with `session`.
 
 A tool a hook calls itself takes `"hook": "codex"`, and then answers as Codex's
 hooks read a hook's output: the `UserPromptSubmit` JSON with the note beside a

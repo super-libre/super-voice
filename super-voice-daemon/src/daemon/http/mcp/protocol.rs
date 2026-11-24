@@ -413,7 +413,8 @@ fn tools(access: Access) -> Vec<Value> {
     if access.may_listen {
         let description = if access.may_speak {
             "Record the user from the microphone until they stop talking, and return what they said. \
-             Give a question to ask it aloud first; the recording starts when the question ends."
+             Give a question to ask it aloud first; the recording starts when the question ends. \
+             Your own speech plays to its end before the question."
         } else {
             "Record the user from the microphone until they stop talking, and return what they said."
         };
