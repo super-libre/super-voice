@@ -11,3 +11,37 @@
 
 pub mod player;
 pub mod recorder;
+
+/// Whether a stream error leaves the stream running: a buffer under- or
+/// overrun, a moment's glitch, or the default device changing under a stream
+/// that follows it. Anything else has stopped the stream.
+///
+/// macOS reports an overrun as a clip starts on some Macs, and the clip
+/// plays on; stopping for it made every clip fail to play there.
+#[must_use]
+pub(crate) fn stream_goes_on(error: &cpal::Error) -> bool {
+    matches!(
+        error.kind(),
+        cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stream_goes_on;
+
+    #[test]
+    fn a_glitch_or_a_new_default_device_is_not_the_end() {
+        assert!(stream_goes_on(&cpal::Error::new(cpal::ErrorKind::Xrun)));
+        assert!(stream_goes_on(&cpal::Error::new(
+            cpal::ErrorKind::DeviceChanged
+        )));
+    }
+
+    #[test]
+    fn a_device_gone_is() {
+        assert!(!stream_goes_on(&cpal::Error::new(
+            cpal::ErrorKind::DeviceNotAvailable
+        )));
+    }
+}
