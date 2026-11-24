@@ -21,6 +21,8 @@
     log.workspace = true
     serde.workspace = true
     serde_json.workspace = true
+    # What a backend says it supports, for the rules behind the capability chips.
+    super-voice-registry-types = { path = "../super-voice-registry-types" }
     super-voice-shared = { path = "../super-voice-shared" }
     tokio.workspace = true
     urlencoding = "2.1.3"

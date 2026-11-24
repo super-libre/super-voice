@@ -18,7 +18,7 @@ use cosmic::iced::widget::{column, row};
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, text};
 
-use super::status::stage_status;
+use super::status::{StatusLook, stage_status};
 use super::surface::{accent_border_color, muted_text_color};
 use crate::core::app::AppModel;
 use crate::state::model_operations::ModelOperationState;

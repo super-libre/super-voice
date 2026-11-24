@@ -7169,6 +7169,7 @@ dependencies = [
  "serde",
  "serde_json",
  "super-voice-daemon",
+ "super-voice-registry-types",
  "super-voice-shared",
  "tempfile",
  "tokio",

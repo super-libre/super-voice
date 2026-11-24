@@ -21,7 +21,7 @@ use active::active_backend_card;
 use download::download_split;
 use installed::installed_split;
 pub(super) use status::not_ready_reason;
-use status::{ModelStatus, stage_status};
+use status::{ModelStatus, StatusLook, stage_status};
 use surface::{bordered_scroll_view, muted_text_color, tab_bar_container, toolbar_container};
 use tabs::models_tab_switcher;
 
