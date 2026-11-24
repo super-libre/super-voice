@@ -112,6 +112,9 @@ let pendingAnswer: ((text: string | undefined) => void) | undefined
 /** Claude's running main turn, which sending the user's words stops first,
  * as their Ctrl+Enter does: a plugin's prompt otherwise waits for it to end. */
 let runningTurnId: string | undefined
+/** The background task Claude Code moved Talk's recording to, which Talk
+ * stopped: its notification is kept from Claude. */
+let stoppedTask: string | undefined
 
 // Listening after a spoken reply.
 /** The words Talk put in the box since the last prompt was sent. */
@@ -140,6 +143,18 @@ let isCheckingIn = false
 
 /** Super Voice's MCP server as Claude Code names it, once connected. */
 let server = `plugin:${NAME}:${SERVER_KEY}`
+
+/** Claude Code's notice, in place of a tool's answer, that it moved the call
+ * to the background: past its wait (two minutes unless the user set
+ * another), or for a message the user sent meanwhile. The call runs on, and
+ * its answer reaches Claude as a task notification. */
+const MOVED_TO_BACKGROUND =
+  /^MCP tool "[^"\n]+" (?:is still running after [^.\n]+\. It was moved|was moved) to the background as task (\S+) /
+
+/** The task `text`, a tool's answer, says Claude Code moved the call to. */
+function movedToBackground(text: string): string | undefined {
+  return MOVED_TO_BACKGROUND.exec(text)?.[1]
+}
 
 /** Whether `origin`, the one that changed or sent the prompt, is this
  * plugin. */
@@ -390,8 +405,15 @@ async function startTalk($: EngineInterface) {
 async function recordAndFill($: EngineInterface) {
   let words = ''
   const heard = await call($, 'listen', talkArgs(lastPrompt, lastReply))
+  const movedAs = heard.isError ? undefined : movedToBackground(heard.text)
   if (heard.isError) {
     $.ui.toast(heard.text || 'Could not record.')
+  } else if (movedAs !== undefined) {
+    // What the user said would reach Claude when the recording ends, not
+    // the prompt box. So it ends now, and Claude is kept from it.
+    stoppedTask = movedAs
+    await call($, 'stop')
+    $.ui.toast('Talk stopped: it recorded longer than Claude Code waits.')
   } else {
     words = heard.text.trim()
   }
@@ -723,6 +745,16 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    // The end of a recording Talk stopped: what it heard went to no prompt
+    // box, so it is not Claude's to answer.
+    if (
+      e.origin.kind === 'task-notification' &&
+      stoppedTask !== undefined &&
+      e.text.includes(`<task-id>${stoppedTask}</task-id>`)
+    ) {
+      stoppedTask = undefined
+      return { drop: 'The end of a recording Talk stopped.' }
+    }
     // A new prompt silences what this session was reading.
     if (await read($, speaking)) {
       void stopSpeaking($)
