@@ -165,6 +165,13 @@ pub(crate) async fn run(
                 serde_json::json!({ "read": read }).to_string(),
             )))
         }
+        Tool::Turn(TurnEvent::Draft { text }) => Some(Ok(serde_json::json!({
+            "dictated": daemon
+                .assistants
+                .dictation
+                .matches(&text, std::time::Instant::now()),
+        })
+        .to_string())),
     }
 }
 
@@ -916,6 +923,29 @@ mod tests {
             let answer: serde_json::Value = serde_json::from_str(&answer).unwrap();
             assert_eq!(answer["spoken"], spoken, "{text}");
         }
+    }
+
+    /// A draft that holds what the user just dictated is said to, once: the
+    /// match uses the dictation up. A draft changes no turn.
+    #[tokio::test]
+    async fn a_draft_holding_the_dictation_is_said_to_once() {
+        let daemon = Arc::new(test_daemon().await);
+        let cancel = CancellationToken::new();
+        let draft = async |text: &str| -> serde_json::Value {
+            let tool = Tool::Turn(TurnEvent::Draft {
+                text: text.to_string(),
+            });
+            let answer = run(&daemon, tool, &call(), &cancel).await.unwrap().unwrap();
+            serde_json::from_str(&answer).unwrap()
+        };
+        assert_eq!(
+            draft("Please open the notes.").await,
+            serde_json::json!({ "dictated": false })
+        );
+        daemon.assistants.dictation.remember("Open the notes");
+        assert_eq!(draft("Please open the notes.").await["dictated"], true);
+        assert_eq!(draft("Please open the notes.").await["dictated"], false);
+        assert_eq!(daemon.assistants.sessions.spoken(&call().who), None);
     }
 
     /// A Codex hook reads the answer as its own output: the context beside a

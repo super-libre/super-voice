@@ -18,7 +18,7 @@
 //! daemon answers one.
 
 use super::identity::identity;
-use super::protocol::{self, Access, Handled, Plugin, Tool};
+use super::protocol::{self, Access, Handled, Plugin, Tool, TurnEvent};
 use super::tools;
 use crate::assistants::calls::Caller;
 use crate::assistants::sessions::Who;
@@ -214,8 +214,9 @@ fn stream_call(
     tool: Tool,
 ) -> Response {
     let name = tool.name();
-    // The plugin's checks come every second or so: not worth a line each.
-    if !matches!(tool, Tool::Status) {
+    // The plugin's checks come every second or so, and a draft's at each
+    // pause in typing: not worth a line each.
+    if !matches!(tool, Tool::Status | Tool::Turn(TurnEvent::Draft { .. })) {
         info!("MCP {name} from {}", describe(&caller));
     }
     let in_flight = daemon
