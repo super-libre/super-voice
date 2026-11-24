@@ -160,7 +160,13 @@ fn open(shared: &Arc<Shared>, samples: &[f32], rate: u32) -> Result<cpal::Stream
         .store(usize::try_from(device_rate).unwrap_or(0), Ordering::Relaxed);
 
     let err_shared = Arc::clone(shared);
-    let err_fn = move |e: cpal::Error| fail(&err_shared, format!("the speakers stopped: {e}"));
+    let err_fn = move |e: cpal::Error| {
+        if super::stream_goes_on(&e) {
+            log::debug!("The speakers glitched, and play on: {e}");
+        } else {
+            fail(&err_shared, format!("the speakers stopped: {e}"));
+        }
+    };
 
     match supported.sample_format() {
         cpal::SampleFormat::F32 => {

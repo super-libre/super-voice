@@ -285,6 +285,10 @@ fn open(shared: &Arc<Mutex<Capture>>, max_seconds: f32) -> Result<cpal::Stream, 
 
     let err_shared = Arc::clone(shared);
     let err_fn = move |e: cpal::Error| {
+        if super::stream_goes_on(&e) {
+            log::debug!("The microphone glitched, and records on: {e}");
+            return;
+        }
         if let Ok(mut guard) = err_shared.lock() {
             guard.error = Some(format!("the microphone stopped: {e}"));
             guard.finished = true;
