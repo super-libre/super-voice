@@ -3,7 +3,7 @@
     version.workspace = true
     authors.workspace = true
     edition.workspace = true
-    description = "What Super Voice's apps share, with no UI library: the daemon client, notes and clips, and audio"
+    description = "What Super Voice's apps share, with no UI library: the daemon client, state, notes and clips, and audio"
     repository = "https://github.com/super-libre/super-voice"
     license = "GPL-3.0-only"
 

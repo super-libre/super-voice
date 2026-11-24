@@ -245,6 +245,7 @@ pub enum RefreshOutcome {
 }
 
 impl RegistryState {
+    #[must_use]
     pub fn by_source(&self) -> HashMap<&str, &RegistryBackend> {
         self.backends
             .iter()
@@ -254,6 +255,7 @@ impl RegistryState {
 
     /// `source`'s build for `framework`, when the catalog lists one this
     /// machine can run: its download size, and whether it is on disk already.
+    #[must_use]
     pub fn build(&self, source: &str, framework: &str) -> Option<&Build> {
         self.backends
             .iter()

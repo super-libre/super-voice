@@ -165,7 +165,7 @@ impl AppModel {
             }
             ContextsMessage::PromptAction(action) => {
                 if let Some(draft) = self.contexts.draft.as_mut() {
-                    draft.prompt.perform(action);
+                    draft.prompt.0.perform(action);
                     draft.error = None;
                 }
                 Task::none()
@@ -184,15 +184,15 @@ impl AppModel {
                     return Task::none();
                 };
                 let id = draft.insert_row_after(index);
-                text_input::focus(id)
+                text_input::focus(crate::ui::views::contexts::term_id(id))
             }
             ContextsMessage::TermRemoved(index) => {
                 let Some(draft) = self.contexts.draft.as_mut() else {
                     return Task::none();
                 };
-                draft
-                    .remove_row(index)
-                    .map_or_else(Task::none, text_input::focus)
+                draft.remove_row(index).map_or_else(Task::none, |id| {
+                    text_input::focus(crate::ui::views::contexts::term_id(id))
+                })
             }
 
             ContextsMessage::Save => {
