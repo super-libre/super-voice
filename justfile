@@ -537,25 +537,37 @@ macos-swift-app config="release":
 
 # Screenshot the SwiftUI app's window into `out`, a PNG.
 #
-# A debug build draws its own window once the page has loaded, at one size,
-# and quits: no Screen Recording permission, so it works over ssh. It reads the
-# sample notes in super-voice-macos/Fixtures, not yours.
+# A debug build draws its own window once the page is in `scene`'s state, at
+# one size, and quits: no Screen Recording permission, so it works over ssh.
+# Scenes: `notes`, the list; `note`, the newest note open; and `edited`, that
+# note with a sentence typed into it and saved. It reads a copy of the sample
+# notes in super-voice-macos/Fixtures, never yours, so `edited` changes only
+# the copy.
 #
-# Usage: just macos-swift-shot notes.png
-macos-swift-shot out: (macos-swift-app "debug")
+# Usage: just macos-swift-shot notes.png [notes|note|edited]
+macos-swift-shot out scene="notes": (macos-swift-app "debug")
     #!/usr/bin/env bash
     set -euo pipefail
     out="$(cd "$(dirname "{{ out }}")" && pwd)/$(basename "{{ out }}")"
     rm -f "$out"
+    data=$(mktemp -d)
+    trap 'rm -rf "$data"' EXIT
+    cp -R super-voice-macos/Fixtures/super-voice "$data/"
     # A new instance (-n), so a copy already open can't take the request and
     # ignore the environment; -W waits for it to quit.
     open -n -W \
         --env SUPER_VOICE_SNAPSHOT="$out" \
-        --env XDG_DATA_HOME="$PWD/super-voice-macos/Fixtures" \
+        --env SUPER_VOICE_SCENE="{{ scene }}" \
+        --env XDG_DATA_HOME="$data" \
         "target/debug/Super Voice (SwiftUI).app"
     if [ ! -s "$out" ]; then
         echo "❌ no screenshot at $out" >&2
         exit 1
+    fi
+    if [ "{{ scene }}" = edited ]; then
+        newest=$(ls "$data/super-voice/notes" | sort | tail -1)
+        echo "The edited note on disk:"
+        cat "$data/super-voice/notes/$newest"
     fi
     echo "✓ $out"
 
