@@ -56,9 +56,11 @@ pub(crate) struct CallContext {
 const NOT_SPOKEN_TO: &str = "The user typed this prompt, so answer in writing. Super Voice \
     speaks and listens only while the user is talking to you by voice.";
 
-/// What the assistant is told beside a prompt the user said aloud.
-const SPOKEN_NOTE: &str = "The user said this aloud, through Super Voice. Your reply will be \
-    read aloud to them: keep it short and plain to listen to, and end with any question you have.";
+/// What the assistant is told beside a prompt the user said aloud, so it
+/// answers for listening and works as it always does.
+const SPOKEN_NOTE: &str = "The user said this aloud, through Super Voice. Do the work as you \
+    normally would. Only your final reply is read aloud to them: keep that reply short and \
+    plain to listen to, and end it with any question you have.";
 
 /// Whether `who`'s plugin said the turn under way was typed.
 fn is_typed_turn(daemon: &SuperSTTDaemon, who: &Who) -> bool {
