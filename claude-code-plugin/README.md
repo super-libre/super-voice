@@ -33,8 +33,13 @@ Whether you talk or type:
    it takes a mouse click, in fullscreen mode (`/tui fullscreen`).
 
 Super Voice's own shortcut (`voice record --write`) types into the focused
-terminal like any other window. A prompt you send within 90 seconds that holds
-what it typed counts as spoken, even with a word or two you fixed by hand.
+terminal like any other window. Once it stops typing into Claude Code's prompt
+box, the plugin asks Super Voice whether the box holds what you just
+dictated. When it does, the box is sent as spoken after 5 seconds, as Talk's
+words are: editing it stops that, and Enter sends it at once. With Talk not
+shown, nothing is sent by itself. A prompt you send yourself within 90 seconds
+that holds what it typed counts as spoken too, even with a word or two you
+fixed by hand.
 
 ## Requirements
 
