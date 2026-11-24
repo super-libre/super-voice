@@ -6,7 +6,8 @@
 use crate::core::app::AppModel;
 use crate::daemon::client::v1::assistants::{
     connect_assistant, create_key, disconnect_assistant, list_assistants, remove_key,
-    set_announce_when_needed, set_conversation_context, set_show_talk,
+    set_announce_when_needed, set_autosend_dictated_prompts, set_conversation_context,
+    set_show_talk,
 };
 use crate::state::ErrorScope;
 use crate::state::assistants::{ConnectDialog, KeyDialog};
@@ -74,6 +75,9 @@ impl AppModel {
                 self.change_conversation_context(id, on)
             }
             AssistantsMessage::SetShowTalk(id, on) => self.change_show_talk(id, on),
+            AssistantsMessage::SetAutosendDictatedPrompts(id, on) => {
+                self.change_autosend_dictated_prompts(id, on)
+            }
             AssistantsMessage::Open(id) => {
                 self.assistants.open = Some(id);
                 Task::none()
@@ -284,6 +288,32 @@ impl AppModel {
         }
         self.clear_action_error(ErrorScope::Assistants);
         Task::perform(set_show_talk(id, on), move |result| {
+            answer(AssistantsMessage::Changed(result.map_err(|e| {
+                crate::fl!(
+                    "assistant-change-failed",
+                    name = id.display_name(),
+                    error = e.to_string()
+                )
+            })))
+        })
+    }
+
+    /// The switch moves at once, as announcing's does.
+    fn change_autosend_dictated_prompts(
+        &mut self,
+        id: AssistantId,
+        on: bool,
+    ) -> Task<cosmic::Action<Message>> {
+        if let Some(assistant) = self
+            .assistants
+            .list
+            .as_mut()
+            .and_then(|list| list.assistants.iter_mut().find(|a| a.id == id))
+        {
+            assistant.autosend_dictated_prompts = on;
+        }
+        self.clear_action_error(ErrorScope::Assistants);
+        Task::perform(set_autosend_dictated_prompts(id, on), move |result| {
             answer(AssistantsMessage::Changed(result.map_err(|e| {
                 crate::fl!(
                     "assistant-change-failed",

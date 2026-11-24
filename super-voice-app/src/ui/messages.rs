@@ -671,6 +671,9 @@ pub enum AssistantsMessage {
     SetConversationContext(AssistantId, bool),
     /// Whether this assistant's plugin shows Talk above its prompt.
     SetShowTalk(AssistantId, bool),
+    /// Whether this assistant's plugin sends a prompt dictated into it by
+    /// itself, after a countdown.
+    SetAutosendDictatedPrompts(AssistantId, bool),
     /// Open the dialog that makes a key for another assistant.
     AskKey,
     /// The key's name, as typed.

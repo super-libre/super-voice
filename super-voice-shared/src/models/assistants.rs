@@ -74,6 +74,10 @@ wire_enum_strings!(AssistantState {
 /// One assistant in an [`AssistantList`].
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "a wire shape: each flag is one switch the user sets for the assistant"
+)]
 pub struct Assistant {
     pub id: AssistantId,
     pub state: AssistantState,
@@ -87,6 +91,9 @@ pub struct Assistant {
     /// Whether its plugin shows Talk above the prompt: Claude Code's and
     /// `OpenCode`'s, the assistants with a Talk of their own.
     pub show_talk: bool,
+    /// Whether its plugin sends a prompt the user dictated into it with
+    /// Super Voice's shortcut by itself, after a countdown: Claude Code's.
+    pub autosend_dictated_prompts: bool,
     /// Its open sessions, oldest first.
     #[serde(default)]
     pub sessions: Vec<AssistantSession>,
@@ -189,6 +196,7 @@ mod tests {
             announce_when_needed: true,
             conversation_context: false,
             show_talk: true,
+            autosend_dictated_prompts: true,
             sessions: Vec::new(),
         };
         let json = serde_json::to_value(&assistant).expect("serializes");
@@ -200,6 +208,7 @@ mod tests {
                 "announce_when_needed": true,
                 "conversation_context": false,
                 "show_talk": true,
+                "autosend_dictated_prompts": true,
                 "sessions": [],
             })
         );

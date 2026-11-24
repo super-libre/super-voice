@@ -95,7 +95,7 @@ Authorization: Bearer …64hex…
 {
   "assistants": [
     {
-      "id": "claude-code", "state": "connected", "announce_when_needed": false, "conversation_context": true, "show_talk": true,
+      "id": "claude-code", "state": "connected", "announce_when_needed": false, "conversation_context": true, "show_talk": true, "autosend_dictated_prompts": true,
       "sessions": [
         {
           "id": "4f1c…", "folder": "/home/me/super-voice", "agents": 0,
@@ -104,9 +104,9 @@ Authorization: Bearer …64hex…
         }
       ]
     },
-    { "id": "codex",       "state": "found",     "announce_when_needed": true, "conversation_context": false, "show_talk": true, "sessions": [] },
-    { "id": "opencode",    "state": "not_found", "announce_when_needed": true, "conversation_context": true, "show_talk": false, "sessions": [] },
-    { "id": "antigravity", "state": "not_found", "announce_when_needed": true, "conversation_context": true, "show_talk": true, "sessions": [] }
+    { "id": "codex",       "state": "found",     "announce_when_needed": true, "conversation_context": false, "show_talk": true, "autosend_dictated_prompts": true, "sessions": [] },
+    { "id": "opencode",    "state": "not_found", "announce_when_needed": true, "conversation_context": true, "show_talk": false, "autosend_dictated_prompts": true, "sessions": [] },
+    { "id": "antigravity", "state": "not_found", "announce_when_needed": true, "conversation_context": true, "show_talk": true, "autosend_dictated_prompts": true, "sessions": [] }
   ],
   "custom_keys": [
     { "id": "0f3c9a1e", "name": "My editor", "created_at": "2026-11-19T20:15:00Z", "sessions": [] }
@@ -127,6 +127,11 @@ user turns it off.
 `show_talk` says whether the assistant's plugin shows Talk above its prompt.
 Only Claude Code's and OpenCode's plugins have Talk; the others keep it on and
 make nothing of it. On until the user turns it off.
+
+`autosend_dictated_prompts` says whether the assistant's plugin sends a prompt
+the user dictated into it with Super Voice's shortcut by itself, after a
+countdown. Only Claude Code's plugin can read and send its prompt box; the
+others keep it on and make nothing of it. On until the user turns it off.
 
 `sessions` are the assistant's, or the key's, open sessions, oldest first: one
 conversation each, as [the MCP server tells them apart](../../mcp.md#sessions).
@@ -210,6 +215,11 @@ list.
 3. `show_talk`: whether its plugin shows Talk above the prompt, for Claude
    Code and OpenCode. Off, the plugin shows nothing there, the `0` key types a
    `0`, and the microphone does not open after a reply is read.
+4. `autosend_dictated_prompts`: whether Claude Code's plugin sends a prompt the
+   user dictated into it with Super Voice's shortcut by itself, as spoken,
+   after a 5 second countdown that editing the prompt stops. The countdown
+   shows above the prompt even with Talk hidden. Off, the prompt waits for
+   Enter, and still counts as spoken.
 
 ```json
 { "announce_when_needed": false, "conversation_context": true, "show_talk": false }

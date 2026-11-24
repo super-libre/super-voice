@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! `v1/assistants` — the Assistants page's eight calls.
+//! `v1/assistants` — the Assistants page's nine calls.
 
 use serde_json::json;
 use super_voice_shared::models::assistants::{AssistantId, AssistantState};
@@ -7,7 +7,8 @@ use super_voice_shared::models::assistants::{AssistantId, AssistantState};
 use super::fake_daemon::{FakeDaemon, Reply};
 use crate::daemon::client::v1::assistants::{
     connect_assistant, create_key, disconnect_assistant, list_assistants, remove_key,
-    set_announce_when_needed, set_conversation_context, set_show_talk,
+    set_announce_when_needed, set_autosend_dictated_prompts, set_conversation_context,
+    set_show_talk,
 };
 
 /// What the daemon answers the list's calls with: Claude Code in `claude`'s
@@ -20,6 +21,7 @@ fn list(claude: &str, announced: bool) -> serde_json::Value {
             "announce_when_needed": announce_when_needed,
             "conversation_context": true,
             "show_talk": true,
+            "autosend_dictated_prompts": true,
         })
     };
     json!({
@@ -42,6 +44,7 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
     let daemon = FakeDaemon::start().await;
     daemon.reply(Reply::json(&list("found", true)));
     daemon.reply(Reply::json(&list("connected", true)));
+    daemon.reply(Reply::json(&list("connected", false)));
     daemon.reply(Reply::json(&list("connected", false)));
     daemon.reply(Reply::json(&list("connected", false)));
     daemon.reply(Reply::json(&list("connected", false)));
@@ -83,6 +86,11 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
     // A daemon that does not say shows Talk.
     assert!(shown.assistants[0].show_talk);
 
+    let autosends = set_autosend_dictated_prompts(AssistantId::ClaudeCode, false)
+        .await
+        .expect("set");
+    assert!(autosends.assistants[0].autosend_dictated_prompts);
+
     let key = create_key("Zed".to_string()).await.expect("made");
     assert_eq!(key.name, "Zed");
     assert_eq!(key.key, "sva_0123");
@@ -122,6 +130,11 @@ async fn each_call_reaches_its_route_and_reads_the_answer() {
                 "PATCH".to_string(),
                 "/assistants/claude-code".to_string(),
                 json!({ "show_talk": false }),
+            ),
+            (
+                "PATCH".to_string(),
+                "/assistants/claude-code".to_string(),
+                json!({ "autosend_dictated_prompts": false }),
             ),
             (
                 "POST".to_string(),

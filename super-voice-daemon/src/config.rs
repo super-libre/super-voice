@@ -159,9 +159,29 @@ pub struct AssistantsConfig {
         deserialize_with = "super_voice_shared::utils::serde_helpers::deserialize_or_default"
     )]
     pub show_talk: BTreeMap<String, bool>,
+    /// Whether Claude Code's plugin sends a prompt the user dictated into it
+    /// with Super Voice's shortcut by itself, after a countdown, by its wire
+    /// id. Kept as [`announce_when_needed`](Self::announce_when_needed) is:
+    /// only a `false`.
+    #[serde(
+        default,
+        deserialize_with = "super_voice_shared::utils::serde_helpers::deserialize_or_default"
+    )]
+    pub autosend_dictated_prompts: BTreeMap<String, bool>,
 }
 
 impl AssistantsConfig {
+    /// Whether `id`'s plugin sends a prompt dictated into it by itself.
+    #[must_use]
+    pub fn autosends_dictated_prompts(&self, id: AssistantId) -> bool {
+        is_on(&self.autosend_dictated_prompts, id)
+    }
+
+    /// Keep whether `id`'s plugin sends a prompt dictated into it by itself.
+    pub fn set_autosends_dictated_prompts(&mut self, id: AssistantId, on: bool) {
+        set_on(&mut self.autosend_dictated_prompts, id, on);
+    }
+
     /// Whether `id`'s plugin shows Talk above its prompt.
     #[must_use]
     pub fn shows_talk(&self, id: AssistantId) -> bool {

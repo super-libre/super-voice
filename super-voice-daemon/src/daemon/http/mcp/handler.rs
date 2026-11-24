@@ -78,22 +78,24 @@ async fn call_context(
     };
     sessions.touch(&who);
     // A key made by hand, and the user's own client, have no switches.
-    let (announces, uses_context, shows_talk) = match assistant {
+    let (announces, uses_context, shows_talk, autosends) = match assistant {
         Some(id) => {
             let config = state.daemon.config.read().await;
             (
                 config.assistants.announces_when_needed(id),
                 config.assistants.uses_conversation_context(id),
                 config.assistants.shows_talk(id),
+                config.assistants.autosends_dictated_prompts(id),
             )
         }
-        None => (true, true, true),
+        None => (true, true, true, true),
     };
     tools::CallContext {
         who,
         announces,
         uses_context,
         shows_talk,
+        autosends,
         hook: protocol::hook_of(params),
     }
 }

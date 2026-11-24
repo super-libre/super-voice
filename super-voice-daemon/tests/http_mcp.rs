@@ -541,7 +541,7 @@ async fn an_assistants_sessions_are_its_own() {
     let status = post(&via, &key, &call(5, "status", json!({ "session": one }))).await;
     assert_eq!(
         serde_json::from_str::<Value>(&said(&status)).expect("JSON"),
-        json!({ "speaking": false, "listening": false, "talk": true })
+        json!({ "speaking": false, "listening": false, "talk": true, "autosend": true })
     );
     let stopped = post(&via, &key, &call(6, "stop", json!({ "session": two }))).await;
     assert_eq!(

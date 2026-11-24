@@ -42,13 +42,18 @@ const TICK: Duration = Duration::from_millis(100);
 
 /// Who a call is for: its session, whether the user lets its assistant
 /// announce, whether its `listen` calls are heard with the context they
-/// bring, whether its plugin shows Talk, and the hook that made the call, if
-/// one did.
+/// bring, whether its plugin shows Talk, whether it sends a prompt dictated
+/// into it by itself, and the hook that made the call, if one did.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each flag is one of the assistant's switches, as the call found them"
+)]
 pub(crate) struct CallContext {
     pub(crate) who: Who,
     pub(crate) announces: bool,
     pub(crate) uses_context: bool,
     pub(crate) shows_talk: bool,
+    pub(crate) autosends: bool,
     pub(crate) hook: Option<Hook>,
 }
 
@@ -101,7 +106,7 @@ pub(crate) async fn run(
             listen(daemon, who, question, extra, cancel).await
         }
         Tool::Stop => Some(Ok(stop(daemon, who).await)),
-        Tool::Status => Some(Ok(status(daemon, who, call.shows_talk))),
+        Tool::Status => Some(Ok(status(daemon, who, call))),
         Tool::Announce { text } if call.announces => speak(daemon, who, text, cancel)
             .await
             .map(|said| said.map(|answer| for_caller(call, answer))),
@@ -362,13 +367,15 @@ fn is_speaking(daemon: &SuperSTTDaemon, who: &Who) -> bool {
             .is_some_and(|utterance| is_playing(daemon, &utterance))
 }
 
-/// Whether `who`'s own speech plays and whether it records, and whether the
-/// user shows its plugin's Talk, as JSON.
-fn status(daemon: &SuperSTTDaemon, who: &Who, shows_talk: bool) -> String {
+/// Whether `who`'s own speech plays and whether it records; whether the user
+/// shows its plugin's Talk, and lets it send a prompt dictated into it by
+/// itself; as JSON.
+fn status(daemon: &SuperSTTDaemon, who: &Who, call: &CallContext) -> String {
     serde_json::json!({
         "speaking": is_speaking(daemon, who),
         "listening": daemon.assistants.sessions.is_recording(who),
-        "talk": shows_talk,
+        "talk": call.shows_talk,
+        "autosend": call.autosends,
     })
     .to_string()
 }
@@ -626,6 +633,7 @@ mod tests {
             announces: true,
             uses_context: true,
             shows_talk: true,
+            autosends: true,
             hook: None,
         }
     }
@@ -722,7 +730,12 @@ mod tests {
         };
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&status).expect("JSON"),
-            serde_json::json!({ "speaking": false, "listening": false, "talk": true })
+            serde_json::json!({
+                "speaking": false,
+                "listening": false,
+                "talk": true,
+                "autosend": true,
+            })
         );
         // An utterance of its own that is not the one playing is not stopped.
         daemon

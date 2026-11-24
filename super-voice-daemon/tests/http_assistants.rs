@@ -533,6 +533,28 @@ async fn each_assistant_uses_its_conversation_on_its_own() {
         Some((json!(true), json!(true)))
     );
 
+    // A dictated prompt is sent by itself until turned off.
+    let autosends = |list: &Value, id: &str| {
+        list["assistants"]
+            .as_array()
+            .expect("assistants")
+            .iter()
+            .find(|a| a["id"] == id)
+            .map(|a| a["autosend_dictated_prompts"].clone())
+    };
+    assert_eq!(autosends(&list, "claude-code"), Some(json!(true)));
+    let (status, list) = call(
+        &daemon,
+        &token,
+        Method::PATCH,
+        "/assistants/claude-code",
+        Some(&json!({ "autosend_dictated_prompts": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(autosends(&list, "claude-code"), Some(json!(false)));
+    assert_eq!(shows_talk(&list, "claude-code"), Some(json!(true)));
+
     for body in [json!({}), json!({ "conversation_context": "no" })] {
         let (status, answer) = call(
             &daemon,

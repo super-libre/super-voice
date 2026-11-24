@@ -812,6 +812,19 @@ fn assistants_are_announced_until_turned_off() {
     config.assistants.set_shows_talk(OpenCode, true);
     assert!(config.assistants.show_talk.is_empty());
 
+    // A dictated prompt is sent by itself until turned off, kept the same way.
+    assert!(config.assistants.autosends_dictated_prompts(ClaudeCode));
+    config
+        .assistants
+        .set_autosends_dictated_prompts(ClaudeCode, false);
+    let back = round_trip(&config);
+    assert!(!back.assistants.autosends_dictated_prompts(ClaudeCode));
+    assert!(back.assistants.autosends_dictated_prompts(OpenCode));
+    config
+        .assistants
+        .set_autosends_dictated_prompts(ClaudeCode, true);
+    assert!(config.assistants.autosend_dictated_prompts.is_empty());
+
     let newer = from_ron(
         r#"(
     audio: (theme: "classic", volume: 100),
