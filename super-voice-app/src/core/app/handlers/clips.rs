@@ -69,21 +69,21 @@ impl AppModel {
     fn handle_clip_making(&mut self, message: ClipsMessage) -> Task<cosmic::Action<Message>> {
         match message {
             ClipsMessage::DraftEdit(action) => {
-                self.clips.draft.perform(action);
+                self.clips.draft.0.perform(action);
                 Task::none()
             }
             ClipsMessage::Make => {
-                let text = self.clips.draft.text().trim().to_string();
+                let text = self.clips.draft.0.text().trim().to_string();
                 if text.is_empty() || self.clips.making.is_some() {
                     return Task::none();
                 }
                 self.clear_action_error(ErrorScope::Clips);
                 self.clips.exported = None;
                 let voice = self.clip_voice_label();
-                let (task, handle) = Task::perform(make(text, voice), |result| {
-                    clips_action(ClipsMessage::Made(result))
-                })
-                .abortable();
+                let (make, handle) = futures_util::future::abortable(make(text, voice));
+                // An aborted clip sends nothing: Cancel has already let it go.
+                let task = Task::future(async move { make.await.ok() })
+                    .and_then(|result| Task::done(clips_action(ClipsMessage::Made(result))));
                 self.clips.making = Some(Making {
                     started: Instant::now(),
                     handle,
@@ -95,7 +95,7 @@ impl AppModel {
                 match result {
                     Ok(clip) => {
                         self.clips.put(clip);
-                        self.clips.draft = cosmic::widget::text_editor::Content::new();
+                        self.clips.draft = crate::state::Editor::default();
                     }
                     Err(e) => self.set_action_error(
                         ErrorScope::Clips,

@@ -66,7 +66,7 @@ fn intro<'a>() -> Element<'a, Message> {
 /// each saved clip says which voice it was made in.
 fn new_clip(app: &AppModel) -> Element<'_, Message> {
     let spacing = cosmic::theme::spacing();
-    let draft = &app.clips.draft;
+    let draft = &app.clips.draft.0;
     let editor = widget::text_editor(draft)
         .min_height(DRAFT_MIN_HEIGHT)
         .padding(spacing.space_xs)
@@ -124,7 +124,7 @@ fn making(app: &AppModel) -> Element<'_, Message> {
         )
         .add(widget::indeterminate_linear().width(Length::Fill))
         .add(muted(
-            text::body(first_line(&app.clips.draft.text(), 90))
+            text::body(first_line(&app.clips.draft.0.text(), 90))
                 .wrapping(cosmic::iced::widget::text::Wrapping::None),
         ))
         .into()

@@ -16,7 +16,7 @@ use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, space::horizontal as horizontal_space, text, text_input};
 
 use crate::core::app::AppModel;
-use crate::state::contexts::ContextDraft;
+use crate::state::contexts::{ContextDraft, RowId};
 use crate::ui::icons;
 use crate::ui::messages::{ContextsMessage, Message};
 use crate::ui::views::common;
@@ -86,7 +86,7 @@ fn prompt_field(draft: &ContextDraft) -> Element<'_, Message> {
             "instructions-for-a-model-that-follows-them"
         ))))
         .push(
-            widget::text_editor(&draft.prompt)
+            widget::text_editor(&draft.prompt.0)
                 .height(Length::Fixed(120.0))
                 .on_action(|a| Message::Contexts(ContextsMessage::PromptAction(a))),
         )
@@ -106,7 +106,7 @@ fn vocabulary_field(draft: &ContextDraft) -> Element<'_, Message> {
         .terms
         .iter()
         .enumerate()
-        .map(|(index, (id, term))| term_row(index, id, term, draft.terms.len()))
+        .map(|(index, (id, term))| term_row(index, *id, term, draft.terms.len()))
         .collect();
 
     widget::column::with_capacity(4)
@@ -130,20 +130,21 @@ fn vocabulary_field(draft: &ContextDraft) -> Element<'_, Message> {
         .into()
 }
 
+/// The widget id of the vocabulary row `row`: what the row's input carries,
+/// and what the handler focuses when a key press makes or removes a row.
+pub fn term_id(row: RowId) -> widget::Id {
+    widget::Id::from(format!("context-term-{}", row.get()))
+}
+
 /// One term's row: the input, and a clear button for every row but the last.
 ///
 /// The trailing row has no clear button because it is the empty one the next
 /// term goes in — removing it would leave nowhere to type, and it costs nothing
 /// to keep since blanks are dropped on save.
-fn term_row<'a>(
-    index: usize,
-    id: &'a widget::Id,
-    term: &'a str,
-    total: usize,
-) -> Element<'a, Message> {
+fn term_row(index: usize, id: RowId, term: &str, total: usize) -> Element<'_, Message> {
     let spacing = cosmic::theme::spacing();
     let input = text_input("", term)
-        .id(id.clone())
+        .id(term_id(id))
         .on_input(move |value| Message::Contexts(ContextsMessage::TermChanged { index, value }))
         .on_submit(move |_| Message::Contexts(ContextsMessage::TermSubmitted(index)))
         .width(Length::Fill);
@@ -193,7 +194,7 @@ fn count_label(filled: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::{count_label, editor_title};
-    use crate::state::contexts::ContextDraft;
+    use crate::state::contexts::{ContextDraft, RowId};
     use super_voice_shared::models::contexts::DictationContext;
 
     #[test]

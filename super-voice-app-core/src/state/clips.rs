@@ -8,21 +8,20 @@
 
 use std::time::Instant;
 
-use cosmic::widget::text_editor;
-
 use crate::audio::player::Player;
 use crate::clips::Clip;
 
-/// Everything the Clips tab holds.
+/// Everything the Clips tab holds. `B` is the next clip's editor buffer, the
+/// app's toolkit's own (see [`TextBuffer`](crate::state::TextBuffer)).
 #[derive(Debug, Default)]
-pub struct ClipsState {
+pub struct ClipsState<B = String> {
     /// The clips, newest first.
     pub items: Vec<Clip>,
     /// Whether the first read has landed. Until it has, no clips means "not
     /// read yet", not "none".
     pub loaded: bool,
     /// What the next clip will say.
-    pub draft: text_editor::Content,
+    pub draft: B,
     /// The clip being made.
     pub making: Option<Making>,
     /// The clip playing.
@@ -33,7 +32,7 @@ pub struct ClipsState {
     pub exported: Option<(String, String)>,
 }
 
-impl ClipsState {
+impl<B> ClipsState<B> {
     /// Put `clip` at the top of the list, where the newest goes.
     pub fn put(&mut self, clip: Clip) {
         self.items.retain(|c| c.id != clip.id);
@@ -58,7 +57,7 @@ impl ClipsState {
 pub struct Making {
     pub started: Instant,
     /// Aborting the task closes the request, which stops the synthesis.
-    pub handle: cosmic::iced::task::Handle,
+    pub handle: futures_util::future::AbortHandle,
 }
 
 /// A clip playing, or about to: its samples are read first.
@@ -73,6 +72,8 @@ pub struct Playing {
 mod tests {
     use super::*;
     use chrono::NaiveDateTime;
+
+    type ClipsState = super::ClipsState<String>;
 
     fn clip(id: &str) -> Clip {
         Clip {
