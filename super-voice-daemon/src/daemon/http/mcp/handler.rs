@@ -8,10 +8,12 @@
 //!    answered with `application/json`.
 //! 2. A notification, or a response, is `202` with no body.
 //! 3. `tools/call` is answered with `text/event-stream`: a comment at once, a
-//!    keepalive comment every two seconds while the tool runs, then one
-//!    `message` event with the answer. A `listen` can wait minutes for the
-//!    user, and the keepalives keep the connection, and any timer the client
-//!    has on it, alive meanwhile.
+//!    keepalive every two seconds while the tool runs, then one `message`
+//!    event with the answer. A `listen` can wait minutes for the user, and the
+//!    keepalives keep the connection alive meanwhile. A request that names a
+//!    `progressToken` gets each keepalive as a `notifications/progress`, which
+//!    a client counts as the tool's progress: Claude Code stops a call that
+//!    sends none for five minutes. Any other request gets a comment.
 //!
 //! The body is read as bytes and every JSON-RPC error is built here, so a
 //! body that is not JSON is answered as MCP says, not as the rest of the
@@ -50,6 +52,30 @@ const SESSION_HEADER: &str = "mcp-session-id";
 /// `/v1/stt/transcribe`'s is: a client may drop a connection that has been
 /// silent for a few seconds.
 const KEEPALIVE: Duration = Duration::from_secs(2);
+
+/// The token a request's `_meta` asks its progress to be reported under, if
+/// it names one: a string or an integer, as MCP has it.
+fn progress_token(params: &Value) -> Option<Value> {
+    let token = &params["_meta"]["progressToken"];
+    (token.is_string() || token.is_i64() || token.is_u64()).then(|| token.clone())
+}
+
+/// The keepalive a tool call's stream sends the `count`th time, from one:
+/// under `token`, the progress it reports, else a comment.
+fn keepalive(token: Option<&Value>, count: u64) -> Bytes {
+    match token {
+        Some(token) => super_engine_daemon::events::sse_frame(
+            "message",
+            &serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/progress",
+                "params": { "progressToken": token, "progress": count },
+            })
+            .to_string(),
+        ),
+        None => Bytes::from_static(b": keepalive\n\n"),
+    }
+}
 
 /// The connection a request names with its `Mcp-Session-Id`, if it names one.
 fn connection_of(headers: &HeaderMap) -> Option<&str> {
@@ -172,7 +198,8 @@ pub(crate) async fn post(
         }
         Handled::Call { id, tool } => {
             let call = call_context(&state, &caller, assistant, &message["params"], &headers).await;
-            stream_call(Arc::clone(&state.daemon), caller, call, id, tool)
+            let progress = progress_token(&message["params"]);
+            stream_call(Arc::clone(&state.daemon), caller, call, id, tool, progress)
         }
     }
 }
@@ -203,7 +230,8 @@ fn json(status: StatusCode, message: &Value) -> Response {
         .into_response()
 }
 
-/// Run `tool` for request `id`, and stream its answer.
+/// Run `tool` for request `id`, and stream its answer, with its progress
+/// under `progress` when the request named a token.
 ///
 /// The tool runs on a task of its own, so it is never dropped midway. The
 /// stream is fed from another, which cancels the call when a keepalive finds
@@ -214,6 +242,7 @@ fn stream_call(
     call: tools::CallContext,
     id: Value,
     tool: Tool,
+    progress: Option<Value>,
 ) -> Response {
     let name = tool.name();
     // The plugin's checks come every second or so, and a draft's at each
@@ -243,6 +272,7 @@ fn stream_call(
     });
     tokio::spawn(async move {
         let mut call = call;
+        let mut keepalives = 0;
         loop {
             tokio::select! {
                 biased;
@@ -264,7 +294,8 @@ fn stream_call(
                     break;
                 }
                 () = tokio::time::sleep(KEEPALIVE) => {
-                    if frames.send(Ok(Bytes::from_static(b": keepalive\n\n"))).is_err() {
+                    keepalives += 1;
+                    if frames.send(Ok(keepalive(progress.as_ref(), keepalives))).is_err() {
                         info!("MCP {name}: the client went away; cancelling");
                         cancel.cancel();
                         break;
@@ -283,4 +314,38 @@ fn stream_call(
         .header("x-accel-buffering", "no")
         .body(Body::from_stream(stream))
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{keepalive, progress_token};
+    use serde_json::{Value, json};
+
+    #[test]
+    fn a_request_names_its_progress_token_in_meta() {
+        let named = |token: Value| json!({ "name": "listen", "_meta": { "progressToken": token } });
+        assert_eq!(progress_token(&named(json!(7))), Some(json!(7)));
+        assert_eq!(progress_token(&named(json!("t-1"))), Some(json!("t-1")));
+        assert_eq!(progress_token(&named(json!(1.5))), None, "not an integer");
+        assert_eq!(progress_token(&named(json!({}))), None);
+        assert_eq!(progress_token(&json!({ "name": "listen" })), None);
+    }
+
+    #[test]
+    fn a_keepalive_reports_progress_under_the_token_else_is_a_comment() {
+        assert_eq!(&keepalive(None, 1)[..], b": keepalive\n\n");
+        let sent = String::from_utf8(keepalive(Some(&json!(7)), 3).to_vec()).expect("text");
+        let data = sent
+            .strip_prefix("event: message\ndata: ")
+            .and_then(|rest| rest.strip_suffix("\n\n"))
+            .unwrap_or_else(|| panic!("not one message event: {sent}"));
+        assert_eq!(
+            serde_json::from_str::<Value>(data).expect("JSON"),
+            json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/progress",
+                "params": { "progressToken": 7, "progress": 3 },
+            })
+        );
+    }
 }
