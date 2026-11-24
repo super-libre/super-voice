@@ -486,6 +486,13 @@ async function tick($: EngineInterface) {
     // Said while Claude works: it should hear it now, not when it is done.
     await $.turn.abort({ turnId: runningTurnId }).catch(() => undefined)
   }
+  // Claude Code runs none of this mod's own hooks for a prompt it sends
+  // itself, `prompt.submit` included, so Talk's prompt is told here.
+  await promptWasSpoken($, box.text, true)
+  lastPrompt = box.text
+  isTurnSpoken = true
+  talked = undefined
+  await setArmed($, false)
   // The words are the user's own, so Claude reads them bare. Hooks and
   // permission checks still see this mod as the sender.
   await $.prompt.submit({ text: box.text, asUser: true }).catch(() => {
@@ -656,9 +663,9 @@ export const register: Register = on => {
       await finishAnswer($, e.text)
       return { drop: "Sent as the answer to Claude's question." }
     }
-    const isOwn = isOwnOrigin(e.origin)
-    // Another plugin's prompt is neither the user's nor Talk's.
-    if (e.origin.kind !== 'composer' && !isOwn) {
+    // Another plugin's prompt is neither the user's nor Talk's. Talk's own
+    // never comes here: Talk tells Super Voice of it as it sends it.
+    if (e.origin.kind !== 'composer') {
       return next(e)
     }
     // Enter before the countdown ended: the prompt is the user's, and still
@@ -667,9 +674,9 @@ export const register: Register = on => {
     if (phase === 'countdown') {
       await stopCountdown($)
     }
-    // Talk's own prompt is spoken; the user's when it holds Talk's words, or
-    // ones they dictated with Super Voice's shortcut.
-    const isSpoken = await promptWasSpoken($, e.text, isOwn, talked)
+    // Spoken when it holds Talk's words, or ones the user dictated with Super
+    // Voice's shortcut.
+    const isSpoken = await promptWasSpoken($, e.text, false, talked)
     lastPrompt = e.text
     isTurnSpoken = isSpoken
     talked = undefined
