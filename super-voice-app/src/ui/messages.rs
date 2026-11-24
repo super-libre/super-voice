@@ -1041,63 +1041,15 @@ pub enum ContextsMessage {
 /// that record them through the daemon.
 #[derive(Debug, Clone)]
 pub enum NotesMessage {
-    /// Read the folder. Sent whenever the tab is opened.
-    Reload,
-    /// What the folder holds, newest first, or why it could not be read.
-    Loaded(Result<Vec<crate::notes::Note>, String>),
-
-    /// Record a new note.
-    Record,
-    /// Record more of the open note, to go at its end.
-    DictateMore,
-    /// Stop the take. Its transcript follows.
-    Stop,
-    /// What the take has heard so far.
-    Preview {
-        text: String,
-        source: Option<PreviewSource>,
-    },
-    /// The take's transcript, or why there is none.
-    Transcribed(Result<String, String>),
+    /// Something the page's logic handles: a press, or the answer to work it
+    /// started. See `super_voice_app_core::pages::notes`.
+    Page(super_voice_app_core::pages::notes::Input),
+    /// A keystroke, motion or click in the open note's editor. Carries the
+    /// widget's own action, since the editor owns the cursor. The app applies
+    /// it, and tells the page when it changed the text.
+    Edit(cosmic::widget::text_editor::Action),
     /// A second went by while recording, for the elapsed time.
     Tick,
-    /// The new note was written, or could not be.
-    Created(Result<crate::notes::Note, String>),
-
-    /// Show a note in place of the list.
-    Open(String),
-    /// Back to the list.
-    Close,
-    /// A keystroke, motion or click in the open note's editor. Carries the
-    /// widget's own action, since the editor owns the cursor.
-    Edit(cosmic::widget::text_editor::Action),
-    /// The edits up to this count have stood still long enough to save.
-    SaveDue(u64),
-    /// A write to the folder finished.
-    Written {
-        job: crate::state::notes::FileJob,
-        result: Result<(), String>,
-    },
-
-    /// Ask where to export the open note, and write it there.
-    Export,
-    /// Where it was written, or `None` when the dialog was closed.
-    Exported(Result<Option<String>, String>),
-
-    /// First press of Delete: asks to confirm.
-    DeleteRequested,
-    DeleteCancelled,
-    /// Second press: delete the open note.
-    DeleteConfirmed,
-
-    /// The window's close button was pressed mid-take: stop the take, save
-    /// its words, then close.
-    FinishBeforeExit,
-    /// Write what is unwritten and close, transcript or not.
-    ExitNow,
-    /// The main window is gone and the app exits right after this: write
-    /// what is unwritten, now.
-    SaveBeforeExit,
 }
 
 /// The Clips tab: speech made from text by the daemon, kept, played and

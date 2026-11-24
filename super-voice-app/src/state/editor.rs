@@ -21,4 +21,10 @@ impl TextBuffer for Editor {
     fn text(&self) -> String {
         self.0.text()
     }
+
+    fn replace_text(&mut self, text: &str) {
+        self.0 = text_editor::Content::with_text(text);
+        self.0
+            .perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
+    }
 }

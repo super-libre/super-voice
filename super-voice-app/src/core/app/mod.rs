@@ -321,11 +321,11 @@ impl cosmic::Application for AppModel {
     /// it is.
     fn on_app_exit(&mut self) -> Option<Self::Message> {
         if self.notes.is_recording() {
-            return Some(Message::Notes(
-                crate::ui::messages::NotesMessage::FinishBeforeExit,
-            ));
+            return Some(Message::Notes(crate::ui::messages::NotesMessage::Page(
+                super_voice_app_core::pages::notes::Input::FinishBeforeExit,
+            )));
         }
-        self.write_notes_now(Vec::new(), None);
+        self.write_notes_now();
         None
     }
 
@@ -334,7 +334,9 @@ impl cosmic::Application for AppModel {
     /// take still recording cannot be waited for.
     fn on_close_requested(&self, id: cosmic::iced::window::Id) -> Option<Self::Message> {
         (self.core.main_window_id() == Some(id)).then_some(Message::Notes(
-            crate::ui::messages::NotesMessage::SaveBeforeExit,
+            crate::ui::messages::NotesMessage::Page(
+                super_voice_app_core::pages::notes::Input::SaveBeforeExit,
+            ),
         ))
     }
 
@@ -588,7 +590,7 @@ impl AppModel {
         let flush = if page == crate::state::Page::Notes {
             Task::none()
         } else {
-            self.save_open_note()
+            self.notes_input(super_voice_app_core::pages::notes::Input::SaveNow)
         };
 
         // Opening a page that draws backend cards refetches both catalogs. The
@@ -649,7 +651,9 @@ impl AppModel {
             // or deleted, by hand.
             crate::state::Page::Notes => Task::batch([
                 Task::done(cosmic::Action::App(Message::Notes(
-                    crate::ui::messages::NotesMessage::Reload,
+                    crate::ui::messages::NotesMessage::Page(
+                        super_voice_app_core::pages::notes::Input::Reload,
+                    ),
                 ))),
                 self.update_title(),
             ]),
