@@ -11,9 +11,6 @@
     anyhow.workspace = true
     # The Updates page shows when the daemon last checked in local time.
     chrono.workspace = true
-    # Microphone capture for cloned-voice reference clips. The app records; the
-    # daemon still owns every output device.
-    cpal.workspace = true
     dirs.workspace = true
     futures-util.workspace = true
     hound.workspace = true

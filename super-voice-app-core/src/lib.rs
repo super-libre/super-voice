@@ -3,7 +3,11 @@
 //!
 //! The settings app draws its pages with libcosmic; whatever decides what they
 //! show lives here, so another app can draw the same thing with its own
-//! toolkit. So far that is the daemon client and the types it reads.
+//! toolkit. So far that is the daemon client and the types it reads, the
+//! notes and clips the app keeps, and the audio it records and plays itself.
 
+pub mod audio;
+pub mod clips;
 pub mod daemon;
+pub mod notes;
 pub mod state;
