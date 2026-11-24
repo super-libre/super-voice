@@ -8,19 +8,21 @@
 //! refetch landing under it must not overwrite what the user is typing.
 
 use crate::daemon::client::BackendContext;
-use cosmic::widget;
+use crate::state::TextBuffer;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use super_voice_shared::models::contexts::DictationContext;
 
-/// Everything the Contexts page holds.
+/// Everything the Contexts page holds. `B` is the open editor's prompt buffer,
+/// the app's toolkit's own (see [`TextBuffer`]).
 #[derive(Debug, Default)]
-pub struct ContextsState {
+pub struct ContextsState<B = String> {
     /// The contexts the daemon has, in the order the user arranged them.
     pub items: Vec<DictationContext>,
     /// The id in force by default, or `None`.
     pub active: Option<String>,
     /// The editor open over the list, if any.
-    pub draft: Option<ContextDraft>,
+    pub draft: Option<ContextDraft<B>>,
     /// The id of a context whose delete is awaiting a second press, so a
     /// mis-click does not throw away a vocabulary someone spent time on.
     pub confirming_delete: Option<String>,
@@ -39,7 +41,7 @@ pub struct ContextsState {
     pub backend_contexts: HashMap<String, BackendContext>,
 }
 
-impl ContextsState {
+impl<B> ContextsState<B> {
     /// Replace the list with what the daemon reported.
     ///
     /// Deliberately does not touch [`draft`](Self::draft): a refetch triggered
@@ -113,7 +115,7 @@ impl ContextsState {
 /// reconciles the two, and until then the daemon's copy and this one are
 /// allowed to differ.
 #[derive(Debug, Clone)]
-pub struct ContextDraft {
+pub struct ContextDraft<B = String> {
     /// The id being edited. Fixed for the life of the draft — a rename edits
     /// [`name`](Self::name), never this, because the id is what the active
     /// selection and every per-backend pin point at.
@@ -124,17 +126,16 @@ pub struct ContextDraft {
     pub name: String,
     /// The prompt, in the multi-line editor's own buffer.
     ///
-    /// `text_editor::Content` rather than a `String` because the editor owns
-    /// the cursor and the selection; re-seeding it on every refetch is what
-    /// makes a cursor jump to the start mid-sentence.
-    pub prompt: widget::text_editor::Content,
-    /// One row per vocabulary term, each with a stable widget id so the row
-    /// created by pressing Enter can be focused.
+    /// The editor's buffer rather than a `String` because the editor owns the
+    /// cursor and the selection; re-seeding it on every refetch is what makes
+    /// a cursor jump to the start mid-sentence.
+    pub prompt: B,
+    /// One row per vocabulary term, each with a stable id so the row created
+    /// by pressing Enter can be focused.
     ///
-    /// A `Vec<(Id, String)>` rather than a `Vec<String>` for exactly that: the
-    /// `Task` returned by `text_input::focus` needs an id that already belongs
-    /// to a rendered row.
-    pub terms: Vec<(widget::Id, String)>,
+    /// A `Vec<(RowId, String)>` rather than a `Vec<String>` for exactly that:
+    /// focusing a row needs an id that already belongs to a rendered row.
+    pub terms: Vec<(RowId, String)>,
     /// A validation message from the daemon's last refused save, shown in the
     /// editor rather than as a page-level banner — it is about this form.
     pub error: Option<String>,
@@ -143,7 +144,7 @@ pub struct ContextDraft {
     pub saving: bool,
 }
 
-impl ContextDraft {
+impl<B: TextBuffer> ContextDraft<B> {
     /// An editor over an existing context.
     #[must_use]
     pub fn editing(context: &DictationContext) -> Self {
@@ -151,7 +152,7 @@ impl ContextDraft {
             id: context.id.clone(),
             is_new: false,
             name: context.name.clone(),
-            prompt: widget::text_editor::Content::with_text(&context.prompt),
+            prompt: B::from_text(&context.prompt),
             terms: Self::rows(&context.vocabulary),
             error: None,
             saving: false,
@@ -165,7 +166,7 @@ impl ContextDraft {
             id,
             is_new: true,
             name: String::new(),
-            prompt: widget::text_editor::Content::new(),
+            prompt: B::from_text(""),
             terms: Self::rows(&[]),
             error: None,
             saving: false,
@@ -178,20 +179,20 @@ impl ContextDraft {
     /// The trailing row costs nothing, because blanks are dropped on save. It
     /// is what makes "add a term" a thing you type into rather than a button
     /// you have to find first.
-    fn rows(vocabulary: &[String]) -> Vec<(widget::Id, String)> {
+    fn rows(vocabulary: &[String]) -> Vec<(RowId, String)> {
         vocabulary
             .iter()
-            .map(|term| (widget::Id::unique(), term.clone()))
-            .chain(std::iter::once((widget::Id::unique(), String::new())))
+            .map(|term| (RowId::unique(), term.clone()))
+            .chain(std::iter::once((RowId::unique(), String::new())))
             .collect()
     }
 
-    /// Insert an empty row after `index` and return its widget id, so the
-    /// caller can focus it.
-    pub fn insert_row_after(&mut self, index: usize) -> widget::Id {
-        let id = widget::Id::unique();
+    /// Insert an empty row after `index` and return its id, so the caller can
+    /// focus it.
+    pub fn insert_row_after(&mut self, index: usize) -> RowId {
+        let id = RowId::unique();
         let at = (index + 1).min(self.terms.len());
-        self.terms.insert(at, (id.clone(), String::new()));
+        self.terms.insert(at, (id, String::new()));
         id
     }
 
@@ -200,13 +201,13 @@ impl ContextDraft {
     /// Never removes the last remaining row: an editor with no rows at all has
     /// nowhere to type the next term, and the user would have to close and
     /// reopen it to get one back.
-    pub fn remove_row(&mut self, index: usize) -> Option<widget::Id> {
+    pub fn remove_row(&mut self, index: usize) -> Option<RowId> {
         if self.terms.len() <= 1 || index >= self.terms.len() {
             return None;
         }
         self.terms.remove(index);
         let focus = index.saturating_sub(1);
-        self.terms.get(focus).map(|(id, _)| id.clone())
+        self.terms.get(focus).map(|(id, _)| *id)
     }
 
     /// Replace row `index` with `value`, splitting a pasted multi-line blob
@@ -228,7 +229,7 @@ impl ContextDraft {
         };
         self.terms[index].1 = first.to_string();
         let rest: Vec<_> = lines
-            .map(|line| (widget::Id::unique(), line.trim().to_string()))
+            .map(|line| (RowId::unique(), line.trim().to_string()))
             .collect();
         if !rest.is_empty() {
             let at = index + 1;
@@ -251,5 +252,24 @@ impl ContextDraft {
                     .collect::<Vec<_>>(),
             ),
         }
+    }
+}
+
+/// A vocabulary row's id, kept for the row's life so the row a key press made
+/// can be focused. Each app turns it into its toolkit's own widget id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RowId(u64);
+
+impl RowId {
+    /// An id no other row has had.
+    fn unique() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// The number behind the id, for building a toolkit's id from it.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
     }
 }
