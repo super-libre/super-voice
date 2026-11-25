@@ -4,8 +4,9 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    # gpui-app is the long-lived branch the GPUI app is built on; pull
-    # requests into it get the same checks as those into main.
+    # gpui-app is the long-lived branch the GPUI app is built on. Pull
+    # requests into it run clippy only (see `ONLY_CLIPPY` below); the full
+    # set runs when gpui-app comes to main.
     branches: [main, gpui-app]
 
 # A newer push to a pull request makes the run on its older commit moot, so
@@ -21,6 +22,8 @@ env:
 jobs:
   linux-test:
     name: Linux Test
+    # ONLY_CLIPPY: not on pull requests into gpui-app.
+    if: github.base_ref != 'gpui-app'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -154,6 +157,8 @@ jobs:
   # a step differs, the platform forces it and the step says why.
   macos-test:
     name: macOS Test
+    # ONLY_CLIPPY: not on pull requests into gpui-app.
+    if: github.base_ref != 'gpui-app'
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -246,6 +251,8 @@ jobs:
 
   fmt:
     name: Rustfmt
+    # ONLY_CLIPPY: not on pull requests into gpui-app.
+    if: github.base_ref != 'gpui-app'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -263,6 +270,8 @@ jobs:
   # job. The crate links no system libraries, so there is nothing to install.
   schemas:
     name: TOML schemas
+    # ONLY_CLIPPY: not on pull requests into gpui-app.
+    if: github.base_ref != 'gpui-app'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -283,6 +292,8 @@ jobs:
 
   protocol:
     name: Protocol docs
+    # ONLY_CLIPPY: not on pull requests into gpui-app.
+    if: github.base_ref != 'gpui-app'
     runs-on: ubuntu-latest
     # The repository's default workflow token is read-only, so the gh-pages push
     # below needs this granted explicitly — the same block, for the same reason,

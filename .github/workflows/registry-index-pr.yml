@@ -11,6 +11,8 @@ name: Registry index (PR preview)
 
 on:
   pull_request:
+    # Not on pull requests into gpui-app, the GPUI app's long-lived branch.
+    branches-ignore: [gpui-app]
     paths:
       - 'registry/registry.toml'
       - 'super-voice-registry-types/**'
