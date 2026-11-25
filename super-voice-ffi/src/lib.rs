@@ -11,10 +11,12 @@ use std::sync::LazyLock;
 
 use super_voice_app_core::state::TextBuffer;
 
+pub mod about;
 pub mod assistants;
 pub mod behavior;
 pub mod clips;
 pub mod configure;
+pub mod connection;
 pub mod contexts;
 mod events;
 pub mod library;

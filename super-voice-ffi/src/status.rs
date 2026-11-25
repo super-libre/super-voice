@@ -175,6 +175,10 @@ pub struct HeaderStatus {
     /// The Models page's steps: transcription, post-processing, synthesis.
     /// Empty until the daemon answers.
     pub pipeline: Vec<PipelineStep>,
+    /// With Sleep When Idle on, how long a model waits idle before it sleeps,
+    /// in words ("5 minutes"), for the moon after the readiness dots: their
+    /// dots stay green while a model sleeps. `None` while it is off.
+    pub sleep_after: Option<String>,
 }
 
 impl HeaderStatus {
@@ -184,6 +188,7 @@ impl HeaderStatus {
         speech_to_text: Readiness::None,
         text_to_speech: Readiness::None,
         pipeline: Vec::new(),
+        sleep_after: None,
     };
 }
 
@@ -254,7 +259,13 @@ async fn read() -> HeaderStatus {
         return HeaderStatus::DISCONNECTED;
     };
     // The GPUs are a nice-to-have: a daemon that can't say still has stages.
-    let gpus = client::get_gpu_info().await.unwrap_or_default();
+    // So is the moon: a setting that can't be read reads as off.
+    let (gpus, idle_unload) = tokio::join!(client::get_gpu_info(), client::get_idle_unload());
+    let gpus = gpus.unwrap_or_default();
+    let sleep_after = idle_unload
+        .ok()
+        .filter(|after_secs| *after_secs > 0)
+        .map(crate::settings::idle_time_name);
     HeaderStatus {
         connected: true,
         gpus: gpus.iter().map(readout).collect(),
@@ -265,6 +276,7 @@ async fn read() -> HeaderStatus {
             PipelineStep::read(PipelineStage::PostProcessing, &post_processing),
             PipelineStep::read(PipelineStage::Synthesis, &synthesis),
         ],
+        sleep_after,
     }
 }
 

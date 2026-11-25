@@ -37,6 +37,7 @@ enum Destination: Hashable, CaseIterable {
 struct ContentView: View {
     @ObservedObject var notes: NotesModel
     @ObservedObject var header = HeaderModel.shared
+    @ObservedObject var connection = ConnectionModel.shared
     @State private var selection: Destination? = Self.firstPage
 
     /// The page the window opens on: speech to text's, unless a screenshot
@@ -69,6 +70,23 @@ struct ContentView: View {
     }
 
     var body: some View {
+        Group {
+            // While the daemon can't be reached, the window is the Connection
+            // page alone, with no sidebar: the other pages have nothing to
+            // show without it. As in the settings app.
+            if connection.unreachable {
+                ConnectionView(model: connection)
+            } else {
+                pages
+            }
+        }
+        // View › Connection.
+        .sheet(isPresented: $connection.sheetShown) {
+            ConnectionSheet(model: connection)
+        }
+    }
+
+    private var pages: some View {
         NavigationSplitView {
             List(selection: $selection) {
                 row(.models)
@@ -122,7 +140,7 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                HeaderPills(model: header)
+                HeaderPills(model: header, updates: UpdatesModel.shared) { selection = .updates }
             }
             .withoutGlass()
         }

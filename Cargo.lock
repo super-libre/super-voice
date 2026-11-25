@@ -7432,6 +7432,7 @@ dependencies = [
  "super-voice-shared",
  "tokio",
  "uniffi",
+ "vergen",
 ]
 
 [[package]]

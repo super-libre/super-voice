@@ -23,6 +23,7 @@ enum Icon: String {
     case keyboard
     case microphone
     case play
+    case moon
     case robot
     case speakerHigh = "speaker-high"
     case stop

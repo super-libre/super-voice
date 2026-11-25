@@ -14,7 +14,7 @@ final class UpdatesModel: ObservableObject {
     @Published private(set) var page = UpdatesPage(
         loaded: false, unsupported: false, latestVersion: nil, checkedAt: nil, lastCheckError: nil,
         check: CheckNow(enabled: false, checking: false), autoCheck: nil, beta: nil, panel: nil,
-        notice: nil
+        notice: nil, headerBadge: false
     )
 
     /// A relaunch that didn't start: why.
@@ -48,11 +48,24 @@ final class UpdatesModel: ObservableObject {
     }
 
     private func show(_ page: UpdatesPage) {
+        #if DEBUG
+        if pretending { return }
+        #endif
         self.page = page
         #if DEBUG
         Snapshot.updatesShown(page)
         #endif
     }
+
+    #if DEBUG
+    private var pretending = false
+
+    /// Shows `page` from now on, whatever the daemon says: a made-up scene's.
+    func pretend(_ page: UpdatesPage) {
+        pretending = true
+        self.page = page
+    }
+    #endif
 }
 
 /// Hands the store's calls, which come on its own threads, to the model.

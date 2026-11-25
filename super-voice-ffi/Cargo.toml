@@ -32,5 +32,9 @@
     # A backend for the Configure sheet's tests, as the daemon lists it.
     serde_json.workspace = true
 
+[build-dependencies]
+    # The commit the library is built from, for the About window.
+    vergen.workspace = true
+
 [lints]
     workspace = true

@@ -38,10 +38,14 @@
 // `library-add`, the "Install manually" sheet over them, previewing a
 // made-up backend; `configure`, a made-up API-key backend's Configure sheet
 // over the Library page, for the layout;
-// `notes-take`, the list with a made-up take recording a new note; or
-// `note-take`, the newest note open with a made-up take adding to it. A take
-// scene's take, level and words are made up in the app, for the layout: a
-// real one needs a microphone and a model.
+// `notes-take`, the list with a made-up take recording a new note;
+// `note-take`, the newest note open with a made-up take adding to it;
+// `connection`, the window as it is while the daemon doesn't answer, with
+// the command that starts it; `connection-denied`, the same once the user
+// refused the app, with Retry authorization; or `header`, the notes with
+// made-up header pills: the moon of Sleep When Idle, and Update available. A
+// take scene's take, level and words are made up in the app, for the layout:
+// a real one needs a microphone and a model.
 // Once the page is in that state, the window is drawn into the file at one
 // size and the app quits. The app draws its own window rather than a screen
 // capture taking it: that needs no Screen Recording permission, so it works
@@ -128,6 +132,38 @@ enum Snapshot {
                 model.pretend(shown)
                 MicrophoneModel.shared.pretend(Microphone(recording: true, level: 0.55, speech: true))
             }
+        case "connection", "connection-denied":
+            // Made up, for the layout: a daemon that doesn't answer, or one
+            // whose user refused the app.
+            let model = ConnectionModel.shared
+            let target = "gui/501/ai.menjivar.super-voice"
+            model.pretend(scene == "connection"
+                ? ConnectionPage(
+                    status: .error(message: "Daemon HTTP listener not running. Start the daemon first."),
+                    socketPath: model.page.socketPath,
+                    fix: .start(command: "launchctl kickstart \(target)")
+                )
+                : ConnectionPage(
+                    status: .denied(reason: "auth_denied (user_denied_cached)"),
+                    socketPath: model.page.socketPath,
+                    fix: .reauthorize(restart: "launchctl kickstart -k \(target)")
+                ))
+        case "header":
+            // Made up, for the layout: the pills with Sleep When Idle on and
+            // an update offered.
+            HeaderModel.shared.pretend(HeaderStatus(
+                connected: true,
+                gpus: [GpuReadout(
+                    name: "M3 Max", fullName: "Apple M3 Max", totalBytes: 48 << 30, usedBytes: 12 << 30,
+                    fraction: 0.25, level: .ok
+                )],
+                speechToText: .ready, textToSpeech: .idle, pipeline: [],
+                sleepAfter: t("idle-minutes", ["minutes": "5"])
+            ))
+            var updates = UpdatesModel.shared.page
+            updates.latestVersion = "v0.10.0"
+            updates.headerBadge = true
+            UpdatesModel.shared.pretend(updates)
         case "models", "models-running", "models-download", "models-staged", "settings", "settings-languages", "assistants", "assistants-key",
              "assistants-connected", "updates", "shortcuts", "library", "library-browse",
              "library-sample", "library-sample-browse", "model-language", "model-voice",
@@ -633,8 +669,10 @@ enum Snapshot {
             fail("no window is open")
         }
         // A run pointed at a daemon waits for it, so the header's pills are in
-        // the shot.
-        if let socket = ProcessInfo.processInfo.environment["SUPER_VOICE_HTTP_SOCKET"] {
+        // the shot. Not the connection scenes', which show it not answering.
+        if !scene.hasPrefix("connection"),
+           let socket = ProcessInfo.processInfo.environment["SUPER_VOICE_HTTP_SOCKET"]
+        {
             for _ in 0..<50 where !HeaderModel.shared.header.connected {
                 try? await Task.sleep(for: .milliseconds(100))
             }

@@ -33,11 +33,20 @@ struct ContextsView: View {
                         ContextRow(model: model, context: context)
                     }
                 } header: {
-                    Text(t("a-context-tells-a-model-what-you"))
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                        .textCase(nil)
-                        .padding(.bottom, 6)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(t("a-context-tells-a-model-what-you"))
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                        // Which backends will use it: a context that reaches
+                        // nothing is the one failure the user can't see.
+                        if let reach = page.reach {
+                            Text(reach.words)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .textCase(nil)
+                    .padding(.bottom, 6)
                 }
 
                 Section {
@@ -288,6 +297,18 @@ extension ContextsNotice {
         switch self {
         case let .couldNotLoad(message): t("contexts-could-not-load", ["error": message])
         case let .couldNotSave(message): t("context-could-not-save", ["error": message])
+        }
+    }
+}
+
+extension ContextReach {
+    /// What the page says about it, under its introduction.
+    var words: String {
+        switch self {
+        case .nothing:
+            t("none-of-your-installed-backends-can-use")
+        case let .partly(accepting, total):
+            t("context-supported-count", ["accepting": "\(accepting)", "value0": "\(total)"])
         }
     }
 }
