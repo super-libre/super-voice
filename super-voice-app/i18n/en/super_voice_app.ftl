@@ -800,3 +800,8 @@ key-remove-failed = Couldn't remove the key: { $error }
 recorded-just-now = Recorded just now
 imported-from = Imported from { $name }
 choose-a-voice-recording = Choose a voice recording
+
+# Contexts
+contexts-could-not-load = Couldn't load contexts: { $error }
+context-could-not-save = Couldn't save that context: { $error }
+backend-context-change-failed = Couldn't change this backend's context: { $error }

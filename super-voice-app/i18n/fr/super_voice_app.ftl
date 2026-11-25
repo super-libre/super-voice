@@ -800,3 +800,8 @@ key-remove-failed = Impossible de retirer la clé : { $error }
 recorded-just-now = Enregistré à l’instant
 imported-from = Importé depuis { $name }
 choose-a-voice-recording = Choisir un enregistrement de voix
+
+# Contexts
+contexts-could-not-load = Impossible de charger les contextes : { $error }
+context-could-not-save = Impossible d'enregistrer ce contexte : { $error }
+backend-context-change-failed = Impossible de changer le contexte de ce moteur : { $error }

@@ -91,7 +91,7 @@ impl AppModel {
                 self.contexts.loaded = true;
                 self.set_action_error(
                     crate::state::ErrorScope::Contexts,
-                    format!("Couldn't load contexts: {e}"),
+                    crate::fl!("contexts-could-not-load", error = e),
                 );
                 Task::none()
             }
@@ -231,7 +231,7 @@ impl AppModel {
                     // banner is the only place left to say so.
                     self.set_action_error(
                         crate::state::ErrorScope::Contexts,
-                        format!("Couldn't save that context: {e}"),
+                        crate::fl!("context-could-not-save", error = e),
                     );
                 }
                 Task::none()
@@ -259,7 +259,10 @@ impl AppModel {
                         }),
                         Err(e) => cosmic::Action::App(Message::SettingActionFailed {
                             scope: crate::state::ErrorScope::ConfigureBackend,
-                            message: format!("Couldn't change this backend's context: {e}"),
+                            message: crate::fl!(
+                                "backend-context-change-failed",
+                                error = e.to_string()
+                            ),
                         }),
                     },
                 )
@@ -276,7 +279,10 @@ impl AppModel {
                         }),
                         Err(e) => cosmic::Action::App(Message::SettingActionFailed {
                             scope: crate::state::ErrorScope::ConfigureBackend,
-                            message: format!("Couldn't change this backend's context: {e}"),
+                            message: crate::fl!(
+                                "backend-context-change-failed",
+                                error = e.to_string()
+                            ),
                         }),
                     },
                 )
