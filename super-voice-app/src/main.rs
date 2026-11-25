@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 mod core;
-// The daemon client, the notes and clips, and the app's own audio live in the
-// core crate, which every app shares.
-use super_voice_app_core::{audio, clips, daemon, notes};
+// The daemon client, and the notes and clips, live in the core crate, which
+// every app shares.
+use super_voice_app_core::{clips, daemon, notes};
 mod i18n;
 mod state;
 mod ui;

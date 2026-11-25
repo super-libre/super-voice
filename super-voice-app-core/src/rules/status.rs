@@ -341,6 +341,34 @@ pub const fn not_ready(stage: Stage, status: ModelStatus) -> Option<NotReady> {
     }
 }
 
+/// A stage's [`ModelStatus`] from its block alone (`GET /{feature}/pipeline/{n}`
+/// and its model), for an app that reads only that: the header of the macOS
+/// app, so far.
+///
+/// It says what the block can: no backend ([`None`](ModelStatus::None)),
+/// a model chosen but not up ([`NotLoaded`](ModelStatus::NotLoaded)), loaded
+/// ([`Ready`](ModelStatus::Ready)), asleep ([`Idle`](ModelStatus::Idle)), and
+/// for a stage with a switch, on but not running
+/// ([`Failed`](ModelStatus::Failed)). It can't see a backend left unset or a
+/// voice missing: [`stage_status`] can, from the fuller state the settings app
+/// holds.
+#[must_use]
+pub fn stage_block_status(
+    stage: Stage,
+    block: &crate::daemon::client::v1::pipeline::StageState,
+) -> ModelStatus {
+    let status = match stage.block() {
+        None if block.source.is_none() => ModelStatus::None,
+        None if block.loaded => ModelStatus::Ready,
+        None => ModelStatus::NotLoaded,
+        Some(_) => classify_block_status(block, &[], &std::collections::HashMap::new()),
+    };
+    idle_when(
+        status,
+        block.state == crate::daemon::client::ModelState::Idle,
+    )
+}
+
 /// Whether the synthesis stage's model has nothing to speak in, as far as the
 /// app knows.
 ///
@@ -772,5 +800,65 @@ mod model_status_tests {
                 Some(NotReady::SpeechToText)
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod stage_block_status_tests {
+    use super::{ModelStatus, Stage, stage_block_status};
+    use crate::daemon::client::ModelState;
+    use crate::daemon::client::v1::pipeline::StageState;
+
+    fn block(source: Option<&str>, enabled: bool, state: ModelState) -> StageState {
+        StageState {
+            source: source.map(str::to_string),
+            enabled,
+            model: source.map(|_| "m".to_string()),
+            loaded: state == ModelState::Loaded,
+            state,
+            ..StageState::default()
+        }
+    }
+
+    #[test]
+    fn transcription_reads_no_backend_not_loaded_loaded_or_asleep() {
+        let t = Stage::Transcription;
+        assert_eq!(
+            stage_block_status(t, &block(None, true, ModelState::NotLoaded)),
+            ModelStatus::None
+        );
+        assert_eq!(
+            stage_block_status(t, &block(Some("b"), true, ModelState::NotLoaded)),
+            ModelStatus::NotLoaded
+        );
+        assert_eq!(
+            stage_block_status(t, &block(Some("b"), true, ModelState::Loaded)),
+            ModelStatus::Ready
+        );
+        assert_eq!(
+            stage_block_status(t, &block(Some("b"), true, ModelState::Idle)),
+            ModelStatus::Idle
+        );
+    }
+
+    #[test]
+    fn synthesis_on_but_not_running_has_failed_unless_asleep() {
+        let s = Stage::Synthesis;
+        assert_eq!(
+            stage_block_status(s, &block(Some("b"), true, ModelState::NotLoaded)),
+            ModelStatus::Failed
+        );
+        assert_eq!(
+            stage_block_status(s, &block(Some("b"), true, ModelState::Idle)),
+            ModelStatus::Idle
+        );
+        assert_eq!(
+            stage_block_status(s, &block(Some("b"), false, ModelState::NotLoaded)),
+            ModelStatus::NotLoaded
+        );
+        assert_eq!(
+            stage_block_status(s, &block(None, false, ModelState::NotLoaded)),
+            ModelStatus::None
+        );
     }
 }

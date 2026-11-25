@@ -26,25 +26,8 @@ pub(super) fn fmt_gib_pair(used: u64, total: u64) -> String {
     )
 }
 
-/// Strip the marketing vendor prefix from a GPU name for compact display
-/// (e.g. `"NVIDIA GeForce RTX 3090"` → `"RTX 3090"`). The full name still shows
-/// in the header tooltip. Display-only.
-pub(super) fn short_gpu_name(name: &str) -> &str {
-    const PREFIXES: &[&str] = &[
-        "NVIDIA GeForce ",
-        "NVIDIA ",
-        "AMD Radeon ",
-        "AMD ",
-        "Intel Arc ",
-        "Intel ",
-    ];
-    for p in PREFIXES {
-        if let Some(rest) = name.strip_prefix(p) {
-            return rest;
-        }
-    }
-    name
-}
+/// A GPU's name without the vendor's prefix; the rule is the core's.
+pub(super) use super_voice_app_core::rules::gpu::short_name as short_gpu_name;
 
 /// A compact fixed-width used/total memory meter for the header GPU readout: a
 /// neutral rounded track with an accent fill whose width tracks utilization.
@@ -53,11 +36,9 @@ pub(super) fn short_gpu_name(name: &str) -> &str {
 // reason: display-only; the imprecision is cosmetic
 #[allow(clippy::cast_precision_loss)]
 pub(super) fn vram_meter<'a>(used: u64, total: u64) -> Element<'a, Message> {
-    let frac = if total == 0 {
-        0.0
-    } else {
-        (used as f32 / total as f32).clamp(0.0, 1.0)
-    };
+    use super_voice_app_core::rules::gpu::{MeterLevel, meter_fraction, meter_level};
+    let frac = meter_fraction(used, total);
+    let level = meter_level(used, total);
     let track_w = 72.0_f32;
     let height = 6.0_f32;
     let fill_w = (track_w * frac).clamp(2.0, track_w);
@@ -67,12 +48,10 @@ pub(super) fn vram_meter<'a>(used: u64, total: u64) -> Element<'a, Message> {
         .height(Length::Fixed(height))
         .class(cosmic::theme::Container::custom(move |theme| {
             let cosmic = theme.cosmic();
-            let color: cosmic::iced::Color = if frac >= 0.9 {
-                cosmic.destructive.base.into()
-            } else if frac >= 0.75 {
-                cosmic.warning.base.into()
-            } else {
-                cosmic.success.base.into()
+            let color: cosmic::iced::Color = match level {
+                MeterLevel::Full => cosmic.destructive.base.into(),
+                MeterLevel::High => cosmic.warning.base.into(),
+                MeterLevel::Ok => cosmic.success.base.into(),
             };
             cosmic::iced::widget::container::Style {
                 background: Some(cosmic::iced::Background::Color(color)),

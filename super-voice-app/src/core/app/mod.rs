@@ -466,8 +466,11 @@ impl cosmic::Application for AppModel {
         // of one that has played out.
         if self.clips.making.is_some() || self.clips.playing.is_some() {
             subs.push(
-                cosmic::iced::time::every(std::time::Duration::from_millis(200))
-                    .map(|_| Message::Clips(crate::ui::messages::ClipsMessage::Tick)),
+                cosmic::iced::time::every(std::time::Duration::from_millis(200)).map(|_| {
+                    Message::Clips(crate::ui::messages::ClipsMessage::Page(
+                        super_voice_app_core::pages::clips::Input::Tick,
+                    ))
+                }),
             );
         }
         // The Assistants page's open sessions, while it is shown: they start,
@@ -616,7 +619,9 @@ impl AppModel {
             // shows stale rows.
             crate::state::Page::Contexts => Task::batch([
                 Task::done(cosmic::Action::App(Message::Contexts(
-                    crate::ui::messages::ContextsMessage::Reload,
+                    crate::ui::messages::ContextsMessage::Page(
+                        super_voice_app_core::pages::contexts::Input::Reload,
+                    ),
                 ))),
                 self.update_title(),
             ]),
@@ -640,7 +645,9 @@ impl AppModel {
             ]),
             crate::state::Page::Voices => Task::batch([
                 Task::done(cosmic::Action::App(Message::Voices(
-                    crate::ui::messages::VoicesMessage::Refresh,
+                    crate::ui::messages::VoicesMessage::Page(
+                        super_voice_app_core::pages::voices::Input::Refresh,
+                    ),
                 ))),
                 self.update_title(),
             ]),

@@ -797,6 +797,7 @@ key-create-failed = Couldn't create the key: { $error }
 key-remove-failed = Couldn't remove the key: { $error }
 
 # Voices
+this-voice-needs-a-transcript = The loaded model clones from the reference transcript, so this voice needs one.
 recorded-just-now = Recorded just now
 imported-from = Imported from { $name }
 choose-a-voice-recording = Choose a voice recording

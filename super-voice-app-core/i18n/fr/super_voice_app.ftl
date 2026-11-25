@@ -797,6 +797,7 @@ key-create-failed = Impossible de créer la clé : { $error }
 key-remove-failed = Impossible de retirer la clé : { $error }
 
 # Voices
+this-voice-needs-a-transcript = Le modèle chargé clone à partir de la transcription de référence, cette voix en a donc besoin.
 recorded-just-now = Enregistré à l’instant
 imported-from = Importé depuis { $name }
 choose-a-voice-recording = Choisir un enregistrement de voix

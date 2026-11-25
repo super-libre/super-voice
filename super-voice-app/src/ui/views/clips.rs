@@ -11,6 +11,8 @@ use cosmic::widget::{self, button, settings, space::horizontal as horizontal_spa
 
 use super::common::{error_banner, muted};
 use super::notes::{clock, first_line, when, words_label};
+use super_voice_app_core::pages::clips::Input;
+
 use crate::clips::Clip;
 use crate::core::app::AppModel;
 use crate::state::ErrorScope;
@@ -31,6 +33,11 @@ const SECONDS_PER_WORD: f32 = 0.4;
 
 fn clips_message(message: ClipsMessage) -> Message {
     Message::Clips(message)
+}
+
+/// A press the page's logic handles.
+fn clips_input(input: Input) -> Message {
+    Message::Clips(ClipsMessage::Page(input))
 }
 
 /// The Clips tab.
@@ -118,8 +125,7 @@ fn making(app: &AppModel) -> Element<'_, Message> {
             settings::item::builder(crate::fl!("making-the-clip"))
                 .description(elapsed)
                 .control(
-                    button::standard(crate::fl!("cancel"))
-                        .on_press(clips_message(ClipsMessage::Cancel)),
+                    button::standard(crate::fl!("cancel")).on_press(clips_input(Input::Cancel)),
                 ),
         )
         .add(widget::indeterminate_linear().width(Length::Fill))
@@ -212,31 +218,27 @@ fn clip_row<'a>(state: &'a ClipsState, clip: &'a Clip, today: NaiveDate) -> Elem
     if state.confirming_delete.as_deref() == Some(clip.id.as_str()) {
         row = row
             .push(text::body(crate::fl!("delete-this-clip")))
-            .push(
-                button::text(crate::fl!("cancel"))
-                    .on_press(clips_message(ClipsMessage::DeleteCancelled)),
-            )
+            .push(button::text(crate::fl!("cancel")).on_press(clips_input(Input::DeleteCancelled)))
             .push(
                 button::destructive(crate::fl!("delete")).on_press(clips_message(
-                    ClipsMessage::DeleteConfirmed(clip.id.clone()),
+                    ClipsMessage::Page(Input::DeleteConfirmed(clip.id.clone())),
                 )),
             );
     } else {
         let play = if playing.is_some() {
-            button::standard(crate::fl!("stop")).on_press(clips_message(ClipsMessage::Stop))
+            button::standard(crate::fl!("stop")).on_press(clips_input(Input::Stop))
         } else {
-            button::standard(crate::fl!("play"))
-                .on_press(clips_message(ClipsMessage::Play(clip.id.clone())))
+            button::standard(crate::fl!("play")).on_press(clips_input(Input::Play(clip.id.clone())))
         };
         row = row
             .push(play)
             .push(
                 button::standard(crate::fl!("export"))
-                    .on_press(clips_message(ClipsMessage::Export(clip.id.clone()))),
+                    .on_press(clips_input(Input::Export(clip.id.clone()))),
             )
             .push(
                 button::destructive(crate::fl!("delete")).on_press(clips_message(
-                    ClipsMessage::DeleteRequested(clip.id.clone()),
+                    ClipsMessage::Page(Input::DeleteRequested(clip.id.clone())),
                 )),
             );
     }

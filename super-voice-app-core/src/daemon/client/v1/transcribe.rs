@@ -3,7 +3,7 @@
 
 use crate::daemon::client::internal::response::require_unit;
 use crate::daemon::client::internal::session::{
-    APP_NAME, SETTINGS_SCOPES, app_id, socket_path, with_settings_token,
+    SETTINGS_SCOPES, app_id, app_name, socket_path, with_settings_token,
 };
 use super_voice_shared::daemon::http_client;
 use super_voice_shared::daemon::http_client::HttpResult;
@@ -73,7 +73,7 @@ async fn run_take(channel: tokio::sync::mpsc::Sender<RecordEvent>) {
         // Try to open the stream with the cached token; on
         // InvalidSession, drop the cache and re-auth once.
         let mut stream = {
-            let token = session::obtain(socket.clone(), app_id(), APP_NAME, SETTINGS_SCOPES)
+            let token = session::obtain(socket.clone(), app_id(), app_name(), SETTINGS_SCOPES)
                 .await
                 .map_err(|e| e.to_string())?;
             match http_client::transcribe_stream(socket.clone(), &token, opts.clone()).await {
@@ -81,7 +81,7 @@ async fn run_take(channel: tokio::sync::mpsc::Sender<RecordEvent>) {
                 Err(HttpError::InvalidSession { .. }) => {
                     let _ = session::forget(app_id());
                     let token =
-                        session::obtain(socket.clone(), app_id(), APP_NAME, SETTINGS_SCOPES)
+                        session::obtain(socket.clone(), app_id(), app_name(), SETTINGS_SCOPES)
                             .await
                             .map_err(|e| e.to_string())?;
                     Box::pin(

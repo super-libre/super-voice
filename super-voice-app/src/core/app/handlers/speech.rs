@@ -1,105 +1,68 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The Speech tab: the test utterance, and what the daemon says it is speaking.
+//! Text to speech's speech test, wired to its logic in the core
+//! (`super_voice_app_core::pages::speech`). The app runs the work it asks for
+//! as iced tasks, and says its notice in its own words.
+
+use cosmic::prelude::*;
+use super_voice_app_core::pages::speech::{self as page, Effect, Input, Notice, Outcome};
 
 use crate::core::app::AppModel;
-use crate::daemon::client::v1::speak::{speak_command, stop_speaking_command};
-use crate::state::{ErrorScope, SpeakingStatus};
+use crate::state::ErrorScope;
 use crate::ui::messages::{Message, SpeechMessage};
-use cosmic::prelude::*;
+
+fn page_action(input: Input) -> cosmic::Action<Message> {
+    cosmic::Action::App(Message::Speech(SpeechMessage::Page(input)))
+}
 
 impl AppModel {
-    /// Route the Speech tab's messages.
-    ///
-    /// The optimistic badge flip that a recording UI would do is deliberately
-    /// absent. The speaking status is driven only by the daemon's
-    /// `speaking_state` events, because the daemon speaks for whoever asked —
-    /// another client's utterance turns the badge on too, and a local flip
-    /// would claim an utterance this tab did not start.
     pub(in crate::core::app) fn handle_speech_messages(
         &mut self,
         message: SpeechMessage,
     ) -> Task<cosmic::Action<Message>> {
-        match message {
-            SpeechMessage::TestTextChanged(text) => {
-                self.speech.test_text = text;
-                Task::none()
-            }
-
-            SpeechMessage::Speak => {
-                let text = self.speech.test_text.trim().to_string();
-                if text.is_empty() {
-                    return Task::none();
-                }
-                self.clear_action_error(ErrorScope::Speech);
-                Task::perform(speak_command(text), |result| match result {
-                    Ok(Some(id)) => {
-                        cosmic::Action::App(Message::Speech(SpeechMessage::SpeakStarted(id)))
-                    }
-                    // Accepted, but the daemon named no utterance. Nothing to
-                    // correlate later, and nothing went wrong — stay quiet and
-                    // let the events drive the badge.
-                    Ok(None) => cosmic::Action::None,
-                    Err(e) => cosmic::Action::App(Message::Speech(SpeechMessage::SpeakFailed(
-                        e.to_string(),
-                    ))),
-                })
-            }
-
-            SpeechMessage::SpeakStarted(id) => {
-                log::info!("speaking utterance {id}");
-                Task::none()
-            }
-
-            SpeechMessage::SpeakFailed(message) => {
-                self.set_action_error(ErrorScope::Speech, message);
-                Task::none()
-            }
-
-            SpeechMessage::StopSpeaking => Task::perform(stop_speaking_command(), |result| {
-                if let Err(e) = result {
-                    log::warn!("Stop speaking failed: {e}");
-                }
-                cosmic::Action::None
-            }),
-
-            SpeechMessage::WidgetAudioLevel { level, is_speech } => {
+        let SpeechMessage::Page(input) = message;
+        match &input {
+            Input::Level { .. } => self.last_udp_data = std::time::Instant::now(),
+            Input::Speaking { is_speaking, .. } => {
                 self.last_udp_data = std::time::Instant::now();
-                self.speech.level = level;
-                self.speech.is_playing = is_speech;
-                Task::none()
-            }
-
-            SpeechMessage::WidgetSpeakingState {
-                is_speaking,
-                utterance_id,
-            } => {
-                self.last_udp_data = std::time::Instant::now();
-                self.speech.status = if is_speaking {
-                    SpeakingStatus::Speaking
-                } else {
-                    SpeakingStatus::Idle
-                };
-                self.speech.utterance = utterance_id;
-                if is_speaking {
-                    // Whatever the Voices tab was waiting for, it is done
-                    // waiting: a voice is registered before its utterance is
-                    // accepted, so speech starting means preparation finished.
-                    //
-                    // These events describe the device, not this app's
-                    // requests, so another client's utterance clears the label
-                    // too. That is the right trade: the alternative is matching
-                    // on an utterance id the preview call does not keep, to fix
-                    // a case that costs a label cleared early.
+                // Whatever the Voices tab was waiting for is done: a voice is
+                // registered before its utterance is taken, so speech starting
+                // means its preparation finished. The event is the device's,
+                // so another app's utterance clears the label too; matching
+                // on an utterance id the preview doesn't keep would fix a case
+                // that costs a label cleared early.
+                if *is_speaking {
                     self.voices.previewing = None;
                     self.voices.preparing = None;
-                } else {
-                    // No more samples are coming, and the meter's last value
-                    // would otherwise sit at whatever the final frame was.
-                    self.speech.level = 0.0;
-                    self.speech.is_playing = false;
                 }
-                Task::none()
             }
+            _ => {}
         }
+        let Outcome {
+            effects,
+            clear_notice,
+            notice,
+        } = page::update(&mut self.speech, input);
+        if clear_notice {
+            self.clear_action_error(ErrorScope::Speech);
+        }
+        if let Some(notice) = notice {
+            self.set_action_error(ErrorScope::Speech, notice_text(notice));
+        }
+        Task::batch(effects.into_iter().map(run))
+    }
+}
+
+/// What the test asks for, as an iced task.
+fn run(effect: Effect) -> Task<cosmic::Action<Message>> {
+    match effect {
+        Effect::Speak(text) => Task::perform(page::run_speak(text), page_action),
+        Effect::Stop => Task::perform(page::run_stop(), |()| cosmic::Action::None),
+    }
+}
+
+/// What the test tells the user, in this app's words: the daemon's own.
+fn notice_text(notice: Notice) -> String {
+    match notice {
+        Notice::CouldNotSpeak(e) => e,
     }
 }

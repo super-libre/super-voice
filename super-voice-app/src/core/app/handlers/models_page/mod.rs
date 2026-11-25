@@ -117,7 +117,9 @@ impl AppModel {
                 // offer. Both are read on open rather than published with every
                 // `GET /backend/list`, which two pages fetch and neither shows.
                 let mut tasks = vec![Task::done(cosmic::Action::App(Message::Contexts(
-                    crate::ui::messages::ContextsMessage::Reload,
+                    crate::ui::messages::ContextsMessage::Page(
+                        super_voice_app_core::pages::contexts::Input::Reload,
+                    ),
                 )))];
                 if self.backends.iter().any(|b| {
                     b.source == source && supports::has(&b.supports, supports::DICTATION_CONTEXT)

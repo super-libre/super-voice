@@ -6,6 +6,8 @@ use cosmic::iced::widget::row;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, settings, text};
 
+use super_voice_app_core::pages::speech::Input;
+
 use crate::state::SpeakingStatus;
 use crate::ui::messages::{Message, SpeechMessage};
 
@@ -36,19 +38,19 @@ pub(super) fn test_rows<'a>(
     // produces an error banner is worse than one that is visibly unavailable.
     let action_button = match speaking_status {
         SpeakingStatus::Speaking => button::destructive(crate::fl!("stop"))
-            .on_press(Message::Speech(SpeechMessage::StopSpeaking)),
+            .on_press(Message::Speech(SpeechMessage::Page(Input::Stop))),
         SpeakingStatus::Idle => {
             let b = button::suggested(crate::fl!("speak"));
             if test_text.trim().is_empty() {
                 b
             } else {
-                b.on_press(Message::Speech(SpeechMessage::Speak))
+                b.on_press(Message::Speech(SpeechMessage::Page(Input::Speak)))
             }
         }
     };
 
     let input = widget::text_input(crate::fl!("type-something-to-hear-it"), test_text)
-        .on_input(|s| Message::Speech(SpeechMessage::TestTextChanged(s)))
+        .on_input(|s| Message::Speech(SpeechMessage::Page(Input::TextChanged(s))))
         .width(Length::Fill);
 
     // As the recording test lays them out: the button beside the state it

@@ -29,8 +29,30 @@ pub const SETTINGS_SCOPES: &[&str] = &[
     "audio_visualization",
     "daemon_status",
 ];
-pub(crate) const APP_NAME: &str = "Super Voice Settings App";
+/// The settings app's token entry, and every app's unless it says otherwise
+/// with [`set_identity`].
 pub(crate) const APP_ID_NAME: AppId = session::app_id("super-voice-app");
+/// The name the consent dialog shows for the settings app.
+const APP_NAME: &str = "Super Voice Settings App";
+
+/// Who this app is to the daemon, when it is not the settings app: the entry
+/// its token is kept under, and the name the consent dialog shows. Set once,
+/// before the first daemon call.
+static IDENTITY: std::sync::OnceLock<(AppId, &'static str)> = std::sync::OnceLock::new();
+
+/// Make this app a client of its own: its token kept under `app_id`, and the
+/// consent dialog naming it `name`. For an app other than the settings app,
+/// called before its first daemon call: the daemon binds a token to the binary
+/// it was granted to, so two apps sharing an entry would replace each other's
+/// token. Returns `false` when an identity was already set.
+pub fn set_identity(app_id: &'static str, name: &'static str) -> bool {
+    IDENTITY.set((session::app_id(app_id), name)).is_ok()
+}
+
+/// The name the consent dialog shows for this app.
+pub(crate) fn app_name() -> &'static str {
+    IDENTITY.get().map_or(APP_NAME, |(_, name)| name)
+}
 
 /// Where a `just screenshots` run keeps its token instead. The daemon binds a
 /// token to the binary it was granted to, so a debug build storing its own
@@ -48,13 +70,14 @@ pub fn use_scene_token() {
     SCENE.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// The keyring entry this run's token lives in: [`APP_ID_NAME`], or
-/// [`SCENE_APP_ID`] once [`use_scene_token`] has been called.
+/// The entry this run's token lives in: [`SCENE_APP_ID`] once
+/// [`use_scene_token`] has been called, else the one [`set_identity`] gave,
+/// else [`APP_ID_NAME`].
 pub fn app_id() -> AppId {
     if SCENE.load(std::sync::atomic::Ordering::Relaxed) {
         SCENE_APP_ID
     } else {
-        APP_ID_NAME
+        IDENTITY.get().map_or(APP_ID_NAME, |(id, _)| *id)
     }
 }
 
@@ -101,8 +124,12 @@ where
 {
     let socket = socket_path();
     let socket_for_op = socket.clone();
-    session::with_token(socket, app_id(), APP_NAME, SETTINGS_SCOPES, move |token| {
-        op(socket_for_op.clone(), token)
-    })
+    session::with_token(
+        socket,
+        app_id(),
+        app_name(),
+        SETTINGS_SCOPES,
+        move |token| op(socket_for_op.clone(), token),
+    )
     .await
 }

@@ -210,8 +210,13 @@ impl AppModel {
             .map_or_else(|| crate::fl!("edit-context"), views::contexts::editor_title);
         let body = views::contexts::editor_sheet(self)?;
         Some(
-            context_drawer::context_drawer(body, Message::Contexts(ContextsMessage::CancelEdit))
-                .title(title),
+            context_drawer::context_drawer(
+                body,
+                Message::Contexts(ContextsMessage::Page(
+                    super_voice_app_core::pages::contexts::Input::CancelEdit,
+                )),
+            )
+            .title(title),
         )
     }
 

@@ -18,8 +18,6 @@ use super_voice_shared::models::write_method::WriteMethod;
 
 use cosmic::widget::segmented_button;
 
-use super_voice_shared::models::contexts::DictationContext;
-
 use crate::daemon::backends::BackendInfo;
 use crate::state::{AudioTheme, ContextPage};
 use crate::state::{BlockStage, Stage};
@@ -488,104 +486,29 @@ pub enum StageMessage {
     BlockFailed { stage: BlockStage, message: String },
 }
 
-/// Text to speech's Speech tab: a test utterance, and what the daemon says it
-/// is speaking.
+/// Text to speech's speech test.
 #[derive(Debug, Clone)]
 pub enum SpeechMessage {
-    /// The text in the Speech tab's test field changed.
-    TestTextChanged(String),
-    /// Speak whatever is in the test field.
-    Speak,
-    /// The daemon accepted the utterance and returned its id.
-    SpeakStarted(String),
-    /// The daemon refused it; carries the message for the tab's banner.
-    SpeakFailed(String),
-    /// Stop the utterance now playing.
-    StopSpeaking,
-    /// `playback_frequency_bands` event from the daemon's `/events` stream —
-    /// already converted to (`display_level_percent`, `is_speech`) so the tab
-    /// can drive its meter.
-    WidgetAudioLevel { level: f32, is_speech: bool },
-    /// `speaking_state` event from `/events` — the coarse flag the tab projects
-    /// into a `SpeakingStatus`, plus the utterance it describes.
-    ///
-    /// The id travels with it because the daemon speaks for whoever asked: an
-    /// utterance this tab did not start still turns the badge on, and the id
-    /// is the only way the tab can tell the two apart.
-    WidgetSpeakingState {
-        is_speaking: bool,
-        utterance_id: Option<String>,
-    },
+    /// Something the test's logic handles: a press, what the daemon said, or
+    /// the answer to work it started. See `super_voice_app_core::pages::speech`.
+    Page(super_voice_app_core::pages::speech::Input),
 }
 
 /// The Voices tab: the cloned-voice library, and the recording or import that
 /// adds to it.
 #[derive(Debug, Clone)]
 pub enum VoicesMessage {
-    /// Fetch the library and the loaded model's cloning capability.
-    Refresh,
-    VoicesLoaded {
-        voices: Vec<super_voice_shared::tts::models::voices::VoiceInfo>,
-        model: Option<super_voice_shared::tts::models::voices::VoiceModelSupport>,
-    },
-    LoadFailed(String),
-
-    /// The user picked a reading script, or chose to read their own words
-    /// (`None`). Carries the script's id rather than the picker's row number:
-    /// the picker is ordered by speech language, so a row number means nothing
-    /// once the language changes underneath it.
-    ScriptSelected(Option<&'static str>),
-
-    /// Open the microphone and start capturing.
-    StartRecording,
-    /// One tick of the level meter and elapsed readout while recording.
-    RecordingTick,
-    /// Stop capturing and keep what was recorded as the pending sample. Also
-    /// how a capture that ended by itself — the cap, or a device failure —
-    /// is collected, so there is one path out of recording.
-    StopRecording,
-
-    /// Open the file picker.
-    ImportFile,
-    /// A file was chosen and read. `None` when the user cancelled.
-    FileImported(Option<(String, Vec<u8>)>),
-    /// The chosen file could not be read.
-    ImportFailed(String),
-
-    LabelChanged(String),
-    TranscriptChanged(String),
-    /// Throw the pending sample away without saving it.
-    DiscardPending,
-    /// Upload the pending sample as a new voice.
-    Save,
-    Saved(super_voice_shared::tts::models::voices::VoiceInfo),
-    SaveFailed(String),
-
-    /// Start editing one voice's label. Carries the id and the label to seed
-    /// the field with.
-    BeginRename {
-        id: String,
-        label: String,
-    },
-    RenameChanged(String),
-    CommitRename,
-    CancelRename,
-    Renamed(super_voice_shared::tts::models::voices::VoiceInfo),
-    RenameFailed(String),
-
-    Delete(String),
-    Deleted(String),
-    DeleteFailed {
-        id: String,
-        message: String,
-    },
-
-    /// Speak a fixed sentence in this voice, so the user can hear it.
+    /// Something the page's logic handles: a press, or the answer to work it
+    /// started. See `super_voice_app_core::pages::voices`.
+    Page(super_voice_app_core::pages::voices::Input),
+    /// Hear a voice, in the model text to speech speaks in, which the app
+    /// knows.
     Preview(String),
-    /// The daemon accepted the preview — registration is done and the audio is
-    /// on its way, so the row stops saying it is preparing one.
-    Previewed,
-    PreviewFailed(String),
+    /// One tick of the level meter and the time while recording.
+    RecordingTick,
+    /// Close the microphone and keep what it heard. Also how a recording that
+    /// stopped by itself (the limit, or a device failure) is collected.
+    StopRecording,
 }
 
 /// The synthesis model's voice.
@@ -960,74 +883,21 @@ pub enum UpdateMessage {
     DismissRun,
 }
 
-/// The Contexts page: the list, the editor over it, and the per-backend pick.
-///
-/// Every write follows the confirm-then-apply rule at the top of this module —
-/// a `*Changed` arm only moves what the user is typing, and the list is not
-/// touched until the daemon has answered.
+/// The Contexts tab, and which context each backend uses (set from the
+/// Models page's Configure sheet).
 #[derive(Debug, Clone)]
 pub enum ContextsMessage {
-    /// Fetch the list. Sent on connect and whenever the page is opened, since
-    /// contexts are global and another app may have changed them.
-    Reload,
-    Loaded {
-        active: Option<String>,
-        contexts: Vec<DictationContext>,
-    },
-    /// The list could not be fetched. Distinct from [`Self::SaveFailed`], which
-    /// is about one form and belongs inside the editor.
-    LoadFailed(String),
-
-    /// Put a context in force, or (`None`) leave none active.
-    Activate(Option<String>),
-
-    /// Open the editor over an existing context.
-    Edit(String),
-    /// Open the editor over a context that does not exist yet.
-    Create,
-    /// Close the editor, discarding whatever was typed.
-    CancelEdit,
-
-    NameChanged(String),
-    /// A keystroke in the multi-line prompt editor. Carries the widget's own
-    /// action rather than a `String`, because the editor owns the cursor.
+    /// Something the page's logic handles: a press, or the answer to work it
+    /// started. See `super_voice_app_core::pages::contexts`.
+    Page(super_voice_app_core::pages::contexts::Input),
+    /// A keystroke in the editor's prompt. Carries the widget's own action,
+    /// since the editor owns the cursor; the app applies it to its buffer.
     PromptAction(cosmic::widget::text_editor::Action),
-    /// A vocabulary row's text changed. A pasted multi-line blob splits across
-    /// rows rather than landing as one term with newlines in it.
-    TermChanged {
-        index: usize,
-        value: String,
-    },
-    /// Enter in a vocabulary row: insert one below and focus it.
-    TermSubmitted(usize),
-    /// The clear button on a vocabulary row.
-    TermRemoved(usize),
-
-    /// Save the open editor.
-    Save,
-    /// The daemon stored it, and this is what it stored — blanks dropped,
-    /// terms trimmed.
-    Saved(DictationContext),
-    /// The daemon refused the save. Shown in the editor, not as a page banner:
-    /// it is about this form.
-    SaveFailed(String),
-
-    /// First press of Delete: arms the confirmation. A second press on the same
-    /// row is what actually deletes, because a vocabulary is worth more than
-    /// the click it takes to rebuild.
-    DeleteRequested(String),
-    /// Abandon a pending delete.
-    DeleteCancelled,
-    /// Second press: do it.
-    DeleteConfirmed(String),
 
     /// Point one backend at a context of its own, or at none. `None` means "no
     /// context at all"; going back to following the active one is
     /// [`Self::BackendFollowsActive`].
-    BackendPinned {
-        source: String,
-        id: Option<String>,
-    },
+    BackendPinned { source: String, id: Option<String> },
     /// Put one backend back on the active context.
     BackendFollowsActive(String),
     /// What a backend uses now, as the daemon reports it.
@@ -1056,51 +926,15 @@ pub enum NotesMessage {
 /// exported by the app.
 #[derive(Debug, Clone)]
 pub enum ClipsMessage {
-    /// Read the folder. Sent whenever the tab is opened.
-    Reload,
-    /// What the folder holds, newest first, or why it could not be read.
-    Loaded(Result<Vec<crate::clips::Clip>, String>),
-
-    /// A keystroke, motion or click in the text of the next clip.
+    /// Something the page's logic handles: a press, or the answer to work it
+    /// started. See `super_voice_app_core::pages::clips`.
+    Page(super_voice_app_core::pages::clips::Input),
+    /// A keystroke, motion or click in the draft's editor, which the app
+    /// applies to its own buffer.
     DraftEdit(cosmic::widget::text_editor::Action),
-    /// Make a clip of the text.
+    /// Make a clip of the draft, in the voice text to speech uses, which the
+    /// app names.
     Make,
-    /// The clip was made and kept, or could not be.
-    Made(Result<crate::clips::Clip, String>),
-    /// Stop making the clip.
-    Cancel,
-    /// Time passed while making or playing: the counters move on, and a clip
-    /// that has played to its end is let go.
-    Tick,
-
-    /// Play the clip with this id, stopping any other.
-    Play(String),
-    /// Its audio was read, and can play.
-    Ready {
-        id: String,
-        result: Result<(Vec<f32>, u32), String>,
-    },
-    /// Stop the clip playing.
-    Stop,
-
-    /// Ask where to export the clip with this id, and copy it there.
-    Export(String),
-    /// Where it went, `None` when the dialog was closed.
-    Exported {
-        id: String,
-        result: Result<Option<String>, String>,
-    },
-
-    /// First press of a clip's Delete: asks to confirm.
-    DeleteRequested(String),
-    DeleteCancelled,
-    /// Second press: delete it.
-    DeleteConfirmed(String),
-    /// It was deleted, or could not be.
-    Deleted {
-        id: String,
-        result: Result<(), String>,
-    },
 }
 
 macro_rules! message_from {

@@ -22,6 +22,12 @@ use crate::state::scripts::{self, Script};
 use crate::state::voices::{SampleOrigin, ScriptChoice, VoicesState};
 use crate::ui::languages::friendly_name;
 use crate::ui::messages::{Message, VoicesMessage};
+use super_voice_app_core::pages::voices::Input;
+
+/// A press the page's logic handles.
+fn voices_input(input: Input) -> Message {
+    Message::Voices(VoicesMessage::Page(input))
+}
 
 /// The picker's first row: no script, read your own words.
 fn free_row() -> String {
@@ -117,10 +123,8 @@ fn add_section<'a>(state: &'a VoicesState, language: Option<&str>) -> Element<'a
     }
 
     let controls = row![
-        button::suggested(crate::fl!("record"))
-            .on_press(Message::Voices(VoicesMessage::StartRecording)),
-        button::standard(crate::fl!("import-a-wav-file"))
-            .on_press(Message::Voices(VoicesMessage::ImportFile)),
+        button::suggested(crate::fl!("record")).on_press(voices_input(Input::StartRecording)),
+        button::standard(crate::fl!("import-a-wav-file")).on_press(voices_input(Input::ImportFile)),
     ]
     .spacing(cosmic::theme::spacing().space_xs)
     .align_y(Alignment::Center);
@@ -175,9 +179,7 @@ fn script_picker(state: &VoicesState, language: Option<&str>) -> Element<'static
     settings::item::builder(crate::fl!("script"))
         .description(picker_description(chosen, language))
         .control(widget::dropdown(labels, selected, move |index| {
-            Message::Voices(VoicesMessage::ScriptSelected(
-                ids.get(index).copied().flatten(),
-            ))
+            voices_input(Input::ScriptSelected(ids.get(index).copied().flatten()))
         }))
         .into()
 }
@@ -341,7 +343,7 @@ fn pending_section(state: &VoicesState) -> Element<'_, Message> {
     };
 
     let label_input = widget::text_input(crate::fl!("name-this-voice"), &state.label_input)
-        .on_input(|s| Message::Voices(VoicesMessage::LabelChanged(s)))
+        .on_input(|s| voices_input(Input::LabelChanged(s)))
         .width(Length::Fill);
 
     let mut save = button::suggested(if state.saving {
@@ -350,11 +352,11 @@ fn pending_section(state: &VoicesState) -> Element<'_, Message> {
         crate::fl!("save-voice")
     });
     if state.can_save() {
-        save = save.on_press(Message::Voices(VoicesMessage::Save));
+        save = save.on_press(voices_input(Input::Save));
     }
     let mut discard = button::destructive(crate::fl!("discard"));
     if !state.saving {
-        discard = discard.on_press(Message::Voices(VoicesMessage::DiscardPending));
+        discard = discard.on_press(voices_input(Input::DiscardPending));
     }
     let actions = row![save, discard]
         .spacing(cosmic::theme::spacing().space_xs)
@@ -389,7 +391,7 @@ fn pending_section(state: &VoicesState) -> Element<'_, Message> {
                     crate::fl!("what-the-recording-says"),
                     &state.transcript_input,
                 )
-                .on_input(|s| Message::Voices(VoicesMessage::TranscriptChanged(s)))
+                .on_input(|s| voices_input(Input::TranscriptChanged(s)))
                 .width(Length::Fill),
             ),
     };
@@ -450,14 +452,12 @@ fn voice_row<'a>(voice: &'a VoiceInfo, state: &'a VoicesState) -> Element<'a, Me
 
     if let Some(label) = renaming {
         let field = widget::text_input(crate::fl!("name-this-voice"), label)
-            .on_input(|s| Message::Voices(VoicesMessage::RenameChanged(s)))
-            .on_submit(|_| Message::Voices(VoicesMessage::CommitRename))
+            .on_input(|s| voices_input(Input::RenameChanged(s)))
+            .on_submit(|_| voices_input(Input::CommitRename))
             .width(Length::Fill);
         let actions = row![
-            button::suggested(crate::fl!("save"))
-                .on_press(Message::Voices(VoicesMessage::CommitRename)),
-            button::standard(crate::fl!("cancel"))
-                .on_press(Message::Voices(VoicesMessage::CancelRename)),
+            button::suggested(crate::fl!("save")).on_press(voices_input(Input::CommitRename)),
+            button::standard(crate::fl!("cancel")).on_press(voices_input(Input::CancelRename)),
         ]
         .spacing(spacing.space_xs)
         .align_y(Alignment::Center);
@@ -499,16 +499,14 @@ fn voice_row<'a>(voice: &'a VoiceInfo, state: &'a VoicesState) -> Element<'a, Me
     }
     if !deleting {
         actions = actions.push(
-            button::standard(crate::fl!("rename")).on_press(Message::Voices(
-                VoicesMessage::BeginRename {
-                    id: voice.id.clone(),
-                    label: voice.label.clone(),
-                },
-            )),
+            button::standard(crate::fl!("rename")).on_press(voices_input(Input::BeginRename {
+                id: voice.id.clone(),
+                label: voice.label.clone(),
+            })),
         );
         actions = actions.push(
             button::destructive(crate::fl!("delete"))
-                .on_press(Message::Voices(VoicesMessage::Delete(voice.id.clone()))),
+                .on_press(voices_input(Input::Delete(voice.id.clone()))),
         );
     }
 

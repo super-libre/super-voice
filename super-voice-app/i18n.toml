@@ -1,5 +1,6 @@
 fallback_language = "en"
 
 [fluent]
-assets_dir = "i18n"
+# The catalogs live in the core, which every app reads them from.
+assets_dir = "../super-voice-app-core/i18n"
 domain = "super_voice_app"
