@@ -6,7 +6,8 @@
 //! when it is made, and never changed, so the list here is simply what was
 //! last read, plus what was made or deleted since.
 
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::audio::player::Player;
 use crate::clips::Clip;
@@ -66,6 +67,46 @@ pub struct Playing {
     pub id: String,
     /// `None` while the clip's audio is still being read.
     pub player: Option<Player>,
+    /// The clip's audio and its rate, once read: what a seek plays from.
+    pub audio: Option<(Arc<[f32]>, u32)>,
+    /// Where in the clip the player started: zero, or where it was sought to.
+    pub from: Duration,
+}
+
+impl Playing {
+    /// The clip `id`, its audio still to be read.
+    #[must_use]
+    pub fn new(id: String) -> Self {
+        Self {
+            id,
+            player: None,
+            audio: None,
+            from: Duration::ZERO,
+        }
+    }
+
+    /// How far into the clip it has played; `None` while its audio is read.
+    #[must_use]
+    pub fn position(&self) -> Option<Duration> {
+        self.player.as_ref().map(|p| self.from + p.position())
+    }
+
+    /// How long the clip is; `None` while its audio is read.
+    #[must_use]
+    pub fn length(&self) -> Option<Duration> {
+        self.player.as_ref().map(|p| self.from + p.length())
+    }
+
+    /// How far it has played, from 0 to 1; 0 while its audio is read.
+    #[must_use]
+    pub fn fraction(&self) -> f32 {
+        match (self.position(), self.length()) {
+            (Some(at), Some(length)) if !length.is_zero() => {
+                (at.as_secs_f32() / length.as_secs_f32()).clamp(0.0, 1.0)
+            }
+            _ => 0.0,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -84,6 +125,21 @@ mod tests {
             voice: None,
             seconds: 1.0,
         }
+    }
+
+    #[test]
+    fn a_held_clip_says_how_far_it_has_played() {
+        let mut playing = Playing::new("a".into());
+        assert!(playing.position().is_none());
+        assert!(playing.fraction().abs() < f32::EPSILON);
+        playing.from = Duration::from_secs(1);
+        playing.player = Some(Player::held_at(
+            Duration::from_secs(3),
+            Duration::from_secs(1),
+        ));
+        assert_eq!(playing.position(), Some(Duration::from_secs(2)));
+        assert_eq!(playing.length(), Some(Duration::from_secs(4)));
+        assert!((playing.fraction() - 0.5).abs() < 1e-6);
     }
 
     #[test]

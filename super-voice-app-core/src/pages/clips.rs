@@ -6,14 +6,16 @@
 //! when it is made, and never changed.
 
 use std::path::Path;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use futures_util::future::{AbortHandle, AbortRegistration, Abortable};
 
 use crate::audio::player::Player;
 use crate::clips::{self, Clip};
-use crate::state::TextBuffer;
+use crate::pages::model_voice;
 use crate::state::clips::{ClipsState, Making, Playing};
+use crate::state::{TextBuffer, VoiceState};
 
 /// What happened on the page: something the user did, or the answer to work
 /// an [`Effect`] started.
@@ -39,6 +41,8 @@ pub enum Input {
         id: String,
         result: Result<(Vec<f32>, u32), String>,
     },
+    /// Play the clip playing from this far into it, 0 to 1.
+    Seek(f32),
     /// Stop the clip playing.
     Stop,
     /// Export the clip with this id.
@@ -128,7 +132,11 @@ pub fn update<B: TextBuffer>(state: &mut ClipsState<B>, input: Input) -> Outcome
         make @ (Input::Make { .. } | Input::Made(_) | Input::Cancel) => {
             making(state, make, &mut out);
         }
-        play @ (Input::Tick | Input::Play(_) | Input::Ready { .. } | Input::Stop) => {
+        play @ (Input::Tick
+        | Input::Play(_)
+        | Input::Ready { .. }
+        | Input::Seek(_)
+        | Input::Stop) => {
             playing(state, play, &mut out);
         }
         kept => kept_clip(state, kept, &mut out),
@@ -195,10 +203,7 @@ fn playing<B>(state: &mut ClipsState<B>, input: Input, out: &mut Outcome) {
         Input::Play(id) => {
             out.clear_notice = true;
             // One at a time: the one playing stops when it is let go.
-            state.playing = Some(Playing {
-                id: id.clone(),
-                player: None,
-            });
+            state.playing = Some(Playing::new(id.clone()));
             out.effects.push(Effect::ReadSamples(id));
         }
         Input::Ready { id, result } => {
@@ -208,16 +213,76 @@ fn playing<B>(state: &mut ClipsState<B>, input: Input, out: &mut Outcome) {
             };
             match result {
                 // The player is held in the state, and plays until let go.
-                Ok((samples, rate)) => playing.player = Some(Player::start(samples, rate)),
+                Ok((samples, rate)) => {
+                    let audio: Arc<[f32]> = samples.into();
+                    playing.player = Some(Player::start(audio.to_vec(), rate));
+                    playing.audio = Some((audio, rate));
+                }
                 Err(e) => {
                     state.playing = None;
                     out.notice = Some(Notice::CouldNotPlay(e));
                 }
             }
         }
+        // A new player from there: the one playing stops when it is let go.
+        Input::Seek(fraction) => {
+            let Some(playing) = state.playing.as_mut() else {
+                return;
+            };
+            let Some((audio, rate)) = playing.audio.clone() else {
+                return;
+            };
+            if rate == 0 {
+                return;
+            }
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                clippy::cast_precision_loss
+            )]
+            let frame = ((audio.len() as f64) * f64::from(fraction.clamp(0.0, 1.0))) as usize;
+            let frame = frame.min(audio.len());
+            #[allow(clippy::cast_precision_loss)]
+            let from = Duration::from_secs_f64(frame as f64 / f64::from(rate));
+            playing.player = Some(Player::start(audio[frame..].to_vec(), rate));
+            playing.from = from;
+        }
         Input::Stop => state.playing = None,
         _ => {}
     }
+}
+
+/// The voice a clip made now is spoken in, as the user knows it: the voice
+/// text to speech speaks in, by its label. What [`Input::Make`] carries.
+/// `None` while `voice` doesn't describe `(source, model)`, the synthesis
+/// model, or says no voice.
+#[must_use]
+pub fn voice_label(voice: &VoiceState, source: &str, model: &str) -> Option<String> {
+    if !model_voice::shows(voice, source, model) {
+        return None;
+    }
+    let id = voice.resolution.as_ref()?.effective.as_ref()?;
+    Some(
+        voice
+            .choices
+            .iter()
+            .find(|v| &v.id == id)
+            .map_or_else(|| id.clone(), |v| v.label.clone()),
+    )
+}
+
+/// Roughly how fast speech goes, for the estimate of how long a clip will
+/// play: about 150 words a minute.
+const SECONDS_PER_WORD: f32 = 0.4;
+
+/// About how many seconds `words` words take to say, rounded up.
+#[must_use]
+pub fn estimated_seconds(words: usize) -> u64 {
+    #[allow(clippy::cast_precision_loss)]
+    let seconds = (words as f32 * SECONDS_PER_WORD).ceil();
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let seconds = seconds as u64;
+    seconds
 }
 
 /// Exporting and deleting a kept clip.
@@ -450,5 +515,47 @@ mod tests {
             out.effects.as_slice(),
             [Effect::Export { id, name }] if id == "a" && *name == clips::export_name(&clip("a"))
         ));
+    }
+
+    #[test]
+    fn a_seek_waits_for_the_audio() {
+        let mut state = State::default();
+        update(&mut state, Input::Play("a".into()));
+        update(&mut state, Input::Seek(0.5));
+        let playing = state.playing.as_ref().expect("playing");
+        assert!(playing.player.is_none());
+        assert_eq!(playing.from, Duration::ZERO);
+        update(&mut state, Input::Stop);
+        update(&mut state, Input::Seek(0.5));
+        assert!(state.playing.is_none());
+    }
+
+    #[test]
+    fn the_voice_is_named_only_for_the_synthesis_model() {
+        use crate::state::{VoiceChoice, VoiceResolution};
+        let voice = VoiceState {
+            resolution: Some(VoiceResolution {
+                effective: Some("af_heart".into()),
+                ..VoiceResolution::default()
+            }),
+            choices: vec![VoiceChoice {
+                id: "af_heart".into(),
+                label: "Heart".into(),
+                kind: "preset".into(),
+            }],
+            target: Some(("kokoro".into(), "kokoro-82m".into())),
+        };
+        assert_eq!(
+            voice_label(&voice, "kokoro", "kokoro-82m").as_deref(),
+            Some("Heart")
+        );
+        assert!(voice_label(&voice, "kokoro", "another").is_none());
+    }
+
+    #[test]
+    fn a_clip_is_about_two_and_a_half_words_a_second() {
+        assert_eq!(estimated_seconds(0), 0);
+        assert_eq!(estimated_seconds(1), 1);
+        assert_eq!(estimated_seconds(10), 4);
     }
 }
