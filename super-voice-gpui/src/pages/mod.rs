@@ -21,6 +21,7 @@ mod about;
 mod assistants;
 mod contexts;
 mod notes;
+mod clips;
 mod placeholder;
 mod settings;
 mod shortcuts;
@@ -57,6 +58,7 @@ pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> 
         Page::SttBehavior => {
             PageHandle::new::<stt_behavior::BehaviorPage>(page, shared, window, cx)
         }
+        Page::Clips => PageHandle::new::<clips::ClipsPage>(page, shared, window, cx),
         Page::TtsBehavior => {
             PageHandle::new::<tts_behavior::TtsBehaviorPage>(page, shared, window, cx)
         }
