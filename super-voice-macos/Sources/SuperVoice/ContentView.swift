@@ -37,7 +37,18 @@ enum Destination: Hashable, CaseIterable {
 struct ContentView: View {
     @ObservedObject var notes: NotesModel
     @ObservedObject var header = HeaderModel.shared
-    @State private var selection: Destination? = .speechToText
+    @State private var selection: Destination? = Self.firstPage
+
+    /// The page the window opens on: speech to text's, unless a screenshot
+    /// of another was asked for.
+    private static var firstPage: Destination {
+        #if DEBUG
+        if Snapshot.scene.hasPrefix("clips") {
+            return .textToSpeech
+        }
+        #endif
+        return .speechToText
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -61,6 +72,8 @@ struct ContentView: View {
             switch selection {
             case .speechToText:
                 SpeechToTextView(notes: notes)
+            case .textToSpeech:
+                TextToSpeechView(clips: ClipsModel.shared)
             case let other?:
                 NotYetView(title: other.title, icon: other.icon)
             case nil:
@@ -124,6 +137,36 @@ struct SpeechToTextView: View {
             }
         }
         .navigationTitle(t("speech-to-text"))
+    }
+}
+
+/// Text to speech's tabs, at the top of the page as in the settings app. Only
+/// Clips is here so far.
+struct TextToSpeechView: View {
+    @ObservedObject var clips: ClipsModel
+
+    enum Tab: Hashable { case clips, voices, behavior }
+    @State private var tab: Tab = .clips
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Picker(t("text-to-speech"), selection: $tab) {
+                Text(t("clips")).tag(Tab.clips)
+                Text(t("voices")).tag(Tab.voices)
+                Text(t("behavior")).tag(Tab.behavior)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .padding(.top)
+            .padding(.horizontal, 28)
+            switch tab {
+            case .clips: ClipsView(model: clips)
+            case .voices: NotYetView(title: t("voices"), icon: .speakerHigh)
+            case .behavior: NotYetView(title: t("behavior"), icon: .speakerHigh)
+            }
+        }
+        .navigationTitle(t("text-to-speech"))
     }
 }
 

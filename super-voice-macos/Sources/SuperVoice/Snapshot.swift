@@ -3,9 +3,11 @@
 // only.
 //
 // `SUPER_VOICE_SNAPSHOT` names the file, and `SUPER_VOICE_SCENE` the state to
-// shoot: `notes`, the list (the default); `note`, the newest note open; or
+// shoot: `notes`, the list (the default); `note`, the newest note open;
 // `edited`, the newest note open with a sentence added through its editor and
-// saved. `edited` writes to the notes it reads, so point it at a copy.
+// saved, which writes to the notes it reads, so point it at a copy; or
+// `clips`, the Clips page with its clips read; or `clips-playing`, the newest
+// clip partway through playing, out loud.
 // Once the page is in that state, the window is drawn into the file at one
 // size and the app quits. The app draws its own window rather than a screen
 // capture taking it: that needs no Screen Recording permission, so it works
@@ -69,8 +71,40 @@ enum Snapshot {
             guard open.saved, open.text.hasSuffix(addition) else { return }
         case "notes":
             guard page.open == nil else { return }
+        case "clips":
+            // Shot from the Clips page; see `clipsShown`.
+            return
         default:
             fail("no scene is called \(scene)")
+        }
+        taken = true
+        Task { await take() }
+    }
+
+    /// The Clips page showed `page`: shoot it once its clips are read, for the
+    /// `clips` scene, or once the newest is partway through playing, for
+    /// `clips-playing`, which plays it out loud.
+    static func clipsShown(_ page: ClipsPage) {
+        guard path != nil, !taken, scene.hasPrefix("clips"), page.loaded else { return }
+        if scene == "clips-playing" {
+            if let notice = page.notice {
+                fail("the clip didn't play: \(notice.words)")
+            }
+            guard let position = page.playingPosition, position > 0.5 else {
+                if !opened, let newest = page.clips.first {
+                    opened = true
+                    ClipsModel.shared.send(.play(id: newest.id))
+                    // A clip that never gets going says how far it got.
+                    Task {
+                        try? await Task.sleep(for: .seconds(10))
+                        if !taken {
+                            let page = ClipsModel.shared.page
+                            fail("the clip didn't get going: playing \(page.playing ?? "nothing"), at \(page.playingPosition.map { "\($0)s" } ?? "no position") of \(page.playingLength.map { "\($0)s" } ?? "no length")")
+                        }
+                    }
+                }
+                return
+            }
         }
         taken = true
         Task { await take() }

@@ -9,6 +9,9 @@
 
 use std::sync::LazyLock;
 
+use super_voice_app_core::state::TextBuffer;
+
+pub mod clips;
 pub mod notes;
 pub mod status;
 
@@ -70,6 +73,82 @@ pub fn text_with(key: &str, args: std::collections::HashMap<String, String>) -> 
 #[uniffi::export]
 pub fn notes_folder() -> String {
     super_voice_app_core::notes::dir().display().to_string()
+}
+
+/// An editor's text as a store holds it: the open note's, the next clip's.
+///
+/// The app keeps its own editor. It hands its text over as it changes, and
+/// takes the store's back only when the store replaced it (words dictated into
+/// a note, a draft emptied once its clip is made), which `replaced` counts.
+/// Taking it back on every change would undo keystrokes still on their way.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Buffer {
+    pub(crate) text: String,
+    pub(crate) replaced: u64,
+}
+
+impl TextBuffer for Buffer {
+    fn from_text(text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+            replaced: 0,
+        }
+    }
+
+    fn text(&self) -> String {
+        self.text.clone()
+    }
+
+    fn replace_text(&mut self, text: &str) {
+        text.clone_into(&mut self.text);
+        self.replaced += 1;
+    }
+}
+
+/// Which feature a readiness is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum Feature {
+    SpeechToText,
+    TextToSpeech,
+}
+
+/// Why a feature can't be used right now, for the buttons that start work on
+/// it (Record, Make clip). Each app says it in its own words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum NotReady {
+    /// The speech model has no voice to speak in.
+    NoVoice,
+    /// Text to speech's model is not up, or not set up.
+    TextToSpeech,
+    /// Speech to text's model is not up, or not set up.
+    SpeechToText,
+}
+
+/// Why `feature`, whose model reads as `readiness`, can't be used right now,
+/// or `None` when it can: the settings app's rule.
+#[must_use]
+#[uniffi::export]
+pub fn not_ready(feature: Feature, readiness: status::Readiness) -> Option<NotReady> {
+    use super_voice_app_core::rules::status::{self as rule, ModelStatus};
+    use super_voice_app_core::state::Stage;
+    let stage = match feature {
+        Feature::SpeechToText => Stage::Transcription,
+        Feature::TextToSpeech => Stage::Synthesis,
+    };
+    let status = match readiness {
+        status::Readiness::None => ModelStatus::None,
+        status::Readiness::Blocked => ModelStatus::Blocked,
+        status::Readiness::NotLoaded => ModelStatus::NotLoaded,
+        status::Readiness::Ready => ModelStatus::Ready,
+        status::Readiness::Idle => ModelStatus::Idle,
+        status::Readiness::Failed => ModelStatus::Failed,
+        status::Readiness::NoVoice => ModelStatus::NoVoice,
+    };
+    rule::not_ready(stage, status).map(|reason| match reason {
+        rule::NotReady::NoVoice => NotReady::NoVoice,
+        rule::NotReady::TextToSpeech => NotReady::TextToSpeech,
+        rule::NotReady::SpeechToText => NotReady::SpeechToText,
+    })
 }
 
 #[cfg(test)]

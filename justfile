@@ -548,12 +548,13 @@ macos-swift-app config="release":
 # SUPER_VOICE_HTTP_SOCKET points it at a daemon (a test one, with
 # XDG_STATE_HOME keeping its token apart), and the shot waits for the header.
 # SUPER_VOICE_LANGUAGE=fr shoots it in French.
-# Scenes: `notes`, the list; `note`, the newest note open; and `edited`, that
-# note with a sentence typed into it and saved. It reads a copy of the sample
-# notes in super-voice-macos/Fixtures, never yours, so `edited` changes only
-# the copy.
+# Scenes: `notes`, the list; `note`, the newest note open; `edited`, that
+# note with a sentence typed into it and saved; `clips`, the Clips page; and
+# `clips-playing`, its newest clip partway through playing, out loud. It
+# reads a copy of the sample notes and clips in super-voice-macos/Fixtures,
+# never yours, so `edited` changes only the copy.
 #
-# Usage: just macos-swift-shot notes.png [notes|note|edited]
+# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing]
 macos-swift-shot out scene="notes": (macos-swift-app "debug")
     #!/usr/bin/env bash
     set -euo pipefail
@@ -565,6 +566,13 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
     # doesn't hand it back.
     said="$data/stderr.log"
     cp -R super-voice-macos/Fixtures/super-voice "$data/"
+    # The sample clips keep only their text in git: each is voiced here, with
+    # the Mac's own speech, into the WAV beside it.
+    for about in "$data"/super-voice/clips/*.json; do
+        [ -e "$about" ] || continue
+        say -o "${about%.json}.wav" --data-format=LEI16@24000 \
+            "$(plutil -extract text raw "$about")"
+    done
     # The user is active, as far as macOS knows, for the next few seconds:
     # wakes a display that is off and dismisses a screen saver, either of
     # which keeps the app from coming to the front. The display takes a moment

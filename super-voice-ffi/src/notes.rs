@@ -14,10 +14,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use futures_util::StreamExt;
 use super_voice_app_core::notes::{self, Note};
 use super_voice_app_core::pages::notes::{self as page, Effect, Input, Notice};
-use super_voice_app_core::state::TextBuffer;
 use super_voice_app_core::state::notes::NotesState;
 
-use crate::RUNTIME;
+use crate::{Buffer, RUNTIME};
 
 /// What the app is told. Called from the store's own threads: the app hops to
 /// its main thread before it draws.
@@ -166,36 +165,6 @@ pub struct NotesPage {
     pub notice: Option<NotesNotice>,
     /// The folder the notes are kept in.
     pub folder: String,
-}
-
-/// The open note's text as the store holds it.
-///
-/// The app keeps its own editor. It hands its text over with
-/// [`NotesStore::set_text`], and takes the store's back only when the store
-/// replaced it (words dictated into the note), which `replaced` counts. Taking
-/// it back on every change would undo keystrokes still on their way.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Buffer {
-    text: String,
-    replaced: u64,
-}
-
-impl TextBuffer for Buffer {
-    fn from_text(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            replaced: 0,
-        }
-    }
-
-    fn text(&self) -> String {
-        self.text.clone()
-    }
-
-    fn replace_text(&mut self, text: &str) {
-        text.clone_into(&mut self.text);
-        self.replaced += 1;
-    }
 }
 
 /// The page's state, and the notice it shows.
