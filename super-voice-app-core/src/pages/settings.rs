@@ -30,6 +30,11 @@ pub const NOTIFICATION_METHODS: [NotificationMethod; 4] = [
 /// What happened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Input {
+    /// Read every setting again: the daemon answers, first or again.
+    Refresh,
+    /// Another client changed a setting, by the name the daemon gives it:
+    /// read it again if the page shows it.
+    SettingChanged(String),
     /// The daemon said how failures are reported.
     NotificationMethodLoaded(NotificationMethod),
     /// The user picked how failures are reported.
@@ -59,6 +64,15 @@ pub enum Input {
 /// What the app should do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
+    /// Read how failures are reported: [`run_load_notification_method`].
+    ReadNotificationMethod,
+    /// Read how long an unused model stays in memory:
+    /// [`run_load_idle_unload`].
+    ReadIdleUnload,
+    /// Read the primary language: [`run_load_primary_language`].
+    ReadPrimaryLanguage,
+    /// Read the tags it can be: [`run_load_languages`].
+    ReadLanguages,
     /// Store it: [`run_save_notification_method`].
     SaveNotificationMethod(NotificationMethod),
     /// Store it: [`run_save_idle_unload`].
@@ -113,6 +127,24 @@ impl Outcome {
 /// Take in `input`, and say what to do.
 pub fn update(state: &mut SettingsState, language: &mut LanguageState, input: Input) -> Outcome {
     match input {
+        Input::Refresh => Outcome {
+            effects: vec![
+                Effect::ReadNotificationMethod,
+                Effect::ReadIdleUnload,
+                Effect::ReadPrimaryLanguage,
+                Effect::ReadLanguages,
+            ],
+            ..Outcome::default()
+        },
+        Input::SettingChanged(name) => Outcome {
+            effects: match name.as_str() {
+                "notification_method" => vec![Effect::ReadNotificationMethod],
+                "idle_unload" => vec![Effect::ReadIdleUnload],
+                "language" => vec![Effect::ReadPrimaryLanguage],
+                _ => Vec::new(),
+            },
+            ..Outcome::default()
+        },
         Input::NotificationMethodLoaded(method) | Input::NotificationMethodSaved(Ok(method)) => {
             state.notification_method = method;
             Outcome::cleared()
@@ -157,6 +189,14 @@ pub fn update(state: &mut SettingsState, language: &mut LanguageState, input: In
             Outcome::notice(Notice::CouldNotSaveLanguage(e))
         }
     }
+}
+
+/// What a daemon event means for the page: a setting it shows changed.
+#[must_use]
+pub fn heard(event: &crate::events::Event) -> Option<Input> {
+    crate::events::setting_changed(event)
+        .filter(|name| matches!(*name, "notification_method" | "idle_unload" | "language"))
+        .map(|name| Input::SettingChanged(name.to_string()))
 }
 
 /// The idle times to offer while Sleep When Idle is on, shortest first. A time
@@ -296,6 +336,33 @@ mod tests {
         );
         assert!(saved.clear_notice);
         assert_eq!(state.notification_method, NotificationMethod::Off);
+    }
+
+    #[test]
+    fn everything_is_read_at_first_and_each_setting_when_it_changes() {
+        let mut state = SettingsState::default();
+        assert_eq!(
+            run(&mut state, Input::Refresh).effects,
+            [
+                Effect::ReadNotificationMethod,
+                Effect::ReadIdleUnload,
+                Effect::ReadPrimaryLanguage,
+                Effect::ReadLanguages,
+            ]
+        );
+        assert_eq!(
+            run(&mut state, Input::SettingChanged("idle_unload".into())).effects,
+            [Effect::ReadIdleUnload]
+        );
+        assert_eq!(
+            run(&mut state, Input::SettingChanged("language".into())).effects,
+            [Effect::ReadPrimaryLanguage]
+        );
+        assert!(
+            run(&mut state, Input::SettingChanged("volume".into()))
+                .effects
+                .is_empty()
+        );
     }
 
     #[test]

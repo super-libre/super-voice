@@ -918,3 +918,18 @@ about-read-the-license = Lire la licence
 about-notices = Mentions des logiciels tiers
 about-copied = Les détails de version sont dans le presse-papiers.
 about-copy-details = Copier les détails
+
+# The General pages: Shortcuts, Assistants, Settings and Updates
+shortcuts-description = Les touches qui dictent ou lisent à voix haute, depuis n'importe quelle app.
+shortcut-change-keys = Changer les touches du raccourci
+connect-ellipsis = Connecter…
+disconnect-ellipsis = Déconnecter…
+disconnect-assistant-question = Déconnecter { $name } ?
+create-key-ellipsis = Créer une clé…
+remove-ellipsis = Retirer…
+remove-key-question = Retirer la clé « { $name } » ?
+remove-key-description = L'assistant qui l'utilise ne pourra plus joindre Super Voice.
+update-ready-to-install = Super Voice { $tag } est prêt à être installé.
+open-updates = Ouvrir Mises à jour
+update-no-installer-caption = Aucun installateur n'a été publié pour cet ordinateur. Pour l'installer depuis un terminal, lancez :
+install-command-caption = Pour l'installer hors de l'app, lancez :

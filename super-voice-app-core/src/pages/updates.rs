@@ -32,6 +32,9 @@ pub enum BetaOptinOutcome {
 /// What happened.
 #[derive(Debug, Clone)]
 pub enum Input {
+    /// The daemon answers, first or again, or a client changed whether it
+    /// checks on its own: read the status and that setting.
+    Reached,
     /// The daemon's status (`None`: it predates updates).
     StatusLoaded(Option<SelfUpdateStatus>),
     /// It couldn't be read.
@@ -68,6 +71,8 @@ pub enum Input {
 pub enum Effect {
     /// Read the status: [`run_status`].
     ReadStatus,
+    /// Read whether the daemon checks on its own: [`run_load_auto_check`].
+    ReadAutoCheck,
     /// Ask the daemon to check now: [`run_check`].
     Check,
     /// Store whether the daemon checks on its own: [`run_save_auto_check`].
@@ -84,6 +89,7 @@ pub enum Effect {
 /// Take in `input`, and say what to do.
 pub fn update(state: &mut UpdateState, input: Input) -> Vec<Effect> {
     match input {
+        Input::Reached => vec![Effect::ReadStatus, Effect::ReadAutoCheck],
         Input::StatusLoaded(status) => {
             state.apply_status_loaded(status);
             first_check(state)
@@ -171,6 +177,29 @@ pub fn update(state: &mut UpdateState, input: Input) -> Vec<Effect> {
     }
 }
 
+/// What a daemon event means for the page: either feature found an update,
+/// or a client changed an update setting. Whether the daemon checks on its
+/// own is read again with the status; the beta channel needs a new check,
+/// since the candidate is worked out when the daemon checks.
+#[must_use]
+pub fn heard(event: &crate::events::Event) -> Option<Input> {
+    if let crate::events::Event::Status(status) = event
+        && status.event_type == "daemon_status_changed"
+        && status
+            .data
+            .get("status")
+            .and_then(serde_json::Value::as_str)
+            == Some("update_available")
+    {
+        return Some(Input::Available);
+    }
+    match crate::events::setting_changed(event)? {
+        "update_check_enabled" => Some(Input::Reached),
+        "update_beta_optin" => Some(Input::CheckNow),
+        _ => None,
+    }
+}
+
 /// A daemon that has not checked yet has no candidate to report, so the page
 /// and the header badge read empty until its deferred first check runs: ask
 /// once.
@@ -212,6 +241,24 @@ pub fn install_command(tag: &str) -> String {
         ""
     };
     format!("curl -sSL {INSTALL_SH_URL} | bash{beta_flag}")
+}
+
+/// When the last check ran, to the minute, in the viewer's time zone. The
+/// daemon reports it as RFC 3339 in UTC; a time it can't read is shown as it
+/// came, rather than as nothing.
+#[must_use]
+pub fn checked_at_label(rfc3339: &str) -> String {
+    checked_at_in(rfc3339, &chrono::Local)
+}
+
+fn checked_at_in<Tz: chrono::TimeZone>(rfc3339: &str, zone: &Tz) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    chrono::DateTime::parse_from_rfc3339(rfc3339).map_or_else(
+        |_| rfc3339.to_string(),
+        |at| at.with_timezone(zone).format("%Y-%m-%d %H:%M").to_string(),
+    )
 }
 
 /// A tag is a prerelease when it carries a semver `-<identifier>` suffix
@@ -315,6 +362,68 @@ mod tests {
     fn a_beta_installs_with_the_beta_flag() {
         assert!(super::install_command("v0.3.0-beta.7").ends_with("| bash -s -- --beta"));
         assert!(super::install_command("v0.3.0").ends_with("| bash"));
+    }
+
+    #[test]
+    fn the_last_check_reads_to_the_minute_in_the_viewers_zone() {
+        assert_eq!(
+            super::checked_at_in("2026-11-17T22:18:38.998834966+00:00", &chrono::Utc),
+            "2026-11-17 22:18"
+        );
+        let east = chrono::FixedOffset::east_opt(2 * 3600).expect("a valid offset");
+        assert_eq!(
+            super::checked_at_in("2026-11-17T22:18:38Z", &east),
+            "2026-11-18 00:18"
+        );
+        assert_eq!(super::checked_at_label("yesterday"), "yesterday");
+    }
+
+    #[test]
+    fn reaching_the_daemon_reads_the_status_and_the_daily_check() {
+        let mut state = UpdateState::default();
+        assert!(matches!(
+            update(&mut state, Input::Reached)[..],
+            [Effect::ReadStatus, Effect::ReadAutoCheck]
+        ));
+    }
+
+    #[test]
+    fn an_update_found_or_a_setting_changed_is_heard() {
+        use crate::events::Event;
+        use super_voice_shared::models::protocol::NotificationEvent;
+        let status = |data: serde_json::Value| {
+            Event::Status(NotificationEvent {
+                event_type_field: "daemon_status_changed".into(),
+                event_type: "daemon_status_changed".into(),
+                client_id: "daemon".into(),
+                timestamp: "2026-11-25T10:00:00Z".into(),
+                data,
+            })
+        };
+        assert!(matches!(
+            super::heard(&status(serde_json::json!({
+                "status": "update_available", "latest_version": "v0.3.0", "feature": "tts"
+            }))),
+            Some(Input::Available)
+        ));
+        assert!(matches!(
+            super::heard(&status(serde_json::json!({
+                "status": "settings_changed", "setting": "update_beta_optin"
+            }))),
+            Some(Input::CheckNow)
+        ));
+        assert!(matches!(
+            super::heard(&status(serde_json::json!({
+                "status": "settings_changed", "setting": "update_check_enabled"
+            }))),
+            Some(Input::Reached)
+        ));
+        assert!(
+            super::heard(&status(serde_json::json!({
+                "status": "settings_changed", "setting": "volume"
+            })))
+            .is_none()
+        );
     }
 
     /// No candidate, no run.

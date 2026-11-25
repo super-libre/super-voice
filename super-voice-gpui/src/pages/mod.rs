@@ -18,7 +18,11 @@
 //! anything.
 
 mod about;
+mod assistants;
 mod placeholder;
+mod settings;
+mod shortcuts;
+mod updates;
 
 use std::rc::Rc;
 
@@ -39,6 +43,10 @@ use crate::ui::status::Dot;
 pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> PageHandle {
     match page {
         Page::About => PageHandle::new::<about::AboutPage>(page, shared, window, cx),
+        Page::Shortcuts => PageHandle::new::<shortcuts::ShortcutsPage>(page, shared, window, cx),
+        Page::Assistants => PageHandle::new::<assistants::AssistantsPage>(page, shared, window, cx),
+        Page::Settings => PageHandle::new::<settings::SettingsPage>(page, shared, window, cx),
+        Page::Updates => PageHandle::new::<updates::UpdatesPage>(page, shared, window, cx),
         _ => PageHandle::new::<placeholder::Placeholder>(page, shared, window, cx),
     }
 }
