@@ -69,3 +69,25 @@ fn french_catalog_covers_english_messages_and_variables() {
 fn the_fallback_language_loads() {
     let _ = &*LANGUAGE_LOADER;
 }
+
+/// A count passed as text picks its plural form, as an app in another language
+/// passes it.
+#[test]
+fn a_count_picks_its_plural_form() {
+    let one = text("notes-count", &[("count", "1")]);
+    let three = text("notes-count", &[("count", "3")]);
+    assert!(one.ends_with(" note"), "{one}");
+    assert!(three.ends_with(" notes"), "{three}");
+}
+
+#[test]
+fn a_key_with_no_arguments_reads_as_is() {
+    assert_eq!(text("all-notes", &[]), LANGUAGE_LOADER.get("all-notes"));
+}
+
+/// A figure with a decimal keeps it, as the settings app shows it.
+#[test]
+fn a_decimal_figure_keeps_its_decimal() {
+    let pair = text("memory-pair", &[("value0", "4.9"), ("value1", "8.0")]);
+    assert!(pair.contains("8.0"), "{pair}");
+}

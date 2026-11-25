@@ -10,6 +10,11 @@
 # No UI library here, on purpose. Each app (libcosmic on Linux today) draws on
 # top of this crate, so whatever lands here has to work for all of them.
 [dependencies]
+    # The Fluent catalogs every app reads its words from. `fluent` at the
+    # version i18n-embed uses, for the values a lookup is given.
+    fluent = "0.17.0"
+    i18n-embed.workspace = true
+    rust-embed.workspace = true
     # A note or clip is named for the time it was made.
     chrono.workspace = true
     # Microphone capture for cloned-voice reference recordings, and clip

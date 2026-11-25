@@ -1,44 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-//! Provides localization support for this crate.
+//! Provides localization support for this crate, over the core's catalogs.
 
-use std::sync::LazyLock;
+use i18n_embed::unic_langid::LanguageIdentifier;
 
-use i18n_embed::{
-    DefaultLocalizer, LanguageLoader, Localizer,
-    fluent::{FluentLanguageLoader, fluent_language_loader},
-    unic_langid::LanguageIdentifier,
-};
-use rust_embed::RustEmbed;
+/// The catalogs and their loader are the core's, which every app shares.
+pub use super_voice_app_core::i18n::LANGUAGE_LOADER;
 
 /// Applies the requested language(s) to requested translations from the `fl!()` macro.
 pub fn init(requested_languages: &[LanguageIdentifier]) {
-    if let Err(why) = localizer().select(requested_languages) {
-        eprintln!("error while loading fluent localizations: {why}");
-    }
+    super_voice_app_core::i18n::select(requested_languages);
 }
 
-// Get the `Localizer` to be used for localizing this library.
-#[must_use]
-pub fn localizer() -> Box<dyn Localizer> {
-    Box::from(DefaultLocalizer::new(&*LANGUAGE_LOADER, &Localizations))
-}
-
-#[derive(RustEmbed)]
-#[folder = "i18n/"]
-struct Localizations;
-
-pub static LANGUAGE_LOADER: LazyLock<FluentLanguageLoader> = LazyLock::new(|| {
-    let loader: FluentLanguageLoader = fluent_language_loader!();
-
-    loader
-        .load_fallback_language(&Localizations)
-        .expect("Error while loading fallback language");
-
-    loader
-});
-
-/// Request a localized string by ID from the i18n/ directory.
+/// Request a localized string by ID from the core's `i18n/` catalogs.
 #[macro_export]
 macro_rules! fl {
     ($message_id:literal) => {{
@@ -112,6 +86,3 @@ pub fn audio_theme_name(theme: super_voice_shared::models::theme::AudioTheme) ->
 pub fn without_isolation(text: &str) -> String {
     text.replace(['\u{2068}', '\u{2069}'], "")
 }
-
-#[cfg(test)]
-mod tests;

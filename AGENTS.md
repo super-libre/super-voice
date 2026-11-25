@@ -10,7 +10,7 @@
   - `super-voice-cli`: the `voice` command, for both features.
   - `super-voice-shared`: the client library, for both features. Text to speech's own types are its `tts` module.
 - Tests/tooling: Python scripts at repo root (e.g., `test_download_progress.py`).
-- Assets: app `i18n/`, `resources/`. The COSMIC panel applet lives in super-libre/super-cosmic-applet, which publishes its own releases; the installer installs the newest one.
+- Assets: translations in `super-voice-app-core/i18n/` (shared by every app), app `resources/`. The COSMIC panel applet lives in super-libre/super-cosmic-applet, which publishes its own releases; the installer installs the newest one.
 
 ## Build, Test, and Development Commands
 - Build release: `just build-release` (or `cargo build --release`).
