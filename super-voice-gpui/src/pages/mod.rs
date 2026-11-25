@@ -19,6 +19,7 @@
 
 mod about;
 mod placeholder;
+mod settings;
 mod shortcuts;
 
 use std::rc::Rc;
@@ -41,6 +42,7 @@ pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> 
     match page {
         Page::About => PageHandle::new::<about::AboutPage>(page, shared, window, cx),
         Page::Shortcuts => PageHandle::new::<shortcuts::ShortcutsPage>(page, shared, window, cx),
+        Page::Settings => PageHandle::new::<settings::SettingsPage>(page, shared, window, cx),
         _ => PageHandle::new::<placeholder::Placeholder>(page, shared, window, cx),
     }
 }
