@@ -22,7 +22,10 @@
 // with made-up stages (running, asleep, not loaded) and its transcription
 // card's model running, for the layout; `models-download`, that card
 // downloading its model; `models-staged`, a model staged that may not fit;
-// `settings`, the Settings page once its settings are read;
+// `model-language`, a model's language button alone, its picker open, and
+// `model-voice`, the synthesis model's voice picker alone, both with made-up
+// languages and voices; `settings`, the Settings page once its settings are
+// read;
 // `settings-languages`, that page with the language picker up; `assistants`,
 // the Assistants page once the daemon has listed them; `assistants-key`, a
 // key for another assistant made there, which writes to the daemon the app is
@@ -124,7 +127,7 @@ enum Snapshot {
             }
         case "models", "models-running", "models-download", "models-staged", "settings", "settings-languages", "assistants", "assistants-key",
              "assistants-connected", "updates", "shortcuts", "library", "library-browse",
-             "library-sample", "library-sample-browse":
+             "library-sample", "library-sample-browse", "model-language", "model-voice":
             // Shot from its own page; see `modelsShown`.
             return
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
@@ -479,6 +482,15 @@ enum Snapshot {
             break
         }
         return card
+    }
+
+    /// A model's language button or voice picker is up, with made-up
+    /// languages and voices: shoot it, for `model-language` (the picker open)
+    /// and `model-voice`.
+    static func modelDetailsShown() {
+        guard path != nil, !taken, ["model-language", "model-voice"].contains(scene) else { return }
+        taken = true
+        Task { await take() }
     }
 
     /// The recording test showed `page`: shoot it once its take is over, for

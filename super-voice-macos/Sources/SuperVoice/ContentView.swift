@@ -46,7 +46,7 @@ struct ContentView: View {
         if ["clips", "voices", "tts-behavior"].contains(where: Snapshot.scene.hasPrefix) {
             return .textToSpeech
         }
-        if Snapshot.scene.hasPrefix("models") {
+        if Snapshot.scene.hasPrefix("models") || Snapshot.scene.hasPrefix("model-") {
             return .models
         }
         if Snapshot.scene.hasPrefix("settings") {
@@ -89,7 +89,15 @@ struct ContentView: View {
         } detail: {
             switch selection {
             case .models:
+                #if DEBUG
+                if Snapshot.scene.hasPrefix("model-") {
+                    ModelDetailsScene()
+                } else {
+                    ModelsView()
+                }
+                #else
                 ModelsView()
+                #endif
             case .settings:
                 SettingsView(model: SettingsModel.shared)
             case .assistants:

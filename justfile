@@ -560,7 +560,10 @@ macos-swift-app config="release":
 # recording test run once against the daemon, scrolled down to it; `models`,
 # the Models page's pipeline and its first step's card; `models-running`,
 # that page with made-up stages, for the layout; `models-download` and
-# `models-staged`, its card downloading or with a model staged; `settings`, the Settings
+# `models-staged`, its card downloading or with a model staged;
+# `model-language`, a model's language button alone with its picker open,
+# and `model-voice`, the synthesis model's voice picker alone, both made up;
+# `settings`, the Settings
 # page; `settings-languages`, with its language picker up; `assistants`, the
 # Assistants page; `assistants-key`, a key made there, on the daemon;
 # `assistants-connected`, a made-up connected assistant's page; `updates`,
@@ -573,7 +576,7 @@ macos-swift-app config="release":
 # super-voice-macos/Fixtures, never yours, so `edited` changes only the copy.
 # The voices are the daemon's.
 #
-# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved|stt-behavior|stt-behavior-recorded|models|models-running|models-download|models-staged|settings|settings-languages|assistants|assistants-key|assistants-connected|updates|shortcuts|library|library-browse|library-sample|library-sample-browse|notes-take|note-take]
+# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved|stt-behavior|stt-behavior-recorded|models|models-running|models-download|models-staged|model-language|model-voice|settings|settings-languages|assistants|assistants-key|assistants-connected|updates|shortcuts|library|library-browse|library-sample|library-sample-browse|notes-take|note-take]
 macos-swift-shot out scene="notes": (macos-swift-app "debug")
     #!/usr/bin/env bash
     set -euo pipefail
