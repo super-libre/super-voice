@@ -17,6 +17,7 @@ use cosmic::Element;
 use cosmic::iced::widget::{column, row};
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, text};
+use super_voice_app_core::rules::pipeline::{self, Step, StepModel};
 
 use super::status::{StatusLook, stage_status};
 use super::surface::{accent_border_color, muted_text_color};
@@ -101,17 +102,17 @@ pub(super) fn block_summary(
     stage: BlockStage,
     block: &crate::daemon::client::v1::pipeline::StageState,
 ) -> StepSummary {
-    let Some(source) = block.source.as_deref() else {
-        return empty(stage.stage());
-    };
-    // The daemon names the backend; its source is the fallback for one it
-    // cannot name, so the step never goes blank.
-    let title = block.name.clone().unwrap_or_else(|| source.to_string());
-    let detail = match block.model.as_deref() {
-        Some(model) if block.enabled && block.loaded => running(model, block.running_device()),
-        _ => crate::fl!("not-loaded"),
-    };
-    StepSummary { title, detail }
+    match pipeline::step(stage.stage(), block) {
+        Step::Empty => empty(stage.stage()),
+        Step::Filled { backend, model } => StepSummary {
+            title: backend,
+            detail: match model {
+                StepModel::Running { name, device } => running(&name, device.as_deref()),
+                StepModel::Idle { name } => name,
+                StepModel::NotLoaded => crate::fl!("not-loaded"),
+            },
+        },
+    }
 }
 
 /// What a download or load in flight says in place of the model, and how far
