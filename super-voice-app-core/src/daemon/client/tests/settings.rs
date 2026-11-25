@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::fake_daemon::{FakeDaemon, Reply};
 use crate::daemon::client::v1::settings::{
-    audio_theme, idle_unload, language, notification_method, preview_typing, read_method,
+    audio_theme, hotkey, idle_unload, language, notification_method, preview_typing, read_method,
     recording_stop_mode, update_beta_optin, update_check_enabled, volume, write_method,
 };
 use crate::state::AudioTheme;
@@ -167,6 +167,49 @@ async fn a_generated_setter_surfaces_the_daemons_refusal() {
         .expect_err("refused");
 
     assert_eq!(error.to_string(), "ydotool is not installed");
+}
+
+/// The macOS shortcut's keys: read, set and reset on one path, each answered
+/// with the binding the daemon now has, and the default when an older daemon
+/// says nothing.
+#[tokio::test]
+async fn reading_setting_and_resetting_the_hotkey() {
+    let daemon = FakeDaemon::start().await;
+    daemon
+        .reply(Reply::json(&json!({ "status": "success" })))
+        .reply(Reply::json(
+            &json!({ "status": "success", "hotkey": "shift+cmd+KeyR" }),
+        ))
+        .reply(Reply::json(
+            &json!({ "status": "success", "hotkey": "ctrl+alt+space" }),
+        ));
+
+    assert_eq!(hotkey::get_hotkey().await.expect("read"), "ctrl+alt+space");
+    assert_eq!(
+        hotkey::set_hotkey("cmd+shift+r".to_string())
+            .await
+            .expect("set"),
+        "shift+cmd+KeyR"
+    );
+    assert_eq!(
+        hotkey::clear_hotkey().await.expect("reset"),
+        "ctrl+alt+space"
+    );
+
+    let requests = daemon.requests();
+    let calls: Vec<(&str, &str)> = requests
+        .iter()
+        .map(|request| (request.method.as_str(), request.path()))
+        .collect();
+    assert_eq!(
+        calls,
+        [
+            ("GET", "/settings/hotkey"),
+            ("POST", "/settings/hotkey"),
+            ("DELETE", "/settings/hotkey"),
+        ]
+    );
+    assert_eq!(requests[1].json(), json!({ "hotkey": "cmd+shift+r" }));
 }
 
 #[tokio::test]

@@ -35,6 +35,16 @@ impl AppModel {
             Effect::List => Task::perform(page::run_list(), page_action),
             Effect::Add(id) => Task::perform(page::run_add(id), page_action),
             Effect::Remove(id) => Task::perform(page::run_remove(id), page_action),
+            Effect::ReadHotkey => Task::perform(page::run_read_hotkey(), page_action),
+            Effect::SaveHotkey(binding) => {
+                Task::perform(page::run_save_hotkey(binding), page_action)
+            }
+            Effect::ResetHotkey => Task::perform(page::run_reset_hotkey(), page_action),
+            // The macOS shortcut listener's agent. This app runs on Linux,
+            // where the page never asks for these.
+            Effect::ReadListener | Effect::RegisterListener | Effect::OpenLoginItems => {
+                Task::none()
+            }
         }))
     }
 }
@@ -44,5 +54,7 @@ fn notice_text(notice: Notice) -> String {
     match notice {
         Notice::CouldNotLoad(e) => crate::fl!("shortcuts-load-failed", error = e),
         Notice::CouldNotChange(e) => crate::fl!("shortcut-change-failed", error = e),
+        Notice::HotkeyRefused(e) => crate::fl!("shortcut-refused", error = e),
+        Notice::CouldNotRegister(e) => crate::fl!("shortcut-listener-register-failed", error = e),
     }
 }

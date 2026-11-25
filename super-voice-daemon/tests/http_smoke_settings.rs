@@ -41,6 +41,14 @@ async fn raw_post_json(
     common::request(socket_path, Method::POST, path, Some(token), Some(&body)).await
 }
 
+async fn raw_delete_json(
+    socket_path: &PathBuf,
+    path: &str,
+    token: &str,
+) -> (StatusCode, serde_json::Value) {
+    common::request(socket_path, Method::DELETE, path, Some(token), None).await
+}
+
 #[tokio::test]
 #[allow(
     clippy::too_many_lines,
@@ -184,6 +192,43 @@ async fn settings_scope_endpoints() {
     )
     .await;
     assert_eq!(s, StatusCode::OK);
+
+    // --- /settings/hotkey: the default, a change, a refusal, a reset ---
+    let (s, body) = raw_get_json(&http_socket, "/settings/hotkey", &settings_token).await;
+    assert_eq!(s, StatusCode::OK, "GET /settings/hotkey: {body}");
+    assert_eq!(body["hotkey"], "ctrl+alt+space");
+    let (s, body) = raw_post_json(
+        &http_socket,
+        "/settings/hotkey",
+        &settings_token,
+        serde_json::json!({ "hotkey": "Cmd+Shift+r" }),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "POST /settings/hotkey: {body}");
+    assert_eq!(
+        body["hotkey"], "shift+cmd+KeyR",
+        "stored as the daemon writes it"
+    );
+    let (s, body) = raw_post_json(
+        &http_socket,
+        "/settings/hotkey",
+        &settings_token,
+        serde_json::json!({ "hotkey": "r" }),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::BAD_REQUEST,
+        "a bare letter is refused: {body}"
+    );
+    let (_, body) = raw_get_json(&http_socket, "/settings/hotkey", &settings_token).await;
+    assert_eq!(
+        body["hotkey"], "shift+cmd+KeyR",
+        "a refusal changes nothing"
+    );
+    let (s, body) = raw_delete_json(&http_socket, "/settings/hotkey", &settings_token).await;
+    assert_eq!(s, StatusCode::OK, "DELETE /settings/hotkey: {body}");
+    assert_eq!(body["hotkey"], "ctrl+alt+space");
 
     // --- /active_device is gone: a device belongs to a model, and is read
     // and set at /stt/pipeline/{stage}/model/{model}/device (covered by

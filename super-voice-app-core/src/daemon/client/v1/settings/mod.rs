@@ -10,6 +10,7 @@
 //! [`super::models`], [`super::update`].
 
 pub mod audio_theme;
+pub mod hotkey;
 pub mod idle_unload;
 pub mod language;
 pub mod notification_method;

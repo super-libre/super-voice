@@ -83,6 +83,9 @@ impl SuperSTTDaemon {
             Command::ListAudioThemes => self.handle_list_audio_themes(),
             Command::SetPreviewTyping { enabled } => self.handle_set_preview_typing(enabled).await,
             Command::GetPreviewTyping => self.handle_get_preview_typing(),
+            Command::SetHotkey { binding } => self.handle_set_hotkey(&binding).await,
+            Command::GetHotkey => self.handle_get_hotkey().await,
+            Command::ClearHotkey => self.handle_clear_hotkey().await,
             Command::SetPostProcessor { model, source } => {
                 self.handle_set_post_processor(model, source).await
             }

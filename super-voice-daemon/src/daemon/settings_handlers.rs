@@ -4,6 +4,7 @@ use crate::config::DaemonConfig;
 use crate::daemon::types::SuperSTTDaemon;
 use crate::output::keyboard::Simulator;
 use log::{info, warn};
+use super_voice_shared::models::hotkey;
 use super_voice_shared::models::notification_method::NotificationMethod;
 use super_voice_shared::models::protocol::{DaemonResponse, ErrorCode};
 use super_voice_shared::models::read_method::ReadMethod;
@@ -82,6 +83,61 @@ impl SuperSTTDaemon {
         DaemonResponse::success()
             .with_preview_typing_enabled(enabled)
             .with_message("Preview typing setting retrieved successfully".to_string())
+    }
+
+    /// Set the keys the macOS shortcut listener listens for. A binding the
+    /// listener could not register is refused with `invalid_value` (HTTP 400)
+    /// and the reason, before anything is stored. The default is stored as
+    /// no binding, and every other one in the one way
+    /// [`Binding`](super_voice_shared::models::hotkey::Binding) writes it.
+    ///
+    /// Stored on every platform, so a client can set it before the listener
+    /// is running; only the macOS listener reads it.
+    pub async fn handle_set_hotkey(&self, binding: &str) -> DaemonResponse {
+        let parsed = match hotkey::validate(binding) {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                return DaemonResponse::error_with_code(
+                    ErrorCode::InvalidValue,
+                    &format!("`{binding}` cannot be the shortcut. {e}."),
+                );
+            }
+        };
+        let stored = (!parsed.is_default()).then(|| parsed.to_string());
+        let persist = self
+            .set_config_field(|c| c.shortcuts.hotkey.clone_from(&stored))
+            .await;
+        self.publish_settings_changed(hotkey::SETTING);
+
+        let effective = stored.unwrap_or_else(|| hotkey::DEFAULT_BINDING.to_string());
+        info!("Shortcut listener's keys set to {effective}");
+        Self::settings_saved(
+            DaemonResponse::success().with_hotkey(effective.clone()),
+            format!("Shortcut set to {effective}"),
+            persist,
+        )
+    }
+
+    /// The keys the macOS shortcut listener listens for: the one set, or the
+    /// default.
+    pub async fn handle_get_hotkey(&self) -> DaemonResponse {
+        let binding = self.config.read().await.shortcuts.hotkey().to_string();
+        DaemonResponse::success().with_hotkey(binding)
+    }
+
+    /// Go back to the default keys.
+    pub async fn handle_clear_hotkey(&self) -> DaemonResponse {
+        let persist = self.set_config_field(|c| c.shortcuts.hotkey = None).await;
+        self.publish_settings_changed(hotkey::SETTING);
+        info!(
+            "Shortcut listener's keys back to {}",
+            hotkey::DEFAULT_BINDING
+        );
+        Self::settings_saved(
+            DaemonResponse::success().with_hotkey(hotkey::DEFAULT_BINDING.to_string()),
+            format!("Shortcut set to {}", hotkey::DEFAULT_BINDING),
+            persist,
+        )
     }
 
     /// Handle set recording stop mode command

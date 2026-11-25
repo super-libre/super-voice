@@ -3867,6 +3867,7 @@ async fn every_settings_write_announces_itself() {
         .await;
     let _ = daemon.handle_set_write_method(WriteMethod::Auto).await;
     let _ = daemon.handle_set_preview_typing(true).await;
+    let _ = daemon.handle_set_hotkey("cmd+shift+r").await;
     let _ = daemon
         .handle_set_recording_stop_mode(RecordingStopMode::ManualOnly)
         .await;
@@ -3891,6 +3892,7 @@ async fn every_settings_write_announces_itself() {
         ("notification_method", None),
         ("write_method", Some("stt")),
         ("preview_typing", Some("stt")),
+        ("hotkey", Some("stt")),
         ("recording_stop_mode", Some("stt")),
         ("read_method", Some("tts")),
     ]
@@ -3898,6 +3900,45 @@ async fn every_settings_write_announces_itself() {
     .map(|(setting, feature)| (setting.to_string(), feature.map(str::to_string)))
     .collect();
     assert_eq!(announced, expected);
+}
+
+/// The macOS shortcut's keys: refused when the listener could not register
+/// them, stored the one way they are written, and the default stored as none.
+#[tokio::test]
+async fn the_hotkey_is_checked_and_stored_as_written() {
+    let daemon = test_daemon().await;
+    let read = |resp: DaemonResponse| resp.hotkey.expect("answers with the binding");
+    assert_eq!(read(daemon.handle_get_hotkey().await), "ctrl+alt+space");
+
+    for refused in [
+        "r",
+        "ctrl+",
+        "shift+KeyQ+alt",
+        "ctrl+BrowserBack",
+        "ctrl+banana",
+    ] {
+        let resp = daemon.handle_set_hotkey(refused).await;
+        assert_eq!(resp.status, "error", "{refused}");
+        assert_eq!(resp.error_code, Some(ErrorCode::InvalidValue), "{refused}");
+    }
+    assert_eq!(daemon.config.read().await.shortcuts.hotkey, None);
+
+    let resp = daemon.handle_set_hotkey("Cmd+Shift+r").await;
+    assert_eq!(read(resp), "shift+cmd+KeyR");
+    assert_eq!(
+        daemon.config.read().await.shortcuts.hotkey.as_deref(),
+        Some("shift+cmd+KeyR")
+    );
+    assert_eq!(read(daemon.handle_get_hotkey().await), "shift+cmd+KeyR");
+
+    // The default, however it is spelled, is no binding set.
+    let resp = daemon.handle_set_hotkey("option+control+SPACE").await;
+    assert_eq!(read(resp), "ctrl+alt+space");
+    assert_eq!(daemon.config.read().await.shortcuts.hotkey, None);
+
+    let _ = daemon.handle_set_hotkey("ctrl+F5").await;
+    assert_eq!(read(daemon.handle_clear_hotkey().await), "ctrl+alt+space");
+    assert_eq!(daemon.config.read().await.shortcuts.hotkey, None);
 }
 
 /// When a recording ends every stage's idle time starts again, so a model

@@ -141,6 +141,10 @@ pub struct DaemonResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preview_typing_enabled: Option<bool>,
 
+    // The keys the macOS shortcut listener listens for
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hotkey: Option<String>,
+
     // Recording stop mode
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recording_stop_mode: Option<String>,
@@ -451,6 +455,12 @@ impl DaemonResponse {
     #[must_use]
     pub fn with_post_processor(mut self, post_processor: Value) -> Self {
         self.post_processor = Some(post_processor);
+        self
+    }
+
+    #[must_use]
+    pub fn with_hotkey(mut self, binding: String) -> Self {
+        self.hotkey = Some(binding);
         self
     }
 

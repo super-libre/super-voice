@@ -49,6 +49,7 @@ scope and asked for `daemon_status_changed` or `download_progress`.
 | [`/settings/volume`](../endpoints/v1/settings/volume.md)                      | POST, GET  | Set / read audio cue volume (0–100)                                                                   |
 | [`/settings/recording_stop_mode`](../endpoints/v1/settings/recording_stop_mode.md) | POST, GET | Default stop behavior for `/stt/transcribe` (silence_only / silence_and_manual / manual_only)                  |
 | [`/settings/preview_typing`](../endpoints/v1/settings/preview_typing.md)      | POST, GET  | Toggle live typing of preview text while recording                                                    |
+| [`/settings/hotkey`](../endpoints/v1/settings/hotkey.md)                      | GET, POST, DELETE | The keys the macOS shortcut listener listens for                                               |
 | [`/stt/pipeline`](../endpoints/v1/pipeline.md)                  | GET        | The ordered stages a transcript passes through                                                        |
 | [`/stt/pipeline/{stage}`](../endpoints/v1/pipeline/stage.md)          | GET, POST, DELETE | Select / deselect the backend filling one stage                                                |
 | [`/stt/pipeline/{stage}/model`](../endpoints/v1/pipeline/model.md)    | POST, DELETE | Run / stop a model in one stage                                                                     |

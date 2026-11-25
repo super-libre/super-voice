@@ -106,9 +106,23 @@ pub struct ShortcutsConfig {
         deserialize_with = "super_voice_shared::utils::serde_helpers::deserialize_or_default"
     )]
     pub gnome_keys_taken: Vec<ShortcutId>,
+    /// The keys the macOS shortcut listener (`voice hotkey`) listens for,
+    /// written as [`Binding`](super_voice_shared::models::hotkey::Binding)
+    /// writes them. `None` is the default,
+    /// [`DEFAULT_BINDING`](super_voice_shared::models::hotkey::DEFAULT_BINDING).
+    #[serde(default)]
+    pub hotkey: Option<String>,
 }
 
 impl ShortcutsConfig {
+    /// The keys the macOS shortcut listener listens for.
+    #[must_use]
+    pub fn hotkey(&self) -> &str {
+        self.hotkey
+            .as_deref()
+            .unwrap_or(super_voice_shared::models::hotkey::DEFAULT_BINDING)
+    }
+
     /// The shortcuts added through the portal on `desktop`.
     #[must_use]
     pub fn portal_on(&self, desktop: &str) -> Vec<ShortcutId> {
