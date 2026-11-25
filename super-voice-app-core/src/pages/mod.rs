@@ -13,5 +13,6 @@ pub mod clips;
 pub mod contexts;
 pub mod notes;
 pub mod recording_test;
+pub mod settings;
 pub mod speech;
 pub mod voices;

@@ -135,7 +135,7 @@ impl AppModel {
             Task::batch([
                 self.handle_model_messages(ModelMessage::LoadInitialData),
                 build_load_settings_tasks(),
-                self.load_primary_language(),
+                super::settings_page::load_language(),
             ])
         } else {
             Task::none()

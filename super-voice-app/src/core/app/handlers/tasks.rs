@@ -4,14 +4,13 @@
 //! result-to-`Message` mapping isn't re-rolled at each call site.
 
 use crate::daemon::client::{
-    get_current_audio_theme, get_idle_unload, get_notification_method, get_preview_typing,
-    get_read_method, get_recording_stop_mode, get_update_check_enabled, get_update_status,
-    get_volume, get_write_method, list_backends, ping_daemon,
+    get_current_audio_theme, get_preview_typing, get_read_method, get_recording_stop_mode,
+    get_update_check_enabled, get_update_status, get_volume, get_write_method, list_backends,
+    ping_daemon,
 };
 use crate::state::AudioTheme;
 use crate::ui::messages::{
-    BackendMessage, DaemonMessage, IdleUnloadMessage, Message, ModelsPageMessage,
-    NotificationMethodMessage, ReadMethodMessage, UpdateMessage,
+    BackendMessage, DaemonMessage, Message, ModelsPageMessage, ReadMethodMessage, UpdateMessage,
 };
 use cosmic::prelude::*;
 use log::warn;
@@ -116,8 +115,8 @@ pub(in crate::core::app) fn build_load_settings_tasks() -> Task<cosmic::Action<M
         load_recording_stop_mode(),
         load_read_method(),
         load_write_method(),
-        load_notification_method(),
-        load_idle_unload(),
+        super::settings_page::load_notification_method(),
+        super::settings_page::load_idle_unload(),
         refresh_update_status(),
         load_update_check_enabled(),
     ])
@@ -205,41 +204,6 @@ pub(in crate::core::app) fn load_write_method() -> Task<cosmic::Action<Message>>
                 log::warn!("Failed to load write method: {e}");
                 behavior_action(behavior::Input::WriteMethodLoaded(WriteMethod::default()))
             }
-        }
-    })
-}
-
-/// Fetch how failures are reported.
-pub(in crate::core::app) fn load_notification_method() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_notification_method(), |result| {
-        use super_voice_shared::models::notification_method::NotificationMethod;
-        match result {
-            Ok(method_str) => {
-                let method = method_str.parse::<NotificationMethod>().unwrap_or_default();
-                cosmic::Action::App(Message::NotificationMethod(
-                    NotificationMethodMessage::Loaded(method),
-                ))
-            }
-            Err(e) => {
-                warn!("Failed to load notification method: {e}");
-                cosmic::Action::App(Message::NotificationMethod(
-                    NotificationMethodMessage::Loaded(NotificationMethod::default()),
-                ))
-            }
-        }
-    })
-}
-
-/// Fetch the idle-unload setting. Also the `SettingsChanged { setting:
-/// "idle_unload" }` handler, so a change made elsewhere shows here.
-pub(in crate::core::app) fn load_idle_unload() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_idle_unload(), |result| match result {
-        Ok(after_secs) => {
-            cosmic::Action::App(Message::IdleUnload(IdleUnloadMessage::Loaded(after_secs)))
-        }
-        Err(e) => {
-            warn!("Failed to load the idle unload setting: {e}");
-            cosmic::Action::App(Message::IdleUnload(IdleUnloadMessage::Loaded(0)))
         }
     })
 }

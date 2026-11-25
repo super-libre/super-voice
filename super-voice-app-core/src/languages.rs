@@ -249,12 +249,12 @@ fn is_region(sub: &str) -> bool {
 #[must_use]
 pub fn friendly_name(tag: &str) -> String {
     if tag.eq_ignore_ascii_case("auto") {
-        return crate::fl!("auto-detect");
+        return crate::i18n::text("auto-detect", &[]);
     }
     let mut subtags = tag.split('-');
     let lang = subtags.next().unwrap_or(tag);
     let name = match lookup(BASE_LANGUAGES, lang) {
-        Some(n) => crate::i18n::LANGUAGE_LOADER.get(n),
+        Some(n) => crate::i18n::text(n, &[]),
         None => lang.to_string(),
     };
     let mut qualifiers: Vec<String> = Vec::new();
@@ -264,12 +264,12 @@ pub fn friendly_name(tag: &str) -> String {
         }
         if is_script(sub) {
             qualifiers.push(match lookup(SCRIPTS, sub) {
-                Some(n) => crate::i18n::LANGUAGE_LOADER.get(n),
+                Some(n) => crate::i18n::text(n, &[]),
                 None => sub.to_string(),
             });
         } else if is_region(sub) {
             qualifiers.push(match lookup(REGIONS, sub) {
-                Some(n) => crate::i18n::LANGUAGE_LOADER.get(n),
+                Some(n) => crate::i18n::text(n, &[]),
                 None => sub.to_uppercase(),
             });
         } else {
@@ -283,9 +283,45 @@ pub fn friendly_name(tag: &str) -> String {
     }
 }
 
+/// A language picker's rows: each tag the daemon offers with its name,
+/// sorted by name, narrowed to those whose name or tag holds `query` (any
+/// case). Entries a picker pins above the languages, such as "Follow global",
+/// are the app's to add: a search never hides them.
+#[must_use]
+pub fn picker_rows(offers: &[String], query: &str) -> Vec<(String, String)> {
+    let query = query.to_lowercase();
+    let mut rows: Vec<(String, String)> = offers
+        .iter()
+        .map(|tag| (tag.clone(), friendly_name(tag)))
+        .filter(|(tag, name)| {
+            query.is_empty() || format!("{name} {tag}").to_lowercase().contains(&query)
+        })
+        .collect();
+    rows.sort_by(|a, b| a.1.cmp(&b.1));
+    rows
+}
+
 #[cfg(test)]
 mod tests {
-    use super::friendly_name;
+    use super::{friendly_name, picker_rows};
+
+    #[test]
+    fn picker_rows_sort_by_name_and_search_names_and_tags() {
+        let offers = ["fr", "en", "de"].map(String::from);
+        let names: Vec<String> = picker_rows(&offers, "")
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect();
+        assert_eq!(names, ["English", "French", "German"]);
+        assert_eq!(
+            picker_rows(&offers, "fre"),
+            [("fr".to_string(), "French".to_string())]
+        );
+        assert_eq!(
+            picker_rows(&offers, "DE"),
+            [("de".to_string(), "German".to_string())]
+        );
+    }
 
     #[test]
     fn auto_and_bare_language() {

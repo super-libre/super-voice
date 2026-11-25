@@ -13,6 +13,7 @@ pub mod clips;
 pub mod daemon;
 pub mod events;
 pub mod i18n;
+pub mod languages;
 pub mod notes;
 pub mod pages;
 pub mod rules;

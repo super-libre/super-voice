@@ -158,9 +158,7 @@ impl AppModel {
             shortcuts: crate::state::shortcuts::ShortcutsState::default(),
             assistants: crate::state::assistants::AssistantsState::default(),
             read_method: super_voice_shared::models::read_method::ReadMethod::default(),
-            notification_method:
-                super_voice_shared::models::notification_method::NotificationMethod::default(),
-            idle_unload_secs: 0,
+            settings: super_voice_app_core::state::settings::SettingsState::default(),
 
             // Models page UI state
             models_page: crate::state::models_page::ModelsPageState::default(),

@@ -122,8 +122,8 @@ pub(crate) fn feature_status_pills(app: &AppModel) -> Element<'_, Message> {
     ]
     .spacing(6.0)
     .align_y(Alignment::Center);
-    if app.idle_unload_secs > 0 {
-        pills = pills.push(sleep_pill(app.idle_unload_secs));
+    if app.settings.idle_unload_secs > 0 {
+        pills = pills.push(sleep_pill(app.settings.idle_unload_secs));
     }
     pills.into()
 }

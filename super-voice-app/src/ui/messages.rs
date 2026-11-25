@@ -9,7 +9,6 @@
 //! error at both ends instead of silently falling through to `Task::none()`.
 
 use super_voice_shared::models::assistants::{AssistantId, AssistantList, NewKey};
-use super_voice_shared::models::notification_method::NotificationMethod;
 use super_voice_shared::models::read_method::ReadMethod;
 use super_voice_shared::models::shortcuts::{ShortcutId, ShortcutList};
 
@@ -40,8 +39,8 @@ pub enum Message {
     Shortcuts(ShortcutsMessage),
     /// The Assistants page, and its two dialogs.
     Assistants(AssistantsMessage),
-    NotificationMethod(NotificationMethodMessage),
-    IdleUnload(IdleUnloadMessage),
+    /// The Settings page: the language, failure notices and Sleep When Idle.
+    Settings(SettingsMessage),
     Backend(BackendMessage),
     /// The Contexts page: the dictation contexts, and which one is in force.
     Contexts(ContextsMessage),
@@ -600,20 +599,12 @@ pub enum ReadMethodMessage {
     TestFailed(String),
 }
 
-/// Notification-method setting.
+/// The Settings page.
 #[derive(Debug, Clone)]
-pub enum NotificationMethodMessage {
-    Changed(NotificationMethod),
-    Loaded(NotificationMethod),
-    Error(String),
-}
-
-/// Idle-unload setting: seconds an unused model stays loaded, `0` for always.
-#[derive(Debug, Clone)]
-pub enum IdleUnloadMessage {
-    Changed(u64),
-    Loaded(u64),
-    Error(String),
+pub enum SettingsMessage {
+    /// Something the page's logic handles. See
+    /// `super_voice_app_core::pages::settings`.
+    Page(super_voice_app_core::pages::settings::Input),
 }
 
 /// Backend catalog + per-backend secret/option configuration.
@@ -693,12 +684,6 @@ pub enum LanguageMessage {
     },
     CloseLanguagePicker,
     LanguagePickerQueryChanged(String),
-    /// Global Primary Language loaded from the daemon (None = unset).
-    PrimaryLanguageLoaded(Option<String>),
-    /// The tags the global setting accepts, from `GET /settings/language/list`.
-    PrimaryLanguagesLoaded(Vec<String>),
-    /// User picked a global language (None = clear → DELETE).
-    PrimaryLanguageSelected(Option<String>),
     /// Per-model resolution block (`/stt/pipeline/{stage}/model/{model}/language`)
     /// loaded from the daemon for `(source, model)`.
     /// The languages a model can be pinned to, from
@@ -889,8 +874,7 @@ message_from! {
     ReadMethod => ReadMethodMessage,
     Shortcuts => ShortcutsMessage,
     Assistants => AssistantsMessage,
-    NotificationMethod => NotificationMethodMessage,
-    IdleUnload => IdleUnloadMessage,
+    Settings => SettingsMessage,
     Backend => BackendMessage,
     Contexts => ContextsMessage,
     Notes => NotesMessage,

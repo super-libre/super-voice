@@ -3,7 +3,6 @@
 //! User interface module containing views and messages.
 
 pub mod icons;
-pub mod languages;
 pub mod messages;
 pub mod press_guard;
 pub mod views;

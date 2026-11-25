@@ -346,7 +346,7 @@ impl AppModel {
                 // global value goes stale on either card.
                 let pairs: Vec<(Stage, String, String)> =
                     self.language.model_languages.pairs().collect();
-                let mut tasks = vec![self.load_primary_language()];
+                let mut tasks = vec![crate::core::app::handlers::settings_page::load_language()];
                 tasks.extend(
                     pairs.into_iter().map(|(stage, source, model)| {
                         self.load_model_language(stage, &source, model)
@@ -364,7 +364,7 @@ impl AppModel {
             // daemon reports a model out of memory as idle only while the next
             // use would load it. So every stage is read again with it.
             "idle_unload" => Some(Task::batch([
-                crate::core::app::handlers::tasks::load_idle_unload(),
+                crate::core::app::handlers::settings_page::load_idle_unload(),
                 crate::core::app::handlers::stage::load_block(BlockStage::PostProcessing),
                 crate::core::app::handlers::stage::load_block(BlockStage::Synthesis),
                 self.read_transcription_idle(),
@@ -374,7 +374,7 @@ impl AppModel {
             "audio_theme" => Some(crate::core::app::handlers::tasks::load_audio_theme()),
             "volume" => Some(crate::core::app::handlers::tasks::load_volume()),
             "notification_method" => {
-                Some(crate::core::app::handlers::tasks::load_notification_method())
+                Some(crate::core::app::handlers::settings_page::load_notification_method())
             }
             "write_method" => Some(crate::core::app::handlers::tasks::load_write_method()),
             "preview_typing" => Some(crate::core::app::handlers::tasks::load_preview_typing()),

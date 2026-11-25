@@ -1,27 +1,30 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use cosmic::Element;
 use cosmic::widget::{self, settings};
-use super_voice_shared::models::notification_method::NotificationMethod;
+use super_voice_app_core::pages::settings::{
+    IdleTime, Input, NOTIFICATION_METHODS, idle_time, idle_unload_choices,
+};
+use super_voice_app_core::state::settings::SettingsState;
 
 use super::common::{error_banner, page_layout};
-use crate::ui::messages::{IdleUnloadMessage, LanguageMessage, Message, NotificationMethodMessage};
+use crate::ui::messages::{LanguageMessage, Message, SettingsMessage};
 use crate::ui::press_guard::press_guard;
 
-/// The idle times offered, in seconds. The first is what the toggle turns on.
-const IDLE_UNLOAD_CHOICES: [u64; 5] = [300, 60, 900, 1800, 3600];
+fn page_input(input: Input) -> Message {
+    Message::Settings(SettingsMessage::Page(input))
+}
 
 /// Settings page: what both features share — the primary language, how
 /// failures are reported, and how long an unused model stays in memory. The
 /// recording's sounds are speech to text's own, on its Behavior tab.
 pub fn page<'a>(
     app_primary_language: Option<&'a str>,
-    notification_method: NotificationMethod,
-    idle_unload_secs: u64,
+    state: &SettingsState,
     action_error: Option<&'a str>,
 ) -> Element<'a, Message> {
     let lang_label = app_primary_language.map_or_else(
         || crate::fl!("automatic"),
-        crate::ui::languages::friendly_name,
+        super_voice_app_core::languages::friendly_name,
     );
     let language_section = settings::section().title(crate::fl!("language")).add(
         settings::item::builder(crate::fl!("primary-language"))
@@ -40,26 +43,22 @@ pub fn page<'a>(
         blocks.push(error_banner(message));
     }
     blocks.push(language_section.into());
-    blocks.push(notifications_section(notification_method));
-    blocks.push(memory_section(idle_unload_secs));
+    blocks.push(notifications_section(state));
+    blocks.push(memory_section(state.idle_unload_secs));
 
     page_layout(crate::fl!("settings"), settings::view_column(blocks))
 }
 
 /// Notifications section: how either feature's failures reach the user. One
 /// setting for both, so it is here with the others they share.
-fn notifications_section(notification_method: NotificationMethod) -> Element<'static, Message> {
-    let methods = [
-        NotificationMethod::Auto,
-        NotificationMethod::Desktop,
-        NotificationMethod::Typed,
-        NotificationMethod::Off,
-    ];
-    let method_names: Vec<String> = methods
+fn notifications_section(state: &SettingsState) -> Element<'static, Message> {
+    let method_names: Vec<String> = NOTIFICATION_METHODS
         .iter()
         .map(|m| crate::i18n::notification_method_name(*m))
         .collect();
-    let selected_index = methods.iter().position(|m| *m == notification_method);
+    let selected_index = NOTIFICATION_METHODS
+        .iter()
+        .position(|m| *m == state.notification_method);
 
     settings::section()
         .title(crate::fl!("notifications"))
@@ -70,9 +69,7 @@ fn notifications_section(notification_method: NotificationMethod) -> Element<'st
                     method_names,
                     selected_index,
                     move |index| {
-                        Message::NotificationMethod(NotificationMethodMessage::Changed(
-                            methods[index],
-                        ))
+                        page_input(Input::NotificationMethodPicked(NOTIFICATION_METHODS[index]))
                     },
                 )),
         )
@@ -87,30 +84,19 @@ fn memory_section(idle_unload_secs: u64) -> Element<'static, Message> {
     let mut section = settings::section().title(crate::fl!("memory")).add(
         settings::item::builder(crate::fl!("sleep-when-idle"))
             .description(crate::fl!("sleep-when-idle-description"))
-            .control(press_guard(cosmic::widget::toggler(enabled).on_toggle(
-                |on| {
-                    Message::IdleUnload(IdleUnloadMessage::Changed(if on {
-                        IDLE_UNLOAD_CHOICES[0]
-                    } else {
-                        0
-                    }))
-                },
-            ))),
+            .control(press_guard(
+                cosmic::widget::toggler(enabled)
+                    .on_toggle(|on| page_input(Input::SleepToggled(on))),
+            )),
     );
 
     if enabled {
-        // A time set outside the app is listed too, so the dropdown always
-        // shows the one in force.
-        let mut choices = IDLE_UNLOAD_CHOICES.to_vec();
-        if !choices.contains(&idle_unload_secs) {
-            choices.push(idle_unload_secs);
-        }
-        choices.sort_unstable();
+        let choices = idle_unload_choices(idle_unload_secs);
         let names: Vec<String> = choices.iter().map(|secs| idle_time_name(*secs)).collect();
         let selected = choices.iter().position(|secs| *secs == idle_unload_secs);
         section = section.add(settings::item::builder(crate::fl!("sleep-after")).control(
             widget::dropdown(names, selected, move |index| {
-                Message::IdleUnload(IdleUnloadMessage::Changed(choices[index]))
+                page_input(Input::IdleUnloadPicked(choices[index]))
             }),
         ));
     }
@@ -121,10 +107,8 @@ fn memory_section(idle_unload_secs: u64) -> Element<'static, Message> {
 /// An idle time as the dropdown shows it: whole minutes when it is one, else
 /// seconds.
 pub(crate) fn idle_time_name(secs: u64) -> String {
-    if secs.is_multiple_of(60) {
-        let minutes = secs / 60;
-        crate::fl!("idle-minutes", minutes = minutes)
-    } else {
-        crate::fl!("idle-seconds", seconds = secs)
+    match idle_time(secs) {
+        IdleTime::Minutes(minutes) => crate::fl!("idle-minutes", minutes = minutes),
+        IdleTime::Seconds(seconds) => crate::fl!("idle-seconds", seconds = seconds),
     }
 }

@@ -150,11 +150,9 @@ pub struct AppModel {
     /// clipboard.
     pub read_method: super_voice_shared::models::read_method::ReadMethod,
 
-    // Notification method
-    pub notification_method: super_voice_shared::models::notification_method::NotificationMethod,
-
-    /// Seconds an unused model stays loaded; `0` keeps models loaded.
-    pub idle_unload_secs: u64,
+    /// The Settings page: how failures are reported, and how long an unused
+    /// model stays loaded.
+    pub settings: super_voice_app_core::state::settings::SettingsState,
 
     // Models page UI state (tabs, active-backend card selection/staging, menus).
     pub models_page: crate::state::models_page::ModelsPageState,

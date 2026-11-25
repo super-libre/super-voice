@@ -184,6 +184,20 @@ pub fn notification(event: &WidgetEvent) -> Option<NotificationEvent> {
     })
 }
 
+/// The setting a status event says changed, from either feature: another
+/// client changed it, or this one did, and a page that shows it reads it
+/// again.
+#[must_use]
+pub fn setting_changed(event: &Event) -> Option<&str> {
+    let Event::Status(status) = event else {
+        return None;
+    };
+    if status.data.get("status").and_then(Value::as_str) != Some("settings_changed") {
+        return None;
+    }
+    status.data.get("setting").and_then(Value::as_str)
+}
+
 /// Raw frequency-band energy (typically 0.00001 to 0.1) as a meter's 0 to 1,
 /// on a -60 dB to 0 dB scale, where 0.1 is full. Quiet, normal and loud speech
 /// (0.003, 0.005, 0.008) come to about 49, 57 and 63%.
