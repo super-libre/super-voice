@@ -61,6 +61,12 @@ pub struct ConnectionState {
     /// so many clients reconnecting after a daemon restart don't all ask at
     /// once.
     pub retry: RetryStrategy,
+    /// Why the daemon is down: the last failure to answer, or the refusal,
+    /// when it hasn't answered since. The window shows the Connection page in
+    /// place of the pages that need the daemon while there is one. Trying
+    /// again doesn't clear it, so the window doesn't flicker back to a page
+    /// on every try.
+    pub failure: Option<DaemonStatus>,
 }
 
 impl Default for ConnectionState {
@@ -69,6 +75,7 @@ impl Default for ConnectionState {
             status: DaemonStatus::default(),
             agent: None,
             retry: RetryStrategy::for_initial_connection(),
+            failure: None,
         }
     }
 }
@@ -77,5 +84,12 @@ impl ConnectionState {
     #[must_use]
     pub fn is_connected(&self) -> bool {
         self.status == DaemonStatus::Connected
+    }
+
+    /// Whether the window shows the Connection page in place of the pages
+    /// that need the daemon: see [`Self::failure`].
+    #[must_use]
+    pub fn is_down(&self) -> bool {
+        self.failure.is_some()
     }
 }

@@ -81,6 +81,7 @@ pub fn update(state: &mut ConnectionState, input: Input) -> Outcome {
         Input::Reached => {
             let reconnected = !state.is_connected();
             state.status = DaemonStatus::Connected;
+            state.failure = None;
             // The next drop starts again from the short first wait.
             state.retry.reset();
             Outcome {
@@ -90,6 +91,7 @@ pub fn update(state: &mut ConnectionState, input: Input) -> Outcome {
         }
         Input::Failed(error) => {
             state.status = classify(error);
+            state.failure = Some(state.status.clone());
             if matches!(state.status, DaemonStatus::Blocked(_)) {
                 log::warn!(
                     "Daemon access blocked by user denial; auto-retry suppressed: {:?}",
@@ -109,15 +111,18 @@ pub fn update(state: &mut ConnectionState, input: Input) -> Outcome {
         }
         Input::Checked(Ok(())) => {
             state.status = DaemonStatus::Connected;
+            state.failure = None;
             Outcome::default()
         }
         Input::Checked(Err(error)) => {
             state.status = classify(error);
+            state.failure = Some(state.status.clone());
             Outcome::default()
         }
         Input::Refused(reason) => {
             log::warn!("Event stream blocked ({reason}); halting auto-retry");
             state.status = DaemonStatus::Blocked(reason);
+            state.failure = Some(state.status.clone());
             Outcome::default()
         }
         Input::RetryAuthorization => {
@@ -177,7 +182,12 @@ pub enum Fix {
 /// is registered and switched on, which a command fixes neither of.
 #[must_use]
 pub fn fix(state: &ConnectionState) -> Option<Fix> {
-    match &state.status {
+    // While it tries again, the fix is still the failure's.
+    let status = match (&state.status, &state.failure) {
+        (DaemonStatus::Connecting, Some(failure)) => failure,
+        (status, _) => status,
+    };
+    match status {
         DaemonStatus::Disconnected | DaemonStatus::Error(_) => Some(match state.agent {
             Some(AgentStatus::RequiresApproval) => Fix::TurnOn,
             Some(AgentStatus::NotRegistered) => Fix::Register,
@@ -393,6 +403,37 @@ mod tests {
         assert_eq!(retry.effects, [Effect::Ping]);
     }
 
+    /// The window shows the Connection page from the first failure until the
+    /// daemon answers, and not while it tries again in between.
+    #[test]
+    fn the_daemon_is_down_from_a_failure_until_it_answers() {
+        let mut state = ConnectionState::default();
+        assert!(!state.is_down(), "not before the first answer");
+        update(&mut state, Input::Retry);
+        assert!(!state.is_down());
+        update(
+            &mut state,
+            Input::Failed(HttpError::Other("no socket".into())),
+        );
+        assert!(state.is_down());
+        update(&mut state, Input::Retry);
+        assert_eq!(state.status, DaemonStatus::Connecting);
+        assert!(state.is_down(), "trying again doesn't bring the pages back");
+        update(&mut state, Input::Reached);
+        assert!(!state.is_down());
+        update(&mut state, Input::Refused("user_denied".into()));
+        assert!(state.is_down());
+        update(&mut state, Input::RetryAuthorization);
+        assert!(state.is_down());
+        update(&mut state, Input::Checked(Ok(())));
+        assert!(!state.is_down());
+        update(
+            &mut state,
+            Input::Checked(Err(HttpError::Other("gone".into()))),
+        );
+        assert!(state.is_down());
+    }
+
     #[test]
     fn retrying_authorization_asks_again_from_scratch() {
         let mut state = ConnectionState::default();
@@ -448,6 +489,13 @@ mod tests {
         assert_eq!(fix(&state), None);
         state.status = DaemonStatus::Connected;
         assert_eq!(fix(&state), None);
+
+        // While it tries again after a refusal, the fix is the refusal's.
+        let mut state = ConnectionState::default();
+        update(&mut state, Input::Refused("user_denied".into()));
+        update(&mut state, Input::RetryAuthorization);
+        assert_eq!(state.status, DaemonStatus::Connecting);
+        assert!(matches!(fix(&state), Some(Fix::Reauthorize { .. })));
     }
 
     #[test]

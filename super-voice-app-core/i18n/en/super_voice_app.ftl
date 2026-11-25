@@ -871,3 +871,50 @@ daemon-connecting = Connecting to the daemon…
 daemon-not-answering = The daemon doesn't answer: { $reason }
 daemon-access-refused = Access was refused: { $reason }
 page-not-built = This page isn't built yet.
+
+# The window: each feature's readiness, the command palette, the drawer
+readiness-unknown = Unknown
+readiness-no-backend = No backend
+go-to-or-run = Go to or run…
+palette-commands = Commands
+palette-go-to = Go to
+palette-nothing-matches = Nothing matches.
+palette-to-move = to move
+palette-to-run = to run
+show-pages = Show the pages
+hide-pages = Hide the pages
+back-to = Back to { $page }
+unload-all-models = Unload all models
+palette-load-model = Load { $model }
+
+# The Connection page, in place of the pages while the daemon can't be reached
+status-access-refused = Access refused
+status-daemon-not-running = Daemon not running
+connection-refused-title = Access was refused
+connection-refused-body = This app asked the daemon for access and the answer was no. The daemon remembers that answer until it restarts.
+connection-restart-the-daemon = Restart the daemon
+connection-ask-again = Ask again, then allow it in the dialog that opens
+connection-not-running-title = The daemon isn't running
+connection-not-running-body = The daemon runs the models for every feature. The app keeps trying to reach it.
+connection-start-the-daemon = Start the daemon
+connection-try-now = Or try again now
+connection-switched-off-title = The daemon is switched off
+connection-not-registered-title = The daemon isn't registered
+socket = Socket
+copy-command = Copy the command
+
+# The About page
+about-tagline = Speak into any app, and hear any text read aloud.
+about-app = App
+about-daemon = Daemon
+about-daemon-reading = Reading…
+about-daemon-unknown = Not known
+about-commit = Commit
+about-system = System
+about-license-body = Super Voice is free software, under the GNU General Public License, version 3.
+about-source-code = Source code
+about-report-a-problem = Report a problem
+about-read-the-license = Read the license
+about-notices = Third-party notices
+about-copy-details = Copy details
+about-copied = The version details are on the clipboard.

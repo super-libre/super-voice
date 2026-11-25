@@ -250,6 +250,29 @@ pub enum ModelStatus {
     NoVoice,
 }
 
+impl ModelStatus {
+    /// The colour of its dot, as every status dot and pill draws it.
+    #[must_use]
+    pub const fn dot(self) -> Dot {
+        match self {
+            Self::None => Dot::Grey,
+            Self::NotLoaded => Dot::Yellow,
+            Self::Ready | Self::Idle => Dot::Green,
+            Self::Blocked | Self::Failed | Self::NoVoice => Dot::Red,
+        }
+    }
+}
+
+/// The colour of a status dot. The app draws each in its theme's colour:
+/// green ready or idle, yellow no model loaded, red failed, grey no backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dot {
+    Green,
+    Yellow,
+    Red,
+    Grey,
+}
+
 /// The [`ModelStatus`] of transcription, from only what the rule depends on.
 /// Two arms surface as [`ModelStatus::None`]: there's no
 /// active backend at all, OR the daemon reports one but its catalog entry
