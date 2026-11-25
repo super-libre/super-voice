@@ -19,10 +19,12 @@
 
 mod about;
 mod assistants;
+mod notes;
 mod placeholder;
 mod settings;
 mod shortcuts;
 mod updates;
+mod take;
 
 use std::rc::Rc;
 
@@ -47,6 +49,7 @@ pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> 
         Page::Assistants => PageHandle::new::<assistants::AssistantsPage>(page, shared, window, cx),
         Page::Settings => PageHandle::new::<settings::SettingsPage>(page, shared, window, cx),
         Page::Updates => PageHandle::new::<updates::UpdatesPage>(page, shared, window, cx),
+        Page::Notes => PageHandle::new::<notes::NotesPage>(page, shared, window, cx),
         _ => PageHandle::new::<placeholder::Placeholder>(page, shared, window, cx),
     }
 }

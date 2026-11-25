@@ -14,6 +14,7 @@
 //! - [`page_header::PageHeader`]: where the page is, its title and actions.
 //! - [`toast`]: the core's notices, as toasts.
 //! - [`code_line`]: a command to copy, in the monospace font.
+//! - [`waveform::Waveform`]: the daemon's microphone, live.
 
 // The blocks are for the pages, and a page built later is the first to use
 // some of them.
@@ -26,6 +27,7 @@ pub mod page_header;
 pub mod settings_row;
 pub mod status;
 pub mod toast;
+pub mod waveform;
 pub mod width;
 
 use gpui_kit::component::ActiveTheme as _;
