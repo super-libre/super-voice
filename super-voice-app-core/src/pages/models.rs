@@ -47,7 +47,9 @@ pub const STAGES: [Stage; 3] = [
 pub const STALL_TIMEOUT: Duration = Duration::from_mins(5);
 
 mod heard;
+mod summary;
 pub use heard::heard;
+pub use summary::{Memory, memory, stage_status};
 
 /// A framework picked for a stage's model whose backend doesn't have that
 /// build installed.
