@@ -21,7 +21,11 @@
 // once the daemon has said what fills each stage; `models-running`, that page
 // with made-up stages (running, asleep, not loaded), for the layout;
 // `settings`, the Settings page once its settings are read;
-// `settings-languages`, that page with the language picker up; `notes-take`, the list with a made-up take recording a new note; or
+// `settings-languages`, that page with the language picker up; `assistants`,
+// the Assistants page once the daemon has listed them; `assistants-key`, a
+// key for another assistant made there, which writes to the daemon the app is
+// pointed at; `assistants-connected`, a made-up connected Claude Code's own
+// page with two sessions, for the layout; `notes-take`, the list with a made-up take recording a new note; or
 // `note-take`, the newest note open with a made-up take adding to it. A take
 // scene's take, level and words are made up in the app, for the layout: a
 // real one needs a microphone and a model.
@@ -111,7 +115,8 @@ enum Snapshot {
                 model.pretend(shown)
                 MicrophoneModel.shared.pretend(Microphone(recording: true, level: 0.55, speech: true))
             }
-        case "models", "models-running", "settings", "settings-languages":
+        case "models", "models-running", "settings", "settings-languages", "assistants", "assistants-key",
+             "assistants-connected":
             // Shot from its own page; see `modelsShown`.
             return
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
@@ -285,6 +290,52 @@ enum Snapshot {
     /// `settings-languages`.
     static func settingsShown(_ page: SettingsPage) {
         guard path != nil, !taken, scene.hasPrefix("settings"), page.loaded else { return }
+        taken = true
+        Task { await take() }
+    }
+
+    /// The Assistants page showed `page`: shoot it once the daemon has listed
+    /// them, for `assistants`, or once a key made there is shown, for
+    /// `assistants-key`.
+    static func assistantsShown(_ page: AssistantsPage) {
+        guard path != nil, !taken, scene.hasPrefix("assistants"), page.loaded else { return }
+        if scene == "assistants-connected" {
+            var shown = page
+            shown.open = "claude-code"
+            shown.assistants = [AssistantRow(
+                id: "claude-code", name: "Claude Code", standing: .connected, readsEveryReply: true,
+                connectedHere: false, disconnecting: false,
+                flags: [
+                    FlagRow(flag: .showTalk, on: true),
+                    FlagRow(flag: .autosendDictatedPrompts, on: false),
+                    FlagRow(flag: .announceWhenNeeded, on: true),
+                    FlagRow(flag: .conversationContext, on: true),
+                ],
+                sessions: [
+                    SessionRow(name: "super-voice", folder: "~/super-libre/super-voice", agents: 2,
+                               speaking: true, listening: false, ago: .now),
+                    SessionRow(name: "notes", folder: "~/notes", agents: 0,
+                               speaking: false, listening: false, ago: .minutes(n: 12)),
+                ]
+            )]
+            AssistantsModel.shared.pretend(shown)
+        } else if scene == "assistants-key" {
+            guard case .made = page.key else {
+                if !opened {
+                    opened = true
+                    let model = AssistantsModel.shared
+                    model.send(.askKey)
+                    // As typing would, through the field, once the sheet is up.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(600))
+                        model.keyName = "My editor"
+                        try? await Task.sleep(for: .milliseconds(300))
+                        model.send(.createKey)
+                    }
+                }
+                return
+            }
+        }
         taken = true
         Task { await take() }
     }

@@ -11,6 +11,7 @@ use std::sync::LazyLock;
 
 use super_voice_app_core::state::TextBuffer;
 
+pub mod assistants;
 pub mod behavior;
 pub mod clips;
 pub mod contexts;
