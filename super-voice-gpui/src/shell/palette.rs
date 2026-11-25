@@ -15,6 +15,7 @@ use std::rc::Rc;
 use gpui_kit::component::command::{Command, CommandGroup, CommandItem, CommandState};
 use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::{ActiveTheme as _, Icon, IndexPath, WindowExt as _, h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, Keystroke,
     ParentElement as _, SharedString, Styled as _, Window, div, px,
@@ -42,6 +43,7 @@ pub enum Pick {
 pub struct Entry {
     icon: Icon,
     label: SharedString,
+    keys: Option<&'static str>,
     detail: Option<SharedString>,
     keywords: Vec<SharedString>,
     pick: Pick,
@@ -67,6 +69,7 @@ pub fn entries(pages: &[(Page, PageHandle)], cx: &App) -> Vec<Group> {
                 id,
                 label,
                 icon,
+                keys,
                 detail,
                 group,
                 keywords,
@@ -74,6 +77,7 @@ pub fn entries(pages: &[(Page, PageHandle)], cx: &App) -> Vec<Group> {
             let entry = Entry {
                 icon,
                 label,
+                keys,
                 detail,
                 keywords,
                 pick: Pick::Run(*page, id),
@@ -97,6 +101,7 @@ pub fn entries(pages: &[(Page, PageHandle)], cx: &App) -> Vec<Group> {
             .map(|(page, _)| Entry {
                 icon: page.icon(),
                 label: page.full_name(),
+                keys: None,
                 detail: None,
                 keywords: vec![t(page.key())],
                 pick: Pick::GoTo(*page),
@@ -181,7 +186,7 @@ impl Palette {
                                 .text_color(cx.theme().muted_foreground)
                                 .child(t("palette-nothing-matches"))
                         })
-                        .footer(|_, _, cx| footer(cx))
+                        .footer(move |_, _, cx| footer(narrow, cx))
                         .on_confirm(move |index: IndexPath, window, cx| {
                             let pick = picks
                                 .borrow()
@@ -207,12 +212,13 @@ impl Palette {
     }
 }
 
-/// A row: its icon and name, and where it acts on the right (under its name
-/// in a narrow window).
+/// A row: its icon and name, and where it acts and its keys on the right
+/// (where it acts under its name in a narrow window).
 fn item(entry: &Entry, narrow: bool) -> CommandItem {
     let icon = entry.icon.clone();
     let label = entry.label.clone();
     let detail = entry.detail.clone();
+    let keys = entry.keys;
     CommandItem::new()
         .label(entry.label.clone())
         .keywords(entry.keywords.clone())
@@ -221,12 +227,14 @@ fn item(entry: &Entry, narrow: bool) -> CommandItem {
             let icon = icon.clone().size_3p5().text_color(muted);
             if narrow {
                 h_flex()
+                    .w_full()
                     .gap_2()
                     .items_center()
                     .min_w_0()
                     .child(icon)
                     .child(
                         v_flex()
+                            .flex_1()
                             .min_w_0()
                             .child(div().truncate().child(label.clone()))
                             .children(
@@ -235,6 +243,7 @@ fn item(entry: &Entry, narrow: bool) -> CommandItem {
                                     .map(|detail| div().text_xs().text_color(muted).child(detail)),
                             ),
                     )
+                    .children(keys.map(key))
                     .into_any_element()
             } else {
                 h_flex()
@@ -251,16 +260,20 @@ fn item(entry: &Entry, narrow: bool) -> CommandItem {
                             .text_color(muted)
                             .child(detail)
                     }))
+                    .children(keys.map(key))
                     .into_any_element()
             }
         })
 }
 
-/// The keys under the rows: ↑ ↓ to move, Enter to run.
-fn footer(cx: &App) -> impl IntoElement + use<> {
-    fn key(key: &'static str) -> Kbd {
-        Kbd::new(Keystroke::parse(key).expect("a key the palette names"))
-    }
+/// The keys `keys` names ("ctrl-r"), as the platform writes them.
+fn key(keys: &'static str) -> Kbd {
+    Kbd::new(Keystroke::parse(keys).expect("a key the palette names"))
+}
+
+/// The keys under the rows: ↑ ↓ to move, Enter to run; and on the right,
+/// Ctrl+R (Cmd+R) for a new note, where the palette has room.
+fn footer(narrow: bool, cx: &App) -> impl IntoElement + use<> {
     h_flex()
         .gap_1p5()
         .items_center()
@@ -276,4 +289,10 @@ fn footer(cx: &App) -> impl IntoElement + use<> {
         .child(div().w_2())
         .child(key("enter"))
         .child(t("palette-to-run"))
+        .when(!narrow, |footer| {
+            footer
+                .child(div().flex_1())
+                .child(key(super::NEW_NOTE_KEYS))
+                .child(t("new-note"))
+        })
 }

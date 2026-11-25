@@ -135,12 +135,19 @@ pub trait PageView: Render + Sized + 'static {
     fn pretend(&mut self, _scenes: &[&str], _window: &mut Window, _cx: &mut Context<Self>) {}
 }
 
+/// The Notes page's command that records a new note, which Ctrl+R (Cmd+R
+/// on macOS) runs from anywhere in the window.
+pub const NEW_NOTE: &str = "new-note";
+
 /// A command in the palette.
 #[derive(Clone)]
 pub struct PaletteCommand {
     pub id: SharedString,
     pub label: SharedString,
     pub icon: Icon,
+    /// The window's keys that run it too, as a key binding names them
+    /// ("ctrl-r"), shown on its row.
+    pub keys: Option<&'static str>,
     /// Where it acts, on the right of its row: "Speech to text · Transcription".
     pub detail: Option<SharedString>,
     /// The palette's group it is listed under; `None` is Commands.
@@ -163,10 +170,18 @@ impl PaletteCommand {
             id: id.into(),
             label: label.into(),
             icon: icon.into(),
+            keys: None,
             detail: None,
             group: None,
             keywords: Vec::new(),
         }
+    }
+
+    /// The window's keys that run it too: `.keys(shell::NEW_NOTE_KEYS)`.
+    #[must_use]
+    pub fn keys(mut self, keys: &'static str) -> Self {
+        self.keys = Some(keys);
+        self
     }
 
     #[must_use]

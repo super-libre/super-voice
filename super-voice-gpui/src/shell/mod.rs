@@ -38,6 +38,8 @@ actions!(
         OpenPalette,
         /// Go back from a detail shown alone to its list.
         Back,
+        /// Record a new note, from anywhere in the window.
+        NewNote,
     ]
 );
 
@@ -48,11 +50,19 @@ pub const PALETTE_KEYS: &str = if cfg!(target_os = "macos") {
     "ctrl-k"
 };
 
-/// The shell's keys: Ctrl+K (Cmd+K on macOS) for the palette, Alt+Left for
-/// back.
+/// A new note's keys: Cmd+R on macOS, Ctrl+R elsewhere.
+pub const NEW_NOTE_KEYS: &str = if cfg!(target_os = "macos") {
+    "cmd-r"
+} else {
+    "ctrl-r"
+};
+
+/// The shell's keys: Ctrl+K (Cmd+K on macOS) for the palette, Ctrl+R
+/// (Cmd+R) for a new note, Alt+Left for back.
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new(PALETTE_KEYS, OpenPalette, None),
+        KeyBinding::new(NEW_NOTE_KEYS, NewNote, None),
         KeyBinding::new("alt-left", Back, None),
     ]);
 }
@@ -366,6 +376,11 @@ impl Shell {
         self.handle(page).clone().run(id, window, cx);
     }
 
+    /// Ctrl+R (Cmd+R): record a new note, on the Notes page.
+    fn on_new_note(&mut self, _: &NewNote, window: &mut Window, cx: &mut Context<Self>) {
+        self.go_and_run(Page::Notes, pages::NEW_NOTE, window, cx);
+    }
+
     fn on_back(&mut self, _: &Back, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(page) = self.page_shown(cx) {
             self.handle(page).clone().back(window, cx);
@@ -449,6 +464,7 @@ impl Shell {
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::on_open_palette))
             .on_action(cx.listener(Self::on_back))
+            .on_action(cx.listener(Self::on_new_note))
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)

@@ -164,11 +164,10 @@ impl PageView for NotesPage {
 
     fn commands(&self, _: &App) -> Vec<PaletteCommand> {
         let notes = t("notes");
-        std::iter::once(PaletteCommand::new(
-            "new-note",
-            t("new-note"),
-            IconName::Mic,
-        ))
+        std::iter::once(
+            PaletteCommand::new(crate::pages::NEW_NOTE, t("new-note"), IconName::Mic)
+                .keys(crate::shell::NEW_NOTE_KEYS),
+        )
         .chain(self.state.items.iter().map(|note| {
             PaletteCommand::new(
                 format!("open:{}", note.id),
@@ -181,7 +180,7 @@ impl PageView for NotesPage {
     }
 
     fn run(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if id == "new-note" {
+        if id == crate::pages::NEW_NOTE {
             if self.can_record(cx) {
                 self.send(Input::Record, window, cx);
             }
