@@ -220,6 +220,18 @@ data: {"jsonrpc":"2.0","id":7,"result":{"content":[{"type":"text","text":"Yes, t
    the connection nor a timer the client keeps on it runs out.
 3. One `message` event with the JSON-RPC response, and the stream ends.
 
+A call whose request names a `progressToken` in `params._meta` gets each
+keepalive as a `message` event instead: a `notifications/progress` under that
+token, its `progress` counting the keepalives from 1. A client counts that as
+the tool's progress, where it may not count a comment: Claude Code stops a
+call that sends no response or progress for five minutes.
+
+```
+event: message
+data: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progressToken":3,"progress":1}}
+
+```
+
 The response headers are `content-type: text/event-stream`, `cache-control:
 no-store` and `x-accel-buffering: no`.
 

@@ -74,3 +74,58 @@ test("Claude's call in a spoken turn goes on as Claude made it", async ($, on) =
     args: expect.objectContaining({ event: 'prompt', session: expect.objectContaining({}) }),
   })
 })
+
+const ABOVE_PROMPT = { plugin: 'super-voice', surface: 'terminal', component: 'AbovePrompt' } as const
+const TASK = 'klk5xtabl'
+const MOVED =
+  `MCP tool "plugin:super-voice:voice/listen" is still running after 120s. It was moved to the ` +
+  `background as task ${TASK} and keeps running; you'll receive a notification with the result ` +
+  `when it completes. You can keep working in the meantime.`
+
+test("Talk's recording that Claude Code moved to the background stops, and its end is kept from Claude", async ($, on) => {
+  on('session.id', () => ({ value: 'session-1' }))
+  on('session.cwd', () => ({ value: '/home/user/project' }))
+  const told: string[] = []
+  on('mcp.call', (_, e) => {
+    told.push(e.tool)
+    const text = e.tool === 'listen' ? MOVED : e.tool === 'status' ? '{}' : 'Stopped.'
+    return { value: { content: [{ type: 'text', text }] } }
+  })
+  const filled: string[] = []
+  on('prompt.fill', (_, e) => {
+    filled.push(e.text)
+    return { isFilled: true, text: e.text, cursor: e.text.length }
+  })
+  const sent: string[] = []
+  on('prompt.submit', (_, e) => {
+    sent.push(e.text)
+    return { text: e.text, origin: e.origin }
+  })
+
+  const ui = await $.ui.mount({
+    ...ABOVE_PROMPT,
+    props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 10 },
+  } as Parameters<typeof $.ui.mount>[0])
+  await ui.press({ key: 'talk' })
+
+  // The recording is stopped once Claude Code has moved it, and nothing goes
+  // in the box.
+  expect(told.slice(-2)).toEqual(['listen', 'stop'])
+  expect(filled).toEqual([])
+
+  const other = await $.prompt.submit({
+    text: '<task-notification>\n<task-id>b0ther</task-id>\n<status>completed</status>\n</task-notification>',
+    wait: false,
+    origin: { kind: 'task-notification' },
+  })
+  const ended = await $.prompt.submit({
+    text: `<task-notification>\n<task-id>${TASK}</task-id>\n<status>completed</status>\n<result>Hello</result>\n</task-notification>`,
+    wait: false,
+    origin: { kind: 'task-notification' },
+  })
+
+  expect(other).not.toHaveProperty('drop')
+  expect(ended).toHaveProperty('drop')
+  expect(sent).toHaveLength(1)
+  await ui.unmount()
+})
