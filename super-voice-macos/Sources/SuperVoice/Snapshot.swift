@@ -20,7 +20,8 @@
 // scrolled to the test at the bottom of the tab; `models`, the Models page
 // once the daemon has said what fills each stage; `models-running`, that page
 // with made-up stages (running, asleep, not loaded), for the layout;
-// `notes-take`, the list with a made-up take recording a new note; or
+// `settings`, the Settings page once its settings are read;
+// `settings-languages`, that page with the language picker up; `notes-take`, the list with a made-up take recording a new note; or
 // `note-take`, the newest note open with a made-up take adding to it. A take
 // scene's take, level and words are made up in the app, for the layout: a
 // real one needs a microphone and a model.
@@ -110,7 +111,7 @@ enum Snapshot {
                 model.pretend(shown)
                 MicrophoneModel.shared.pretend(Microphone(recording: true, level: 0.55, speech: true))
             }
-        case "models", "models-running":
+        case "models", "models-running", "settings", "settings-languages":
             // Shot from its own page; see `modelsShown`.
             return
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
@@ -275,6 +276,15 @@ enum Snapshot {
         default:
             fail("no scene is called \(scene)")
         }
+        taken = true
+        Task { await take() }
+    }
+
+    /// The Settings page showed `page`: shoot it once its settings are read,
+    /// for `settings`, and with the language picker up, for
+    /// `settings-languages`.
+    static func settingsShown(_ page: SettingsPage) {
+        guard path != nil, !taken, scene.hasPrefix("settings"), page.loaded else { return }
         taken = true
         Task { await take() }
     }

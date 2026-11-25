@@ -18,6 +18,7 @@ mod events;
 pub mod microphone;
 pub mod notes;
 pub mod recording_test;
+pub mod settings;
 pub mod speech;
 pub mod status;
 pub mod voices;
