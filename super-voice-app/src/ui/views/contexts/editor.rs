@@ -20,7 +20,9 @@ use crate::state::contexts::{ContextDraft, RowId};
 use crate::ui::icons;
 use crate::ui::messages::{ContextsMessage, Message};
 use crate::ui::views::common;
+use super_voice_app_core::pages::contexts::Input;
 
+use super::contexts_input;
 use super::surface::muted;
 
 /// The drawer's title: what the user is doing, not what the sheet contains.
@@ -67,7 +69,7 @@ fn name_field(draft: &ContextDraft) -> Element<'_, Message> {
         .push(text::heading(crate::fl!("name")))
         .push(
             widget::text_input(crate::fl!("coding"), &draft.name)
-                .on_input(|v| Message::Contexts(ContextsMessage::NameChanged(v))),
+                .on_input(|v| contexts_input(Input::NameChanged(v))),
         )
         .into()
 }
@@ -145,8 +147,8 @@ fn term_row(index: usize, id: RowId, term: &str, total: usize) -> Element<'_, Me
     let spacing = cosmic::theme::spacing();
     let input = text_input("", term)
         .id(term_id(id))
-        .on_input(move |value| Message::Contexts(ContextsMessage::TermChanged { index, value }))
-        .on_submit(move |_| Message::Contexts(ContextsMessage::TermSubmitted(index)))
+        .on_input(move |value| contexts_input(Input::TermChanged { index, value }))
+        .on_submit(move |_| contexts_input(Input::TermSubmitted(index)))
         .width(Length::Fill);
 
     let mut r = row![input]
@@ -158,7 +160,7 @@ fn term_row(index: usize, id: RowId, term: &str, total: usize) -> Element<'_, Me
         r = r.push(
             button::icon(icons::phosphor_handle(icons::X))
                 .class(cosmic::theme::Button::Text)
-                .on_press(Message::Contexts(ContextsMessage::TermRemoved(index))),
+                .on_press(contexts_input(Input::TermRemoved(index))),
         );
     }
     r.into()
@@ -169,12 +171,11 @@ fn actions(draft: &ContextDraft) -> Element<'_, Message> {
     let save = if draft.saving {
         button::suggested(crate::fl!("saving-progress"))
     } else {
-        button::suggested(crate::fl!("save")).on_press(Message::Contexts(ContextsMessage::Save))
+        button::suggested(crate::fl!("save")).on_press(contexts_input(Input::Save))
     };
     row![
         horizontal_space(),
-        button::standard(crate::fl!("cancel"))
-            .on_press(Message::Contexts(ContextsMessage::CancelEdit)),
+        button::standard(crate::fl!("cancel")).on_press(contexts_input(Input::CancelEdit)),
         save,
     ]
     .spacing(spacing.space_xs)

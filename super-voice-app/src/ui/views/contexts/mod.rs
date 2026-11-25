@@ -14,3 +14,12 @@ mod surface;
 
 pub use editor::{editor_sheet, editor_title, term_id};
 pub use list::page;
+
+use super_voice_app_core::pages::contexts::Input;
+
+use crate::ui::messages::{ContextsMessage, Message};
+
+/// A press the page's logic handles.
+fn contexts_input(input: Input) -> Message {
+    Message::Contexts(ContextsMessage::Page(input))
+}

@@ -9,6 +9,7 @@
 //! two together on its own runtime, and says each notice in its own words.
 
 pub mod clips;
+pub mod contexts;
 pub mod notes;
 pub mod speech;
 pub mod voices;

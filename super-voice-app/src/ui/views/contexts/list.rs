@@ -11,9 +11,11 @@ use super_voice_shared::models::contexts::DictationContext;
 use crate::core::app::AppModel;
 use crate::core::app::scene::{self, Target};
 use crate::ui::icons;
-use crate::ui::messages::{ContextsMessage, Message};
+use crate::ui::messages::Message;
 use crate::ui::views::common;
+use super_voice_app_core::pages::contexts::Input;
 
+use super::contexts_input;
 use super::surface::{card, muted, plain_divider};
 
 /// The page: a short explanation, the list, and a button to add one.
@@ -49,8 +51,7 @@ pub fn page(app: &AppModel) -> Element<'_, Message> {
     body = body.push(
         row![
             horizontal_space(),
-            button::suggested(crate::fl!("new-context"))
-                .on_press(Message::Contexts(ContextsMessage::Create)),
+            button::suggested(crate::fl!("new-context")).on_press(contexts_input(Input::Create)),
         ]
         .width(Length::Fill),
     );
@@ -126,12 +127,13 @@ fn context_card<'a>(context: &'a DictationContext, app: &'a AppModel) -> Element
     // "Use" is the primary action on a card that is not in force; on the one
     // that is, there is nothing to press, so the badge above says so instead.
     if !is_active {
-        title_row = title_row.push(button::standard(crate::fl!("use")).on_press(
-            Message::Contexts(ContextsMessage::Activate(Some(context.id.clone()))),
-        ));
+        title_row = title_row.push(
+            button::standard(crate::fl!("use"))
+                .on_press(contexts_input(Input::Activate(Some(context.id.clone())))),
+        );
     }
     let edit = button::standard(crate::fl!("edit"))
-        .on_press(Message::Contexts(ContextsMessage::Edit(context.id.clone())));
+        .on_press(contexts_input(Input::Edit(context.id.clone())));
     // The first card's is the one `just screenshots` opens.
     let first = state.items.first().is_some_and(|c| c.id == context.id);
     title_row = title_row.push(if first {
@@ -166,11 +168,9 @@ fn delete_control(context: &DictationContext, confirming: bool) -> Element<'_, M
     let spacing = cosmic::theme::spacing();
     if confirming {
         row![
-            button::text(crate::fl!("cancel"))
-                .on_press(Message::Contexts(ContextsMessage::DeleteCancelled)),
-            button::destructive(crate::fl!("delete")).on_press(Message::Contexts(
-                ContextsMessage::DeleteConfirmed(context.id.clone())
-            )),
+            button::text(crate::fl!("cancel")).on_press(contexts_input(Input::DeleteCancelled)),
+            button::destructive(crate::fl!("delete"))
+                .on_press(contexts_input(Input::DeleteConfirmed(context.id.clone()))),
         ]
         .spacing(spacing.space_xxs)
         .align_y(Alignment::Center)
@@ -178,9 +178,7 @@ fn delete_control(context: &DictationContext, confirming: bool) -> Element<'_, M
     } else {
         button::icon(icons::phosphor_handle(icons::X))
             .class(cosmic::theme::Button::Text)
-            .on_press(Message::Contexts(ContextsMessage::DeleteRequested(
-                context.id.clone(),
-            )))
+            .on_press(contexts_input(Input::DeleteRequested(context.id.clone())))
             .into()
     }
 }
@@ -221,8 +219,7 @@ fn use_none_row<'a>(already_none: bool) -> Element<'a, Message> {
         .width(Length::Fill);
     if !already_none {
         r = r.push(
-            button::text(crate::fl!("use-none"))
-                .on_press(Message::Contexts(ContextsMessage::Activate(None))),
+            button::text(crate::fl!("use-none")).on_press(contexts_input(Input::Activate(None))),
         );
     }
     r.into()

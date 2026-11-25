@@ -405,7 +405,9 @@ impl AppModel {
             // editor is deliberately untouched — see
             // `ContextsState::replace`.
             "contexts" => Some(Task::done(cosmic::Action::App(Message::Contexts(
-                crate::ui::messages::ContextsMessage::Reload,
+                crate::ui::messages::ContextsMessage::Page(
+                    super_voice_app_core::pages::contexts::Input::Reload,
+                ),
             )))),
             // A backend's option was set or cleared, or a secret stored or
             // removed. The catalog carries each option's value, and reloading

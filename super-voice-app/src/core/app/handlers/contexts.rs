@@ -1,49 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The Contexts page: the dictation contexts, and which one is in force.
+//! The Contexts tab, wired to its logic in the core
+//! (`super_voice_app_core::pages::contexts`): the app applies the prompt
+//! editor's own actions, runs the work the logic asks for as iced tasks, shows
+//! and hides its editor sheet, and says its notices in its own words.
 //!
-//! Follows the confirm-then-apply rule (`ui/messages.rs`): nothing in the list
-//! moves until the daemon has answered. The editor is the deliberate exception
-//! — what the user is typing is local by definition, and a refetch landing
-//! under an open editor must not rewrite the sentence they are halfway through.
+//! Which context one backend uses is set from the Models page's Configure
+//! sheet, and handled here until that page moves into the core too.
 
-use crate::core::app::AppModel;
-use crate::daemon::client::v1::contexts as client;
-use crate::daemon::client::v1::contexts::backend as backend_client;
-use crate::state::contexts::ContextDraft;
-use crate::state::models::ContextPage;
-use crate::ui::messages::{ContextsMessage, Message};
 use cosmic::prelude::*;
 use cosmic::widget::text_input;
+use super_voice_app_core::pages::contexts::{self as page, Effect, Input, Notice, Outcome};
+
+use crate::core::app::AppModel;
+use crate::daemon::client::v1::contexts::backend as backend_client;
+use crate::state::models::ContextPage;
+use crate::ui::messages::{ContextsMessage, Message};
 
 impl AppModel {
-    /// Routes to the three groups below. Split only because the one table
-    /// outgrew a screen: the groups are the page's three surfaces — the list,
-    /// the editor over it, and the picker in a backend's Configure sheet.
     pub(in crate::core::app) fn handle_contexts_messages(
         &mut self,
         message: ContextsMessage,
     ) -> Task<cosmic::Action<Message>> {
         match message {
-            list @ (ContextsMessage::Reload
-            | ContextsMessage::Loaded { .. }
-            | ContextsMessage::LoadFailed(_)
-            | ContextsMessage::Activate(_)
-            | ContextsMessage::DeleteRequested(_)
-            | ContextsMessage::DeleteCancelled
-            | ContextsMessage::DeleteConfirmed(_)) => self.handle_context_list_messages(list),
-
-            editor @ (ContextsMessage::Edit(_)
-            | ContextsMessage::Create
-            | ContextsMessage::CancelEdit
-            | ContextsMessage::NameChanged(_)
-            | ContextsMessage::PromptAction(_)
-            | ContextsMessage::TermChanged { .. }
-            | ContextsMessage::TermSubmitted(_)
-            | ContextsMessage::TermRemoved(_)
-            | ContextsMessage::Save
-            | ContextsMessage::Saved(_)
-            | ContextsMessage::SaveFailed(_)) => self.handle_context_editor_messages(editor),
-
+            ContextsMessage::Page(input) => self.contexts_input(input),
+            ContextsMessage::PromptAction(action) => {
+                let Some(draft) = self.contexts.draft.as_mut() else {
+                    return Task::none();
+                };
+                draft.prompt.0.perform(action);
+                self.contexts_input(Input::PromptEdited)
+            }
             per_backend @ (ContextsMessage::BackendPinned { .. }
             | ContextsMessage::BackendFollowsActive(_)
             | ContextsMessage::BackendContextLoaded { .. }) => {
@@ -52,26 +38,33 @@ impl AppModel {
         }
     }
 
-    /// The list itself: fetching it, choosing what is in force, and deleting.
-    fn handle_context_list_messages(
-        &mut self,
-        message: ContextsMessage,
-    ) -> Task<cosmic::Action<Message>> {
-        match message {
-            ContextsMessage::Reload => {
-                self.contexts.loading = true;
-                let list = Task::perform(client::list_contexts(), |res| match res {
-                    Ok(catalog) => app(ContextsMessage::Loaded {
-                        active: catalog.active,
-                        contexts: catalog.contexts,
-                    }),
-                    Err(e) => app(ContextsMessage::LoadFailed(e.to_string())),
-                });
+    /// Hand `input` to the page's logic, and do what it asks.
+    fn contexts_input(&mut self, input: Input) -> Task<cosmic::Action<Message>> {
+        let Outcome {
+            effects,
+            clear_notice,
+            notice,
+        } = page::update(&mut self.contexts, input);
+        if clear_notice {
+            self.clear_action_error(crate::state::ErrorScope::Contexts);
+        }
+        if let Some(notice) = notice {
+            self.set_action_error(crate::state::ErrorScope::Contexts, notice_text(notice));
+        }
+        let tasks: Vec<_> = effects.into_iter().map(|e| self.run_contexts(e)).collect();
+        Task::batch(tasks)
+    }
+
+    /// What the page asks for, as an iced task, or done to the window.
+    fn run_contexts(&mut self, effect: Effect) -> Task<cosmic::Action<Message>> {
+        match effect {
+            Effect::List => {
+                let list = Task::perform(page::run_list(), page_action);
                 // The open Configure sheet shows what its backend is pointed
-                // at, read when it opened. A reload is what a `contexts`
-                // change from another client asks for, and a backend pinned
-                // or unpinned elsewhere left the sheet saying the opposite
-                // until it was closed and opened again.
+                // at, read when it opened. The list is read again when
+                // another app changed the contexts, and a backend pinned or
+                // unpinned elsewhere left the sheet saying the opposite until
+                // it was closed and opened again.
                 match self.models_page.configure_backend.clone() {
                     Some(source) if self.contexts.backend_contexts.contains_key(&source) => {
                         Task::batch([list, Self::fetch_backend_context(source)])
@@ -79,165 +72,19 @@ impl AppModel {
                     _ => list,
                 }
             }
-            ContextsMessage::Loaded { active, contexts } => {
-                self.contexts.replace(contexts, active);
-                Task::none()
-            }
-            ContextsMessage::LoadFailed(e) => {
-                log::warn!("Contexts could not be loaded: {e}");
-                self.contexts.loading = false;
-                // Marked loaded even on failure, so the page shows the banner
-                // rather than a spinner that never stops.
-                self.contexts.loaded = true;
-                self.set_action_error(
-                    crate::state::ErrorScope::Contexts,
-                    crate::fl!("contexts-could-not-load", error = e),
-                );
-                Task::none()
-            }
-
-            ContextsMessage::Activate(id) => {
-                self.clear_action_error(crate::state::ErrorScope::Contexts);
-                Task::perform(client::set_active_context(id), |res| match res {
-                    // The answer carries the new selection, but the list has to
-                    // be re-read anyway: activating is the one write whose
-                    // effect a *different* row also shows.
-                    Ok(_) => app(ContextsMessage::Reload),
-                    Err(e) => app(ContextsMessage::LoadFailed(e.to_string())),
-                })
-            }
-
-            ContextsMessage::DeleteRequested(id) => {
-                self.contexts.confirming_delete = Some(id);
-                Task::none()
-            }
-            ContextsMessage::DeleteCancelled => {
-                self.contexts.confirming_delete = None;
-                Task::none()
-            }
-            ContextsMessage::DeleteConfirmed(id) => {
-                self.contexts.confirming_delete = None;
-                self.clear_action_error(crate::state::ErrorScope::Contexts);
-                Task::perform(client::delete_context(id), |res| match res {
-                    Ok(()) => app(ContextsMessage::Reload),
-                    Err(e) => app(ContextsMessage::LoadFailed(e.to_string())),
-                })
-            }
-
-            // Routed here by the table above; nothing else reaches this arm.
-            other => unreachable_group(&other),
-        }
-    }
-
-    /// The editor sheet over one context.
-    fn handle_context_editor_messages(
-        &mut self,
-        message: ContextsMessage,
-    ) -> Task<cosmic::Action<Message>> {
-        match message {
-            ContextsMessage::Edit(id) => {
-                self.contexts.confirming_delete = None;
-                if let Some(context) = self.contexts.get(&id) {
-                    self.contexts.draft = Some(ContextDraft::editing(context));
-                    self.context_page = ContextPage::EditContext;
-                    self.core.window.show_context = true;
-                }
-                Task::none()
-            }
-            ContextsMessage::Create => {
-                self.contexts.draft = Some(ContextDraft::creating(self.contexts.next_id()));
+            Effect::Activate(id) => Task::perform(page::run_activate(id), page_action),
+            Effect::Delete(id) => Task::perform(page::run_delete(id), page_action),
+            Effect::Save(context) => Task::perform(page::run_save(context), page_action),
+            Effect::FocusTerm(row) => text_input::focus(crate::ui::views::contexts::term_id(row)),
+            Effect::OpenEditor => {
                 self.context_page = ContextPage::EditContext;
                 self.core.window.show_context = true;
                 Task::none()
             }
-            ContextsMessage::CancelEdit => {
-                self.contexts.draft = None;
+            Effect::CloseEditor => {
                 self.core.window.show_context = false;
                 Task::none()
             }
-
-            ContextsMessage::NameChanged(name) => {
-                if let Some(draft) = self.contexts.draft.as_mut() {
-                    draft.name = name;
-                    draft.error = None;
-                }
-                Task::none()
-            }
-            ContextsMessage::PromptAction(action) => {
-                if let Some(draft) = self.contexts.draft.as_mut() {
-                    draft.prompt.0.perform(action);
-                    draft.error = None;
-                }
-                Task::none()
-            }
-            ContextsMessage::TermChanged { index, value } => {
-                if let Some(draft) = self.contexts.draft.as_mut() {
-                    draft.set_row(index, &value);
-                    draft.error = None;
-                }
-                Task::none()
-            }
-            ContextsMessage::TermSubmitted(index) => {
-                // Enter opens the next row and puts the cursor in it, so a list
-                // is typed rather than clicked together.
-                let Some(draft) = self.contexts.draft.as_mut() else {
-                    return Task::none();
-                };
-                let id = draft.insert_row_after(index);
-                text_input::focus(crate::ui::views::contexts::term_id(id))
-            }
-            ContextsMessage::TermRemoved(index) => {
-                let Some(draft) = self.contexts.draft.as_mut() else {
-                    return Task::none();
-                };
-                draft.remove_row(index).map_or_else(Task::none, |id| {
-                    text_input::focus(crate::ui::views::contexts::term_id(id))
-                })
-            }
-
-            ContextsMessage::Save => {
-                let Some(draft) = self.contexts.draft.as_mut() else {
-                    return Task::none();
-                };
-                let context = draft.to_context();
-                // Checked here as well as in the daemon, so an empty name is
-                // answered by the form rather than by a round trip.
-                if let Err(e) = context.check() {
-                    draft.error = Some(e);
-                    return Task::none();
-                }
-                draft.saving = true;
-                draft.error = None;
-                Task::perform(client::set_context(context), |res| match res {
-                    Ok(stored) => app(ContextsMessage::Saved(stored)),
-                    Err(e) => app(ContextsMessage::SaveFailed(e.to_string())),
-                })
-            }
-            ContextsMessage::Saved(stored) => {
-                self.contexts.draft = None;
-                self.core.window.show_context = false;
-                // Fold in what came back rather than waiting for the refetch,
-                // so the row updates in the same frame the sheet closes; the
-                // reload that follows is what picks up anything else that moved.
-                self.contexts.upsert(stored);
-                Task::perform(async {}, |()| app(ContextsMessage::Reload))
-            }
-            ContextsMessage::SaveFailed(e) => {
-                if let Some(draft) = self.contexts.draft.as_mut() {
-                    draft.saving = false;
-                    draft.error = Some(e);
-                } else {
-                    // The sheet was closed under the in-flight save; the page
-                    // banner is the only place left to say so.
-                    self.set_action_error(
-                        crate::state::ErrorScope::Contexts,
-                        crate::fl!("context-could-not-save", error = e),
-                    );
-                }
-                Task::none()
-            }
-
-            other => unreachable_group(&other),
         }
     }
 
@@ -292,7 +139,10 @@ impl AppModel {
                 Task::none()
             }
 
-            other => unreachable_group(&other),
+            other @ (ContextsMessage::Page(_) | ContextsMessage::PromptAction(_)) => {
+                log::error!("contexts: the backend handler can't serve {other:?}");
+                Task::none()
+            }
         }
     }
 
@@ -325,18 +175,19 @@ impl AppModel {
     }
 }
 
-/// `ContextsMessage` as a cosmic action, since every arm above builds one.
-fn app(message: ContextsMessage) -> cosmic::Action<Message> {
-    cosmic::Action::App(Message::Contexts(message))
+fn page_action(input: Input) -> cosmic::Action<Message> {
+    app(ContextsMessage::Page(input))
 }
 
-/// A message that reached the wrong group.
-///
-/// The router above is exhaustive, so this is unreachable by construction — but
-/// the grouped handlers take the whole enum, so the compiler cannot say so.
-/// Logged rather than panicking: a misrouted settings message is not worth
-/// taking the window down for.
-fn unreachable_group(message: &ContextsMessage) -> Task<cosmic::Action<Message>> {
-    log::error!("Contexts message reached the wrong handler: {message:?}");
-    Task::none()
+/// What the page tells the user, in this app's words.
+fn notice_text(notice: Notice) -> String {
+    match notice {
+        Notice::CouldNotLoad(e) => crate::fl!("contexts-could-not-load", error = e),
+        Notice::CouldNotSave(e) => crate::fl!("context-could-not-save", error = e),
+    }
+}
+
+/// `ContextsMessage` as a cosmic action.
+fn app(message: ContextsMessage) -> cosmic::Action<Message> {
+    cosmic::Action::App(Message::Contexts(message))
 }
