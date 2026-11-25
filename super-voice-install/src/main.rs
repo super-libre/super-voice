@@ -33,7 +33,7 @@ static INSTALLER: Installer = Installer {
 /// What Super STT and Super TTS installed that Super Voice replaces: their
 /// daemons, CLIs, consent helpers, wrappers, installers and units, Super
 /// STT's oldest layout (one `super-stt` binary), their applets, and the two
-/// settings apps, which Super Voice's replaced.
+/// earlier apps, which Super Voice's replaced.
 const RETIRED: Retired = Retired {
     binaries: &[
         "super-stt",
@@ -63,21 +63,34 @@ fn main() -> std::process::ExitCode {
 mod tests {
     use super::{INSTALLER, RETIRED};
 
-    /// The apps it installs are the workspace's apps, every one of them.
+    /// The apps it installs are the workspace's apps, every one of them: each
+    /// binary whose name ends in `-app`, whichever crate builds it (the app's
+    /// crate is super-voice-gpui, its binary super-voice-app).
     #[test]
     fn installs_the_workspaces_apps() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         let mut ours: Vec<String> = std::fs::read_dir(&root)
             .unwrap()
             .flatten()
-            .filter(|entry| entry.path().join("Cargo.toml").is_file())
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter_map(|entry| std::fs::read_to_string(entry.path().join("Cargo.toml")).ok())
+            .flat_map(|manifest| binaries(&manifest))
             .filter(|name| name.ends_with("-app"))
             .collect();
         ours.sort();
         let mut apps = INSTALLER.apps.to_vec();
         apps.sort_unstable();
         assert_eq!(apps, ours);
+    }
+
+    /// The binaries a crate's manifest names: its `[[bin]]` tables, or the
+    /// package itself when it has none.
+    fn binaries(manifest: &str) -> Vec<String> {
+        let manifest: toml::Table = manifest.parse().unwrap();
+        let name = |table: &toml::Value| table.get("name")?.as_str().map(str::to_string);
+        match manifest.get("bin").and_then(toml::Value::as_array) {
+            Some(bins) => bins.iter().filter_map(name).collect(),
+            None => manifest.get("package").and_then(name).into_iter().collect(),
+        }
     }
 
     /// Nothing it installs is on the retired list: an install would remove

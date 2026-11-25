@@ -42,7 +42,7 @@ impl SuperSTTDaemon {
     ///
     /// `source` is included on the wire because a client reconnecting after a
     /// daemon restart has no prior `current_source` to fall back to; without it
-    /// the model loads but the settings app keeps showing "no model loaded".
+    /// the model loads but the app keeps showing "no model loaded".
     pub fn broadcast_model_active(
         &self,
         name: &str,

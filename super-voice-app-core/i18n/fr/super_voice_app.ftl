@@ -863,3 +863,11 @@ backends-could-not-load = Impossible de lire les moteurs : { $error }
 # The window: its Connection page and About
 authorization-denied-restart = L’accès a été refusé. Redémarrez le service ({ $command }) pour qu’il oublie cette réponse, puis appuyez sur Redemander l’autorisation.
 about-super-voice = À propos de Super Voice
+
+# The app's window: the sidebar's groups and the status bar
+general = Général
+daemon-connected = Service connecté
+daemon-connecting = Connexion au service…
+daemon-not-answering = Le service ne répond pas : { $reason }
+daemon-access-refused = L’accès a été refusé : { $reason }
+page-not-built = Cette page n’est pas encore faite.

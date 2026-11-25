@@ -8,7 +8,7 @@
 //! read as another's.
 //!
 //! An app that shows one model a stage keeps a [`Focus`], and answers for a
-//! model no longer focused are dropped. The settings app shows two in one
+//! model no longer focused are dropped. The app shows two in one
 //! stage at times (the loaded model and a staged one), so it keeps none.
 
 use crate::daemon::client::v1::pipeline::language as client;
@@ -232,7 +232,7 @@ pub enum Button {
 ///
 /// An offer of nothing is a model with one language; one of some is a model
 /// that can be set. Before the offer lands, a resolution alone reads as one
-/// that can be set, as the settings app's button does.
+/// that can be set, as the app's button does.
 #[must_use]
 pub fn button(languages: &ModelLanguages, key: &ModelKey) -> Option<Button> {
     let block = languages.get(key.stage, &key.source, &key.model);

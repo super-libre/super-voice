@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Settings-scope HTTP smoke test for the **backend-management** surface:
 //! `/backend/list`, `/active_backend`, and `/gpu_info`. These endpoints drive
-//! the settings app's per-backend configuration section and were the
+//! the app's per-backend configuration section and were the
 //! largest untested slice of the settings scope (`http_smoke_settings.rs`
 //! covers the model/device/theme settings but not backend selection).
 //!

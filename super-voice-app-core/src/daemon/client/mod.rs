@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Daemon-facing operations for the settings app.
+//! Daemon-facing operations for the app.
 //!
 //! Mirrors the daemon's server `v1/` tree: one module per endpoint
 //! family under [`v1`], built on the shared Unix-socket transport

@@ -4,7 +4,7 @@
 //! with the download and the load shown as they go.
 //!
 //! A card stages a model and a device first, then Load commits both, as the
-//! settings app's cards do. What the card shows as running comes from the
+//! app's cards do. What the card shows as running comes from the
 //! daemon's view of the stage, read again whenever the daemon says a stage
 //! changed: the daemon is the one that knows.
 //!

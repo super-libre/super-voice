@@ -6,7 +6,7 @@ Antigravity CLI can speak to the user and hear them. It is one server for every 
 on the daemon's TCP listener: `http://127.0.0.1:7300/v1/mcp`, or the port
 `http.tcp.port` names in `daemon.ron`.
 
-The user connects an assistant on the Assistants page of the settings app,
+The user connects an assistant on the Assistants page of the app,
 which asks the daemon ([`/assistants`](./endpoints/v1/assistants.md)) to make
 the assistant a key and write Super Voice into its config. An MCP client that is
 not one of those assistants gets a key made by hand there, with the address.

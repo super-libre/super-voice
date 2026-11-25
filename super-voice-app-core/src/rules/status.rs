@@ -350,7 +350,7 @@ pub const fn not_ready(stage: Stage, status: ModelStatus) -> Option<NotReady> {
 /// ([`Ready`](ModelStatus::Ready)), asleep ([`Idle`](ModelStatus::Idle)), and
 /// for a stage with a switch, on but not running
 /// ([`Failed`](ModelStatus::Failed)). It can't see a backend left unset or a
-/// voice missing: [`stage_status`] can, from the fuller state the settings app
+/// voice missing: [`stage_status`] can, from the fuller state the app
 /// holds.
 #[must_use]
 pub fn stage_block_status(

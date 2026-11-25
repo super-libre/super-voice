@@ -11,7 +11,7 @@
 //!
 //! `SMAppService` finds a plist through the calling process's main bundle,
 //! so these calls mean something only from an executable inside the bundle —
-//! the settings app, or `Contents/MacOS/super-voice-cli`. From a bare binary in
+//! the app, or `Contents/MacOS/super-voice-cli`. From a bare binary in
 //! `target/` every agent is [`Status::NotInBundle`].
 
 use anyhow::{Result, anyhow};
@@ -52,8 +52,8 @@ impl Agent {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Daemon => "ai.menjivar.super-voice",
-            Self::Hotkey => "ai.menjivar.super-voice.hotkey",
+            Self::Daemon => "org.superlibre.super-voice",
+            Self::Hotkey => "org.superlibre.super-voice.hotkey",
         }
     }
 

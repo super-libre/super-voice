@@ -385,9 +385,8 @@ daemon keeps them the way it keeps `choices`: a write outside them is
 makes the option a **slider** — the same shape-implies-control rule that makes
 a `choices` option a dropdown and a `bool` a switch. An option bounded at both
 ends with a declared grid has nothing left to type; one missing any of the
-three still does, and gets a field. The text-to-speech settings app renders
-such an option as a slider. The speech-to-text settings app does not use
-`step` yet.
+three still does, and gets a field. The app renders such an option as a
+slider for text to speech, and does not use `step` yet for speech to text.
 
 The grid belongs to the control, not to the contract. The daemon enforces
 `min` and `max` and ignores `step`, because a value between two notches is
@@ -830,7 +829,7 @@ asset can serve several models and one of them may have no GPU path; that
 detail lives on the asset that ends up installed (see
 [`[[assets.subprocess]]`](#assets)) and is reported per-backend as
 `installed_accel` (see [`GET /backend/list`](../endpoints/v1/backends.md)). The
-settings app uses `supported_devices` to present the device choice at load
+app uses `supported_devices` to present the device choice at load
 time. `"none"` marks a remote/online model with no local compute; mixing
 `"none"` with any local device (`"cpu"` / `"gpu"`) is a contradiction and the
 manifest is rejected.

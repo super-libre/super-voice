@@ -1,0 +1,48 @@
+{
+  "$schema": "https://github.com/longbridge/gpui-kit/raw/refs/heads/main/.theme-schema.json",
+  "name": "Super Voice",
+  "author": "Super Voice",
+  "url": "https://github.com/super-libre/super-voice",
+  "themes": [
+    {
+      "name": "Super Voice Light",
+      "mode": "light",
+      "colors": {
+        "primary.background": "#4f46e5",
+        "primary.hover.background": "#6366f1",
+        "primary.active.background": "#4338ca",
+        "primary.foreground": "#ffffff",
+        "ring": "#6366f1",
+        "list.active.background": "#6366f11a",
+        "list.active.border": "#818cf8",
+        "sidebar.primary.background": "#4f46e5",
+        "sidebar.primary.foreground": "#ffffff",
+        "progress_bar.background": "#4f46e5",
+        "selection.background": "#a5b4fc",
+        "link.foreground": "#4f46e5",
+        "link.hover.foreground": "#4338ca",
+        "link.active.foreground": "#3730a3"
+      }
+    },
+    {
+      "name": "Super Voice Dark",
+      "mode": "dark",
+      "colors": {
+        "primary.background": "#6366f1",
+        "primary.hover.background": "#818cf8",
+        "primary.active.background": "#4f46e5",
+        "primary.foreground": "#ffffff",
+        "ring": "#818cf8",
+        "list.active.background": "#6366f133",
+        "list.active.border": "#6366f1",
+        "sidebar.primary.background": "#6366f1",
+        "sidebar.primary.foreground": "#ffffff",
+        "progress_bar.background": "#818cf8",
+        "selection.background": "#4338ca",
+        "link.foreground": "#a5b4fc",
+        "link.hover.foreground": "#c7d2fe",
+        "link.active.foreground": "#818cf8"
+      }
+    }
+  ]
+}

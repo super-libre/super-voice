@@ -70,7 +70,7 @@ Host: voice.local
 Content-Type: application/json
 
 {
-  "app_name": "Super Voice Settings App",
+  "app_name": "Super Voice App",
   "scopes":   ["settings", "status", "daemon_status"],
   "version":  "0.10.0"
 }
@@ -213,7 +213,7 @@ every request, that the caller is the executable it was granted to.
 ## First-party clients
 
 Super Voice's own client binaries skip the consent popup: the CLI
-(`super-voice-cli`), the settings app (`super-voice-app`) and
+(`super-voice-cli`), the app (`super-voice-app`) and
 the COSMIC panel applet (`super-cosmic-applet`). When one of them calls
 `POST /auth/request`, the daemon mints the session token immediately; the
 response is indistinguishable from a user-approved grant.
@@ -277,7 +277,7 @@ the rest of this page knows. It is not a binary on the Unix socket that
 the kernel can name, and not a page with an origin: it is a program that
 calls [Super Voice's MCP server](./mcp.md) on the TCP listener. So it does
 not ask for a session through the consent dialog. The user connects it on
-the Assistants page of the settings app, and the daemon makes it a key of
+the Assistants page of the app, and the daemon makes it a key of
 its own ([assistants.md](./endpoints/v1/assistants.md)). Connecting it is
 the user's consent.
 

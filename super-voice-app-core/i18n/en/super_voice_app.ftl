@@ -863,3 +863,11 @@ backends-could-not-load = Couldn't read the backends: { $error }
 # The window: its Connection page and About
 authorization-denied-restart = Access was refused. Restart the daemon ({ $command }) so it forgets that answer, then press Retry authorization.
 about-super-voice = About Super Voice
+
+# The app's window: the sidebar's groups and the status bar
+general = General
+daemon-connected = Daemon connected
+daemon-connecting = Connecting to the daemon…
+daemon-not-answering = The daemon doesn't answer: { $reason }
+daemon-access-refused = Access was refused: { $reason }
+page-not-built = This page isn't built yet.

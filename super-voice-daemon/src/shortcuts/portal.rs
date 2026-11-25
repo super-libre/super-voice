@@ -41,7 +41,7 @@ const GLOBAL_SHORTCUTS_IFACE: &str = "org.freedesktop.portal.GlobalShortcuts";
 const REGISTRY_IFACE: &str = "org.freedesktop.host.portal.Registry";
 const SESSION_IFACE: &str = "org.freedesktop.portal.Session";
 
-/// The app id the daemon registers: the settings app's, from its
+/// The app id the daemon registers: the app's, from its
 /// `super-voice-app.desktop`.
 pub const APP_ID: &str = "super-voice-app";
 

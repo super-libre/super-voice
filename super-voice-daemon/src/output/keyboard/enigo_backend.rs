@@ -74,7 +74,7 @@ impl EnigoBackend {
     /// (`CGEventKeyboardSetUnicodeString`) needs no layout lookup; see
     /// `type_character`. enigo's `text()` attaches strings too, but packs up
     /// to 20 characters into each event: a native text field inserts them
-    /// all, while iced's — the settings app's own typing test — inserts the
+    /// all, while iced's — the app's own typing test — inserts the
     /// first of each and drops the rest. Neither Linux objection applies: it
     /// is an ordinary keyboard event posted to the same HID event tap as the
     /// backspaces, not an input-method commit, and no terminal treats it as a

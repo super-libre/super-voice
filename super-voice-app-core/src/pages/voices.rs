@@ -119,7 +119,7 @@ pub enum Effect {
         wav: Vec<u8>,
     },
     /// The library changed. An app that lists a model's voices elsewhere (the
-    /// settings app's Models card) reads them again.
+    /// app's Models card) reads them again.
     LibraryChanged,
 }
 

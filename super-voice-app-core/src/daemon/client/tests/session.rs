@@ -8,7 +8,7 @@ use super::fake_daemon::{self, FakeDaemon, Reply};
 use crate::daemon::client::v1::{ping, settings};
 
 /// Every call carries the cached token. It is the whole authorization story —
-/// the daemon has no other way to tell the settings app from anything else that
+/// the daemon has no other way to tell the app from anything else that
 /// can reach the socket.
 #[tokio::test]
 async fn every_call_presents_the_cached_token() {

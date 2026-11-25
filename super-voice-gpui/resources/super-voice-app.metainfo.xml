@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.superlibre.SuperVoice</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Super Voice</name>
+  <summary>Speech to text and text to speech</summary>
+  <description>
+    <p>
+      Super Voice types what you say into whatever app is focused, and reads
+      text aloud. Bind a shortcut, speak, and the text appears where you are
+      working.
+    </p>
+    <p>
+      A background daemon installs speech models from a library of local
+      and cloud backends and keeps them loaded, so transcription and speech
+      start right away. This app is where you pick backends, load models,
+      record voices to clone, and configure the daemon.
+    </p>
+  </description>
+  <developer id="org.superlibre">
+    <name>Jorge Menjivar</name>
+  </developer>
+  <icon type="stock">super-voice-app</icon>
+  <launchable type="desktop-id">super-voice-app.desktop</launchable>
+  <url type="homepage">https://github.com/super-libre/super-voice</url>
+  <url type="bugtracker">https://github.com/super-libre/super-voice/issues</url>
+  <url type="vcs-browser">https://github.com/super-libre/super-voice</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Pick a model for each feature, and where it runs</caption>
+      <image>https://raw.githubusercontent.com/super-libre/super-voice/main/.github/assets/screenshots/models.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Install backends, local or cloud</caption>
+      <image>https://raw.githubusercontent.com/super-libre/super-voice/main/.github/assets/screenshots/library.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Teach it the words you use</caption>
+      <image>https://raw.githubusercontent.com/super-libre/super-voice/main/.github/assets/screenshots/contexts.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Clone a voice from a short recording</caption>
+      <image>https://raw.githubusercontent.com/super-libre/super-voice/main/.github/assets/screenshots/voices.png</image>
+    </screenshot>
+  </screenshots>
+  <provides>
+    <binary>super-voice-app</binary>
+  </provides>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>COSMIC</keyword>
+    <keyword>speech</keyword>
+    <keyword>transcription</keyword>
+    <keyword>dictation</keyword>
+    <keyword>voice</keyword>
+  </keywords>
+  <content_rating type="oars-1.1" />
+  <!-- Release notes live on the GitHub release each entry links to, rather
+       than being restated (and drifting) here. -->
+  <releases>
+    <release version="0.2.4" date="2026-09-08">
+      <url type="details">https://github.com/super-libre/super-voice/releases/tag/v0.2.4</url>
+    </release>
+    <release version="0.2.3" date="2026-08-27">
+      <url type="details">https://github.com/super-libre/super-voice/releases/tag/v0.2.3</url>
+    </release>
+    <release version="0.2.2" date="2026-08-26">
+      <url type="details">https://github.com/super-libre/super-voice/releases/tag/v0.2.2</url>
+    </release>
+  </releases>
+</component>

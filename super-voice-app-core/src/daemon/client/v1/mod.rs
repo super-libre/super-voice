@@ -7,7 +7,7 @@
 //! beside it. [`macros`] is the one module not named for a path, because it is
 //! not an endpoint.
 //!
-//! Not every daemon path is wrapped — only what the settings app calls.
+//! Not every daemon path is wrapped — only what the app calls.
 
 // Must come first: `#[macro_use]` puts the settings macros in scope for every
 // module declared after it.

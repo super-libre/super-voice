@@ -58,7 +58,7 @@ use super_voice_shared::consent::contract;
 // The decision payloads written to stdout right before exit.
 use contract::{ALLOW, DENY, DISMISSED};
 
-const APP_ID: &str = "ai.menjivar.super-voice-consent";
+const APP_ID: &str = "org.superlibre.super-voice-consent";
 
 const QUESTION_ICON: &[u8] = include_bytes!("../resources/icons/phosphor/question.svg");
 

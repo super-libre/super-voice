@@ -37,7 +37,7 @@ device and the language are.
 
 **This is the only place a voice is chosen.** [`POST /tts/speak`](../speak.md) takes
 `text` and nothing else, so what is stored here is what every caller gets: a
-keyboard shortcut, the panel applet, the settings app's Speak button, a browser
+keyboard shortcut, the panel applet, the app's Speak button, a browser
 client. Speaking and configuring are separate grants, and an app that can make
 the machine talk does not thereby get a say in which voice it talks in.
 

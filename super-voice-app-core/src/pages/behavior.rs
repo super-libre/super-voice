@@ -9,7 +9,7 @@
 //! goes back to the stored one if the daemon refuses it.
 //!
 //! The recording test shares the microphone's state with the Notes page, and
-//! is still the settings app's own.
+//! is still the app's own.
 
 use std::time::Duration;
 
@@ -372,7 +372,7 @@ pub async fn run_tick() -> Input {
 }
 
 /// Read every setting the tab shows, each as the input that shows it. One the
-/// daemon can't say comes back as its default, as the settings app does at
+/// daemon can't say comes back as its default, as the app does at
 /// startup.
 pub async fn run_load() -> Vec<Input> {
     let (themes, stop_mode, preview_typing, write_method, theme, volume) = tokio::join!(

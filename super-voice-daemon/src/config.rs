@@ -391,7 +391,7 @@ impl PostProcessorConfig {
 /// Dictation contexts: what the user is dictating, and which one is in force.
 ///
 /// Contract: `docs/protocol/endpoints/v1/context.md`. The contexts themselves
-/// are [`DictationContext`], shared with the settings app.
+/// are [`DictationContext`], shared with the app.
 ///
 /// A `Vec` rather than a map keyed by id, because the list is ordered and the
 /// user sees that order. It is also what keeps the config file still: [`DaemonConfig::load`]

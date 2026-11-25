@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist for Super Voice.app, which `just bundle-macos` assembles. It holds
+  the app (the bundle's executable), the daemon and the CLI, and the
+  LaunchAgents that run the latter two.
+
+  The executable is `super-voice-app`, the app's name: the daemon
+  trusts a client by that name beside it, and runs it to post its banners
+  (`super-voice-app --notify`).
+
+  Two placeholders are substituted when the bundle is built:
+
+    __VERSION__   the workspace version, as the version users see
+    __BUILD__     the same without any pre-release suffix (0.2.2-beta.3 ->
+                  0.2.2), since LaunchServices compares this one as numbers
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Super Voice</string>
+    <key>CFBundleName</key>
+    <string>Super Voice</string>
+    <key>CFBundleExecutable</key>
+    <string>super-voice-app</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+
+    <!--
+      The app's identifier, under superlibre.org. The Keychain grants access
+      by code signature, and a signature's identifier is part of it: with the
+      same one, every build goes on reading the session token the app keeps
+      there. (Moving from ai.menjivar.super-voice-app to this one may cost a Mac
+      that ran the old app one Keychain or consent prompt the first time.)
+    -->
+    <key>CFBundleIdentifier</key>
+    <string>org.superlibre.super-voice-app</string>
+
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__BUILD__</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+
+    <!-- GPUI Kit, which the app is drawn with, supports macOS 15 and later. -->
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <!--
+      Shown when macOS asks whether Super Voice may use the microphone. The
+      daemon records dictation and the app records notes and voices to clone;
+      both run from this bundle, so this is the text they are asked with.
+    -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Super Voice turns what you say into text. It also records the voices you clone.</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+</dict>
+</plist>

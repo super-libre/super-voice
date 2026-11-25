@@ -15,7 +15,9 @@ name: Install E2E
 
 on:
   pull_request:
-    branches: [main]
+    # gpui-app is the long-lived branch the GPUI app is built on; pull
+    # requests into it get the same checks as those into main.
+    branches: [main, gpui-app]
     paths:
       - install.sh
       - uninstall.sh

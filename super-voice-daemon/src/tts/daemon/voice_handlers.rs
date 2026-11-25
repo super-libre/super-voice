@@ -9,7 +9,7 @@
 //! A voice was a per-utterance field and nothing else until this existed, which
 //! meant only a client that asked for one by name could choose: the CLI's
 //! `--voice`, and the Voices page auditioning a clone. Everything else — the
-//! settings app's Speak button, a keyboard shortcut, the applet — sent no voice
+//! app's Speak button, a keyboard shortcut, the applet — sent no voice
 //! at all and got the manifest's `default_voice`, or, for a model whose voices
 //! are all cloned, a refusal telling the user to name one with no way to do it.
 //! The preference is stored per model because a voice id means nothing to

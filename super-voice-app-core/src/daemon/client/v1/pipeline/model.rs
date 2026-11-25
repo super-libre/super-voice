@@ -38,7 +38,7 @@ pub struct StageDevice {
 /// unload, so the card can offer to load the same model again without the user
 /// picking it a second time. `loaded` is what says whether it is up.
 ///
-/// Only the fields the settings app consumes are modeled; serde ignores the
+/// Only the fields the app consumes are modeled; serde ignores the
 /// rest.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct StageModel {

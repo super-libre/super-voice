@@ -13,10 +13,8 @@ Super Voice is a speech-to-text and text-to-speech service built in Rust with a 
 - **super-voice-registry-types**: the one backend manifest spec (`backend.toml`) and the registry index, for both features.
 - **super-voice-indexer**: builds the registry index (CI only).
 - **super-voice-cli**: the `voice` command. Each feature's commands are under its own subcommand: `voice record` (speech to text), `voice speak` (text to speech).
-- **super-voice-app**: the settings app, for both features. Each feature's pages are tabs of its section: Speech to text, Text to speech.
-- **super-voice-app-core**: what the apps share, with no UI library: the daemon client, the app's state, the notes and clips the app keeps, and the audio it records and plays. The settings app draws on top of it with libcosmic.
-- **super-voice-ffi**: super-voice-app-core for apps written in other languages, through UniFFI bindings.
-- **super-voice-macos/**: the SwiftUI app for macOS, a Swift package on super-voice-ffi. An early version; `just macos-swift-app` builds it.
+- **super-voice-gpui**: the Super Voice app, for both features, on Linux and macOS. Drawn with GPUI and gpui-kit; its binary is `super-voice-app`. Each feature's pages are grouped under its own heading in the sidebar: Speech to text, Text to speech.
+- **super-voice-app-core**: what the app draws, with no UI library: the daemon client, the app's state and each page's logic, the notes and clips the app keeps, and the audio it records and plays.
 - **super-voice-shared**: the client library, for both features. Text to speech's own types are its `tts` module.
 - **super-voice-install**: the installer and self-updater.
 - **claude-code-plugin/**: the Claude Code plugin. It reaches the daemon's MCP server at `/v1/mcp` with a key of its own, which the daemon makes when the user connects Claude Code on the app's Assistants page.
