@@ -9,6 +9,10 @@ import SwiftUI
 struct SuperVoiceApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
+    init() {
+        chooseLanguages()
+    }
+
     var body: some Scene {
         WindowGroup("Super Voice") {
             ContentView(notes: NotesModel.shared)

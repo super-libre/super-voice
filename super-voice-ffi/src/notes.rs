@@ -9,24 +9,14 @@
 //! as it does in the settings app.
 
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures_util::StreamExt;
 use super_voice_app_core::notes::{self, Note};
 use super_voice_app_core::pages::notes::{self as page, Effect, Input, Notice};
-use super_voice_app_core::state::TextBuffer;
 use super_voice_app_core::state::notes::NotesState;
 
-/// The runtime the store's work runs on. One for every store: the work is
-/// small, and the core's calls expect tokio under them.
-static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .thread_name("super-voice-store")
-        .enable_all()
-        .build()
-        .expect("the store's tokio runtime starts")
-});
+use crate::{Buffer, RUNTIME};
 
 /// What the app is told. Called from the store's own threads: the app hops to
 /// its main thread before it draws.
@@ -177,36 +167,6 @@ pub struct NotesPage {
     pub folder: String,
 }
 
-/// The open note's text as the store holds it.
-///
-/// The app keeps its own editor. It hands its text over with
-/// [`NotesStore::set_text`], and takes the store's back only when the store
-/// replaced it (words dictated into the note), which `replaced` counts. Taking
-/// it back on every change would undo keystrokes still on their way.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Buffer {
-    text: String,
-    replaced: u64,
-}
-
-impl TextBuffer for Buffer {
-    fn from_text(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-            replaced: 0,
-        }
-    }
-
-    fn text(&self) -> String {
-        self.text.clone()
-    }
-
-    fn replace_text(&mut self, text: &str) {
-        text.clone_into(&mut self.text);
-        self.replaced += 1;
-    }
-}
-
 /// The page's state, and the notice it shows.
 #[derive(Default)]
 struct Held {
@@ -231,6 +191,7 @@ impl NotesStore {
     /// app sends [`NotesAction::Reload`].
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn NotesObserver>) -> Arc<Self> {
+        crate::identify();
         Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

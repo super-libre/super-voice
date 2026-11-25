@@ -37,6 +37,8 @@
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Super Voice uses the microphone while you record a voice.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>

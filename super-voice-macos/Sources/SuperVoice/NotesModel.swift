@@ -64,7 +64,7 @@ final class NotesModel: ObservableObject {
 
     private func askWhereToExport(name: String, text: String) {
         let panel = NSSavePanel()
-        panel.title = "Export note"
+        panel.title = t("export-note")
         panel.nameFieldStringValue = name
         panel.directoryURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
         let store = store!

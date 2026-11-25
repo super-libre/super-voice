@@ -530,6 +530,9 @@ macos-swift-app config="release":
     sed -e "s|__VERSION__|$version|g" -e "s|__BUILD__|${version%%-*}|g" \
         super-voice-macos/Info.plist > "$bundle/Contents/Info.plist"
     cp "$bin/SuperVoice" "$bundle/Contents/MacOS/"
+    # The settings app's own icons, so both apps draw the same files.
+    mkdir -p "$bundle/Contents/Resources/icons"
+    cp super-voice-app/resources/icons/phosphor/*.svg "$bundle/Contents/Resources/icons/"
     codesign --force --sign - "$bundle"
     codesign --verify --strict "$bundle"
 
@@ -539,12 +542,25 @@ macos-swift-app config="release":
 #
 # A debug build draws its own window once the page is in `scene`'s state, at
 # one size, and quits: no Screen Recording permission, so it works over ssh.
-# Scenes: `notes`, the list; `note`, the newest note open; and `edited`, that
-# note with a sentence typed into it and saved. It reads a copy of the sample
-# notes in super-voice-macos/Fixtures, never yours, so `edited` changes only
-# the copy.
+# The app has to come to the front for its accent colours; a run where it
+# can't fails rather than shooting a grey window; set
+# SUPER_VOICE_SNAPSHOT_INACTIVE=1 to take it anyway, for layout alone.
+# SUPER_VOICE_HTTP_SOCKET points it at a daemon (a test one, with
+# XDG_STATE_HOME keeping its token apart), and the shot waits for the header.
+# SUPER_VOICE_LANGUAGE=fr shoots it in French.
+# Scenes: `notes`, the list; `note`, the newest note open; `edited`, that
+# note with a sentence typed into it and saved; `clips`, the Clips page;
+# `clips-playing`, its newest clip partway through playing, out loud;
+# `voices`, the Voices page; `voices-pending`, a recording imported there,
+# waiting to be saved; `tts-behavior`, text to speech's Behavior tab; and
+# `tts-behavior-spoken`, a sentence spoken there (or the daemon's refusal);
+# `contexts`, speech to text's Contexts tab; `contexts-edit`, a new context
+# typed into its editor; and `contexts-saved`, that context saved to the
+# daemon. It reads a copy of the sample notes and clips in
+# super-voice-macos/Fixtures, never yours, so `edited` changes only the copy.
+# The voices are the daemon's.
 #
-# Usage: just macos-swift-shot notes.png [notes|note|edited]
+# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved]
 macos-swift-shot out scene="notes": (macos-swift-app "debug")
     #!/usr/bin/env bash
     set -euo pipefail
@@ -552,15 +568,41 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
     rm -f "$out"
     data=$(mktemp -d)
     trap 'rm -rf "$data"' EXIT
+    # What the app says on stderr, such as why it refused a shot: `open`
+    # doesn't hand it back.
+    said="$data/stderr.log"
     cp -R super-voice-macos/Fixtures/super-voice "$data/"
+    # The sample clips keep only their text in git: each is voiced here, with
+    # the Mac's own speech, into the WAV beside it.
+    for about in "$data"/super-voice/clips/*.json; do
+        [ -e "$about" ] || continue
+        say -o "${about%.json}.wav" --data-format=LEI16@24000 \
+            "$(plutil -extract text raw "$about")"
+    done
+    # The recording `voices-pending` imports, in the Mac's own voice.
+    mkdir -p "$data/import"
+    say -o "$data/import/Grace_Hopper.wav" --data-format=LEI16@24000 \
+        "A ship in port is safe, but that is not what ships are built for."
+    # The user is active, as far as macOS knows, for the next few seconds:
+    # wakes a display that is off and dismisses a screen saver, either of
+    # which keeps the app from coming to the front. The display takes a moment
+    # to come back, so the app opens after it. The shot is refused if it still
+    # can't come to the front.
+    caffeinate -u -t 8 &
+    sleep 3
     # A new instance (-n), so a copy already open can't take the request and
     # ignore the environment; -W waits for it to quit.
-    open -n -W \
+    open -n -W --stderr "$said" \
         --env SUPER_VOICE_SNAPSHOT="$out" \
         --env SUPER_VOICE_SCENE="{{ scene }}" \
+        ${SUPER_VOICE_SNAPSHOT_INACTIVE:+--env SUPER_VOICE_SNAPSHOT_INACTIVE=1} \
+        ${SUPER_VOICE_HTTP_SOCKET:+--env SUPER_VOICE_HTTP_SOCKET="$SUPER_VOICE_HTTP_SOCKET"} \
+        ${XDG_STATE_HOME:+--env XDG_STATE_HOME="$XDG_STATE_HOME"} \
+        ${SUPER_VOICE_LANGUAGE:+--env SUPER_VOICE_LANGUAGE="$SUPER_VOICE_LANGUAGE"} \
         --env XDG_DATA_HOME="$data" \
         "target/debug/Super Voice (SwiftUI).app"
     if [ ! -s "$out" ]; then
+        cat "$said" >&2 2>/dev/null || true
         echo "❌ no screenshot at $out" >&2
         exit 1
     fi

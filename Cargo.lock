@@ -7425,6 +7425,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "super-voice-app-core",
+ "super-voice-shared",
  "tokio",
  "uniffi",
 ]
