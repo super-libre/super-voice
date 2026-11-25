@@ -25,7 +25,8 @@
 // the Assistants page once the daemon has listed them; `assistants-key`, a
 // key for another assistant made there, which writes to the daemon the app is
 // pointed at; `assistants-connected`, a made-up connected Claude Code's own
-// page with two sessions, for the layout; `notes-take`, the list with a made-up take recording a new note; or
+// page with two sessions, for the layout; `updates`, the Updates page once
+// its status is read; `notes-take`, the list with a made-up take recording a new note; or
 // `note-take`, the newest note open with a made-up take adding to it. A take
 // scene's take, level and words are made up in the app, for the layout: a
 // real one needs a microphone and a model.
@@ -116,7 +117,7 @@ enum Snapshot {
                 MicrophoneModel.shared.pretend(Microphone(recording: true, level: 0.55, speech: true))
             }
         case "models", "models-running", "settings", "settings-languages", "assistants", "assistants-key",
-             "assistants-connected":
+             "assistants-connected", "updates":
             // Shot from its own page; see `modelsShown`.
             return
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
@@ -336,6 +337,14 @@ enum Snapshot {
                 return
             }
         }
+        taken = true
+        Task { await take() }
+    }
+
+    /// The Updates page showed `page`: shoot it once its status is read, for
+    /// `updates`.
+    static func updatesShown(_ page: UpdatesPage) {
+        guard path != nil, !taken, scene == "updates", page.loaded else { return }
         taken = true
         Task { await take() }
     }

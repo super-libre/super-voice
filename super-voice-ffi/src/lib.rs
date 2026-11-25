@@ -22,6 +22,7 @@ pub mod recording_test;
 pub mod settings;
 pub mod speech;
 pub mod status;
+pub mod updates;
 pub mod voices;
 
 uniffi::setup_scaffolding!();
