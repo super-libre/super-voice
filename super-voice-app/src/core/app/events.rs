@@ -42,9 +42,8 @@ pub(super) fn message(event: Event) -> Option<Message> {
         Event::Connected => Message::Daemon(DaemonMessage::EventStreamConnected),
         // So the page shows Blocked, with Retry, rather than a dead meter.
         Event::Blocked(reason) => Message::Daemon(DaemonMessage::WidgetBlocked(reason)),
-        Event::Recording(on) => Message::Recording(RecordingMessage::WidgetRecordingState(on)),
-        Event::MicrophoneLevel { level, is_speech } => {
-            Message::Recording(RecordingMessage::WidgetAudioLevel { level, is_speech })
+        Event::Recording(_) | Event::MicrophoneLevel { .. } => {
+            Message::Recording(RecordingMessage::Microphone(event))
         }
         Event::Speaking {
             is_speaking,

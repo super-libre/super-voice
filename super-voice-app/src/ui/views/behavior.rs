@@ -52,14 +52,7 @@ pub fn speech_to_text(app: &AppModel) -> Element<'_, Message> {
         &behavior.audio_theme,
         behavior.volume,
     ));
-    let mut rows = super::recording::test_rows(
-        &app.recording_status,
-        &app.transcription_text,
-        &app.preview_text,
-        app.preview_source,
-        app.audio_level,
-        app.is_speech_detected,
-    );
+    let mut rows = super::recording::test_rows(&app.recording_test, app.microphone);
     rows.extend(super::input_simulation::test_rows(
         &behavior.typing_test_text,
         behavior.typing_countdown,

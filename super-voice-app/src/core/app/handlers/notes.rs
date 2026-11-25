@@ -48,7 +48,7 @@ impl AppModel {
     ) -> Task<cosmic::Action<Message>> {
         if matches!(input, Input::Transcribed(_)) {
             // The take is over, so its level meter goes quiet.
-            self.audio_level = 0.0;
+            self.microphone.level = 0.0;
         }
         let Outcome {
             effects,

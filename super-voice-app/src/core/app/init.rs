@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use crate::state::{ContextPage, DaemonStatus, RecordingStatus};
+use crate::state::{ContextPage, DaemonStatus};
 use crate::ui::icons;
 use crate::ui::messages::{Message, ModelMessage};
 use cosmic::prelude::*;
@@ -120,12 +120,8 @@ impl AppModel {
             daemon_status: DaemonStatus::Disconnected,
             reconnect_retry:
                 super_voice_shared::daemon::retry::RetryStrategy::for_initial_connection(),
-            recording_status: RecordingStatus::Idle,
-            transcription_text: String::new(),
-            preview_text: String::new(),
-            preview_source: None,
-            audio_level: 0.0,
-            is_speech_detected: false,
+            microphone: super_voice_app_core::state::Microphone::default(),
+            recording_test: super_voice_app_core::state::recording_test::RecordingTest::default(),
             behavior: crate::state::behavior::BehaviorState::default(),
             udp_restart_counter: 0,
             last_udp_data: std::time::Instant::now(),

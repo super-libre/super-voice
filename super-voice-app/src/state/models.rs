@@ -22,14 +22,6 @@ pub enum DaemonStatus {
     Blocked(String),
 }
 
-/// Recording status
-#[derive(Debug, Clone, Default, PartialEq)]
-pub enum RecordingStatus {
-    #[default]
-    Idle,
-    Recording,
-}
-
 /// One page of the application: a nav entry's own, or a tab of a feature's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {

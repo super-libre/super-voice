@@ -99,9 +99,12 @@ impl AppModel {
             // Every stage: an operation the app was tracking belongs to a
             // session that is gone.
             self.model_operations.reset();
-            self.transcription_text.clear();
-            self.preview_text.clear();
-            self.preview_source = None;
+            // It asks for nothing: it only forgets the test.
+            let _ = super_voice_app_core::pages::recording_test::update(
+                &mut self.recording_test,
+                &mut self.microphone,
+                super_voice_app_core::pages::recording_test::Input::Reconnected,
+            );
         }
 
         // The /events subscription is self-healing
