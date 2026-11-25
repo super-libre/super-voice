@@ -398,7 +398,8 @@ impl ClipsPage {
 
     /// Run the ticker while a clip plays or is made, and only then.
     fn keep_ticking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let busy = self.state.playing.is_some() || self.state.making.is_some();
+        let busy =
+            self.state.playing.as_ref().is_some_and(|p| !p.paused) || self.state.making.is_some();
         if !busy {
             self.ticker = None;
             return;
@@ -485,9 +486,14 @@ impl ClipsPage {
             parts.push(length);
             return parts.join(" · ").into();
         };
+        let key = if playing.paused {
+            "paused-position"
+        } else {
+            "playing-position"
+        };
         match (playing.position(), playing.length()) {
             (Some(at), Some(of)) => t_with(
-                "playing-position",
+                key,
                 &[("position", &page::clock(at)), ("length", &page::clock(of))],
             ),
             _ => t("starting"),
@@ -523,7 +529,7 @@ impl ClipsPage {
             _ => None,
         };
         let rows = self.state.items.iter().map(|clip| {
-            let playing = self.state.is_playing(&clip.id);
+            let playing = self.state.is_playing_on(&clip.id);
             let icon = if playing {
                 Lucide::Volume2
             } else {
@@ -717,21 +723,33 @@ impl ClipsPage {
             )
     }
 
-    /// The player: Play or Stop, where it is, a slider to move it, and how
-    /// long the clip is. Built from a Button and a Slider over the core's
-    /// player: the kit has no audio player.
+    /// The player: Play or Pause, Stop while it plays or is paused, where
+    /// it is, a slider to move it (paused too), and how long the clip is.
+    /// Built from Buttons and a Slider over the core's player: the kit has no
+    /// audio player.
     fn player(&self, clip: &Clip, cx: &mut Context<Self>) -> impl IntoElement {
         let length = Duration::from_secs_f32(clip.seconds.max(0.));
         let playing = self.state.playing.as_ref().filter(|p| p.id == clip.id);
         let position = playing.and_then(Playing::position).unwrap_or_default();
-        let play = if playing.is_some() {
-            Button::new("stop-clip")
+        let play = if playing.is_some_and(|p| p.paused) {
+            Button::new("resume-clip")
                 .primary()
-                .icon(IconName::Square)
-                .accessibility_label(t("stop"))
-                .tooltip(t("stop"))
+                .icon(IconName::Play)
+                .accessibility_label(t("play"))
+                .tooltip(t("play"))
                 .on_click(cx.listener(|this, _, window, cx| {
-                    this.send(In::Clips(page::Input::Stop), window, cx);
+                    this.send(In::Clips(page::Input::Resume), window, cx);
+                }))
+        } else if playing.is_some() {
+            Button::new("pause-clip")
+                .primary()
+                .icon(IconName::Pause)
+                .accessibility_label(t("pause"))
+                .tooltip(t("pause"))
+                // Nothing to pause until its audio is read.
+                .disabled(playing.is_some_and(|p| p.audio.is_none()))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.send(In::Clips(page::Input::Pause), window, cx);
                 }))
         } else {
             let id = clip.id.clone();
@@ -744,17 +762,28 @@ impl ClipsPage {
                     this.send(In::Clips(page::Input::Play(id.clone())), window, cx);
                 }))
         };
+        // Back to the start, the speakers let go.
+        let stop = playing.is_some().then(|| {
+            Button::new("stop-clip")
+                .ghost()
+                .icon(IconName::Square)
+                .accessibility_label(t("stop"))
+                .tooltip(t("stop"))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.send(In::Clips(page::Input::Stop), window, cx);
+                }))
+        });
         let muted = cx.theme().muted_foreground;
         GroupBox::new().fill().child(
             h_flex()
                 .gap_3()
                 .items_center()
-                .child(play)
+                .child(h_flex().gap_1().child(play).children(stop))
                 .child(time(position, muted))
                 .child(
                     div().flex_1().min_w_0().child(
                         Slider::new(&self.slider)
-                            .disabled(playing.is_none_or(|p| p.player.is_none()))
+                            .disabled(playing.is_none_or(|p| p.audio.is_none()))
                             .accessibility_label(t("position-in-the-clip")),
                     ),
                 )
@@ -962,7 +991,8 @@ impl Render for ClipsPage {
 
 /// Made-up clips for `just app-shot`: three, in Kokoro's and Qwen TTS's
 /// voices. Scenes: `clips-empty` (none yet), `clip-playing` (the first
-/// playing, two seconds in), `clip-new` (the composer, with words in it).
+/// playing, two seconds in), `clip-paused` (the first paused, nearly four
+/// seconds in), `clip-new` (the composer, with words in it).
 #[cfg(feature = "screenshot")]
 mod pretend {
     use super::*;
@@ -1028,15 +1058,23 @@ mod pretend {
             },
         ];
         let playing = scenes.contains(&"clip-playing");
-        if playing || width::content(window) >= width::TWO_PANES {
+        let paused = scenes.contains(&"clip-paused");
+        if playing || paused || width::content(window) >= width::TWO_PANES {
             page.pane = Pane::Clip("c3".into());
         }
-        if playing {
+        if playing || paused {
             let mut clip = Playing::new("c3".into());
-            clip.player = Some(Player::held_at(
-                Duration::from_secs_f32(6.4),
-                Duration::from_secs(2),
-            ));
+            // Silence, as long as the clip: what the slider measures.
+            clip.audio = Some((vec![0.0; 6_400].into(), 1_000));
+            if paused {
+                clip.from = Duration::from_millis(3_900);
+                clip.paused = true;
+            } else {
+                clip.player = Some(Player::held_at(
+                    Duration::from_secs_f32(6.4),
+                    Duration::from_secs(2),
+                ));
+            }
             page.state.playing = Some(clip);
         }
         if scenes.contains(&"clip-new") {
@@ -1078,6 +1116,8 @@ mod tests {
             "clip-actions",
             "new-clip",
             "no-clips-yet",
+            "pause",
+            "paused-position",
             "play",
             "playing-position",
             "position-in-the-clip",

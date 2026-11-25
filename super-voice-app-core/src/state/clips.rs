@@ -46,10 +46,18 @@ impl<B> ClipsState<B> {
         self.items.iter().find(|c| c.id == id)
     }
 
-    /// Whether the clip `id` is the one playing.
+    /// Whether the clip `id` is the one playing, or paused.
     #[must_use]
     pub fn is_playing(&self, id: &str) -> bool {
         self.playing.as_ref().is_some_and(|p| p.id == id)
+    }
+
+    /// Whether the clip `id` is the one playing, and not paused.
+    #[must_use]
+    pub fn is_playing_on(&self, id: &str) -> bool {
+        self.playing
+            .as_ref()
+            .is_some_and(|p| p.id == id && !p.paused)
     }
 }
 
@@ -61,16 +69,20 @@ pub struct Making {
     pub handle: futures_util::future::AbortHandle,
 }
 
-/// A clip playing, or about to: its samples are read first.
+/// A clip playing, about to (its samples are read first), or paused.
 #[derive(Debug)]
 pub struct Playing {
     pub id: String,
-    /// `None` while the clip's audio is still being read.
+    /// `None` while the clip's audio is still being read, and while paused.
     pub player: Option<Player>,
-    /// The clip's audio and its rate, once read: what a seek plays from.
+    /// The clip's audio and its rate, once read: what a seek or a resume
+    /// plays from.
     pub audio: Option<(Arc<[f32]>, u32)>,
-    /// Where in the clip the player started: zero, or where it was sought to.
+    /// Where in the clip the player started: zero, or where it was sought to
+    /// or resumed from. While paused, where it stopped.
     pub from: Duration,
+    /// Paused: no player sounds, and it resumes from [`Self::from`].
+    pub paused: bool,
 }
 
 impl Playing {
@@ -82,18 +94,30 @@ impl Playing {
             player: None,
             audio: None,
             from: Duration::ZERO,
+            paused: false,
         }
     }
 
     /// How far into the clip it has played; `None` while its audio is read.
     #[must_use]
     pub fn position(&self) -> Option<Duration> {
-        self.player.as_ref().map(|p| self.from + p.position())
+        match &self.player {
+            Some(player) => Some(self.from + player.position()),
+            None => self.paused.then_some(self.from),
+        }
     }
 
     /// How long the clip is; `None` while its audio is read.
     #[must_use]
     pub fn length(&self) -> Option<Duration> {
+        if let Some((audio, rate)) = &self.audio
+            && *rate > 0
+        {
+            #[allow(clippy::cast_precision_loss)]
+            return Some(Duration::from_secs_f64(
+                audio.len() as f64 / f64::from(*rate),
+            ));
+        }
         self.player.as_ref().map(|p| self.from + p.length())
     }
 
@@ -140,6 +164,17 @@ mod tests {
         assert_eq!(playing.position(), Some(Duration::from_secs(2)));
         assert_eq!(playing.length(), Some(Duration::from_secs(4)));
         assert!((playing.fraction() - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_paused_clip_says_where_it_stopped() {
+        let mut playing = Playing::new("a".into());
+        playing.audio = Some((vec![0.0; 4_000].into(), 1_000));
+        playing.from = Duration::from_secs(1);
+        playing.paused = true;
+        assert_eq!(playing.position(), Some(Duration::from_secs(1)));
+        assert_eq!(playing.length(), Some(Duration::from_secs(4)));
+        assert!((playing.fraction() - 0.25).abs() < 1e-6);
     }
 
     #[test]
