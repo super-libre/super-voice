@@ -139,10 +139,10 @@ pub(super) fn fmt_size(bytes: u64) -> String {
 }
 
 /// The line under a Runs on row when the model is not running on the
-/// framework picked, which is one that fell back to the CPU.
-pub(super) fn running_note(chosen: Option<&str>, running: &str) -> Option<String> {
-    super_voice_app_core::rules::load::fallback(chosen, running)
-        .map(|framework| crate::fl!("running-on-framework", framework = accel_name(framework)))
+/// framework picked, which is one that fell back to the CPU: the core's
+/// `Card::fallback`.
+pub(super) fn running_note(fallback: &str) -> String {
+    crate::fl!("running-on-framework", framework = accel_name(fallback))
 }
 
 #[cfg(test)]
@@ -157,16 +157,12 @@ mod device_name_tests {
         assert_eq!(size(1), "1 MB");
     }
 
-    /// Only a model running on another framework than picked says so.
+    /// A model running on another framework than picked says which.
     #[test]
     fn a_fallback_is_noted() {
-        assert_eq!(running_note(Some("vulkan"), "vulkan"), None);
-        assert_eq!(running_note(Some("cpu"), "cpu"), None);
         assert_eq!(
-            running_note(Some("cuda"), "cpu").map(|note| crate::i18n::without_isolation(&note)),
-            Some("Running on CPU".to_string())
+            crate::i18n::without_isolation(&running_note("cpu")),
+            "Running on CPU"
         );
-        assert_eq!(running_note(Some("cpu"), "remote"), None);
-        assert_eq!(running_note(None, "cpu"), None);
     }
 }

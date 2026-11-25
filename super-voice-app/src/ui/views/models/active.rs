@@ -5,15 +5,23 @@ use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, text};
 use super_voice_shared::models::protocol::{DownloadProgress, LoadProgress, load_progress};
 
+use super_voice_app_core::pages::models::{self as page, Card, Input, Shown};
+use super_voice_app_core::state::model_operations::LoadCause;
+
 use crate::core::app::scene::{self, Target};
 use crate::core::app::{AppModel, ModelOperationState};
 use crate::daemon::backends::BackendInfo;
 use crate::state::Stage;
 use crate::ui::icons;
-use crate::ui::messages::{DownloadMessage, Message, ModelsPageMessage, StageMessage};
+use crate::ui::messages::{Message, ModelsMessage, ModelsPageMessage};
 
-use super::chips::{model_is_online, requirement_warning, stage_chips};
+use super::chips::{requirement_warning, stage_chips};
 use super::fmt::{no_viable_device_warning, vram_warning};
+
+/// `input` for the cards' logic, as the app's message.
+pub(super) fn models(input: Input) -> Message {
+    Message::Models(ModelsMessage::Page(input))
+}
 use super::language::language_button;
 use super::status::unmet_requirements;
 use super::surface::{card_divider, card_surface};
@@ -54,8 +62,7 @@ pub(super) fn active_backend_card<'a>(
 ) -> Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
     let source = backend.source.clone();
-    let model_loaded = !app.current_source.is_empty() && app.current_source == backend.source;
-    let idle_model = app.idle_model(Stage::Transcription);
+    let state = page::card(&app.models, Stage::Transcription);
     let missing = unmet_requirements(&app.configure.secrets_configured, backend);
 
     // Header: glyph + name/description, then the repo button, Configure, and
@@ -70,9 +77,7 @@ pub(super) fn active_backend_card<'a>(
         )),
         super::surface::deselect_button(
             crate::fl!("deselect-this-backend"),
-            Message::Stage(StageMessage::DeselectBackend {
-                stage: Stage::Transcription
-            }),
+            models(Input::PickBackend(Stage::Transcription, None)),
         ),
     ]
     .spacing(spacing.space_xs)
@@ -119,13 +124,10 @@ pub(super) fn active_backend_card<'a>(
     // above.
     if missing.is_empty() {
         card = card.push(card_divider());
-        if model_loaded {
-            card = card.push(loaded_model_summary(backend, &app.current_model, app));
-        } else if let Some(model) = idle_model {
-            card = card.push(loaded_model_summary(backend, model, app));
-        } else {
-            card = card.push(staged_model_picker(backend, app));
-        }
+        card = card.push(match &state.shown {
+            Shown::Running { model, .. } => loaded_model_summary(backend, model, app),
+            Shown::Staging { .. } | Shown::Empty => staged_model_picker(backend, app, &state),
+        });
     }
 
     // Unmet requirements are surfaced inline so the user fixes them in this
@@ -140,7 +142,7 @@ pub(super) fn active_backend_card<'a>(
         card = card.push(status);
     }
 
-    if missing.is_empty() && !model_loaded && idle_model.is_some() {
+    if missing.is_empty() && matches!(state.shown, Shown::Running { idle: true, .. }) {
         card = card.push(super::surface::idle_label());
     }
 
@@ -165,21 +167,19 @@ pub(super) fn device_dropdown<'a>(
     model: &str,
     app: &'a AppModel,
 ) -> Option<Element<'a, Message>> {
-    let devices: Vec<String> = app.device_offers.model(stage, source, model)?.to_vec();
+    let devices: Vec<String> = app.models.offers.model(stage, source, model)?.to_vec();
     if devices.is_empty() {
         return None;
     }
     let selected = app
-        .staged_picks
+        .models
+        .picks
         .device(stage)
         .and_then(|d| devices.iter().position(|x| x == d));
     let labels: Vec<String> = devices.iter().map(|d| super::fmt::accel_name(d)).collect();
     let pick = devices.clone();
     let dropdown = widget::dropdown(labels, selected, move |index| {
-        Message::Stage(StageMessage::StageDevice {
-            stage,
-            device: pick[index].clone(),
-        })
+        models(Input::PickDevice(stage, pick[index].clone()))
     })
     .placeholder(crate::fl!("select"));
     // The transcription card's is the one `just screenshots` opens.
@@ -190,33 +190,12 @@ pub(super) fn device_dropdown<'a>(
     })
 }
 
-/// The accelerator `stage`'s model from `source` runs on, when it runs.
-fn running_accel(app: &AppModel, stage: Stage, source: &str) -> Option<String> {
-    match stage.block() {
-        None => (app.current_source == source && !app.current_model.is_empty())
-            .then(|| app.current_device.clone()),
-        Some(block) => {
-            let block = app.block(block);
-            if block.source.as_deref() != Some(source) {
-                return None;
-            }
-            block.running_device().map(ToString::to_string)
-        }
-    }
-}
-
 /// The line under a running model's Runs on row, when it is not running on
-/// the framework picked. Not while a switch is under way: the model is still on
-/// the old framework then because it has not moved yet, and the card's
-/// progress already says so.
-pub(super) fn device_note(app: &AppModel, stage: Stage, source: &str) -> Option<String> {
-    if !app.is_model_ready(stage) || app.build_downloading(stage) {
-        return None;
-    }
-    super::fmt::running_note(
-        app.staged_picks.device(stage),
-        &running_accel(app, stage, source)?,
-    )
+/// the framework picked. Not while a switch or a build is under way: the model
+/// is still on the old framework then because it has not moved yet, and the
+/// card's progress already says so.
+pub(super) fn device_note(card: &Card<'_>) -> Option<String> {
+    card.fallback.as_deref().map(super::fmt::running_note)
 }
 
 /// Summary shown in the active-backend card when `model` is loaded for this
@@ -226,7 +205,7 @@ pub(super) fn device_note(app: &AppModel, stage: Stage, source: &str) -> Option<
 /// selected.
 pub(super) fn loaded_model_summary<'a>(
     backend: &'a BackendInfo,
-    model: &'a str,
+    model: &str,
     app: &'a AppModel,
 ) -> Element<'a, Message> {
     let running = text::body(model.to_string()).class(cosmic::theme::Text::Accent);
@@ -237,7 +216,7 @@ pub(super) fn loaded_model_summary<'a>(
     // now reloads the model onto the new device rather than staging a choice
     // for a Load that is not coming.
     if let Some(devices) = device_dropdown(Stage::Transcription, &backend.source, model, app) {
-        let note = device_note(app, Stage::Transcription, &backend.source);
+        let note = device_note(&page::card(&app.models, Stage::Transcription));
         rows.push((crate::fl!("runs-on"), note, devices));
     }
     // Per-model language, for a multilingual model.
@@ -249,9 +228,7 @@ pub(super) fn loaded_model_summary<'a>(
     buttons.push(
         button::standard(crate::fl!("unload"))
             .leading_icon(icons::phosphor_handle(icons::STOP))
-            .on_press(Message::Stage(StageMessage::Unload {
-                stage: Stage::Transcription,
-            }))
+            .on_press(models(Input::Unload(Stage::Transcription)))
             .into(),
     );
     super::surface::control_rows(rows, buttons)
@@ -265,24 +242,9 @@ pub(super) fn loaded_model_summary<'a>(
 /// The memory estimate, not the download: a manifest names each file's URL
 /// and checksum but not its size, and the estimate is what decides whether
 /// the model runs here at all.
-pub(super) fn memory_note(backend: &BackendInfo, model: &str) -> Option<String> {
-    let bytes = backend
-        .models
-        .iter()
-        .find(|m| m.name == model)?
-        .estimated_vram_bytes;
-    (bytes > 0).then(|| crate::fl!("model-needs-memory", size = super::fmt::fmt_size(bytes)))
-}
-
-/// The core's [`staged_vram_shortfall`](super_voice_app_core::rules::memory::staged_vram_shortfall),
-/// read from the app.
-pub(super) fn staged_vram_shortfall(backend: &BackendInfo, app: &AppModel) -> Option<(u64, u64)> {
-    super_voice_app_core::rules::memory::staged_vram_shortfall(
-        app.model_operations.get(Stage::Transcription),
-        &app.staged_picks,
-        backend,
-        &app.gpu_info,
-    )
+pub(super) fn memory_note(card: &Card<'_>) -> Option<String> {
+    card.memory
+        .map(|bytes| crate::fl!("model-needs-memory", size = super::fmt::fmt_size(bytes)))
 }
 
 /// Model + device pickers and the Load button, shown in the active-backend
@@ -296,33 +258,32 @@ pub(super) fn staged_vram_shortfall(backend: &BackendInfo, app: &AppModel) -> Op
 pub(super) fn staged_model_picker<'a>(
     backend: &'a BackendInfo,
     app: &'a AppModel,
+    state: &Card<'_>,
 ) -> Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
 
-    // Model dropdown — staged picks live in `app.models_page.staged_model`, not
-    // loaded. Scoped to this stage's role: a post-processor here would be a
-    // pick the daemon then refuses.
-    let model_names: Vec<String> = app
-        .stage_catalog
-        .models(Stage::Transcription, &backend.source);
-    let staged_model = app
-        .models_page
-        .active_backend
+    // Model dropdown, scoped to this stage's role: a post-processor here would
+    // be a pick the daemon then refuses.
+    let model_names = state.models.clone();
+    let staged_model = match &state.shown {
+        Shown::Staging { model } => model.clone(),
+        Shown::Running { .. } | Shown::Empty => None,
+    };
+    let model_index = staged_model
         .as_deref()
-        .and_then(|source| app.staged_picks.model(Stage::Transcription, source));
-    let model_index = staged_model.and_then(|m| model_names.iter().position(|n| n == m));
+        .and_then(|m| model_names.iter().position(|n| n == m));
     let model_names_pick = model_names.clone();
     let model_dropdown = widget::dropdown(model_names, model_index, move |index| {
-        Message::Stage(StageMessage::StageModel {
-            stage: Stage::Transcription,
-            model: model_names_pick[index].clone(),
-        })
+        models(Input::PickModel(
+            Stage::Transcription,
+            model_names_pick[index].clone(),
+        ))
     })
     .placeholder(crate::fl!("select-model"));
 
     let mut rows: Vec<super::surface::ControlRow<'a>> = vec![(
         crate::fl!("model"),
-        staged_model.and_then(|m| memory_note(backend, m)),
+        memory_note(state),
         scene::tag(Target::ModelMenu, model_dropdown),
     )];
     let mut buttons = Vec::new();
@@ -331,14 +292,8 @@ pub(super) fn staged_model_picker<'a>(
     // model can run on here, and only when that answer offers something. The
     // answer is already the model's `supported_devices` narrowed to what this
     // install and host can do, so an online model (offering nothing) and a GPU
-    // the install cannot use both fall out of the same check. No answer yet
-    // renders no picker, which is also why the advisory below asks for an
-    // answered-but-empty list rather than an absent one.
-    let staged_devices: Option<&[String]> = staged_model.and_then(|m| {
-        app.device_offers
-            .model(Stage::Transcription, &backend.source, m)
-    });
-    if let Some(model) = staged_model
+    // the install cannot use both fall out of the same check.
+    if let Some(model) = staged_model.as_deref()
         && let Some(devices) = device_dropdown(Stage::Transcription, &backend.source, model, app)
     {
         rows.push((crate::fl!("runs-on"), None, devices));
@@ -346,33 +301,20 @@ pub(super) fn staged_model_picker<'a>(
 
     // Per-model language, after the device — shown only for a staged
     // multilingual model.
-    if let Some(model) = staged_model
+    if let Some(model) = staged_model.as_deref()
         && let Some(lang_button) = language_button(Stage::Transcription, backend, model, app)
     {
         rows.push((crate::fl!("language"), None, lang_button));
     }
 
-    // Load button — enabled only when a model is staged AND (the staged
-    // device is set OR the staged model is the online sentinel, which needs
-    // no device at all). The daemon's list is empty for that case too, but
-    // also for a local model this install cannot run on any device (e.g. a
-    // GPU-only model with only a CPU asset installed) — the same defect class
-    // as the reported bug, just with no accelerator to fall back to.
-    // `model_is_online` is what tells the two apart; conflating them would
-    // enable Load with nothing to stage it onto, and `set_model` would then
-    // be sent straight onto whatever device happens to already be current.
-    let staged_online = staged_model.is_some_and(|m| model_is_online(backend, m));
-    let no_viable_device = !staged_online && staged_devices.is_some_and(<[String]>::is_empty);
-    let staged_ok = staged_model.is_some()
-        && (app.staged_picks.device(Stage::Transcription).is_some() || staged_online);
+    // Load — enabled once a model is staged on a device (or is online, and
+    // needs none), while the stage is free.
     let load_button = button::suggested(crate::fl!("load-model"))
         .leading_icon(icons::phosphor_handle(icons::PLAY))
         .on_press_maybe(
-            (staged_ok && app.is_model_ready(Stage::Transcription)).then_some(Message::Stage(
-                StageMessage::Load {
-                    stage: Stage::Transcription,
-                },
-            )),
+            state
+                .can_load
+                .then_some(models(Input::Load(Stage::Transcription))),
         );
     buttons.push(load_button.into());
     let picker_row = super::surface::control_rows(rows, buttons);
@@ -381,16 +323,15 @@ pub(super) fn staged_model_picker<'a>(
     // staged model with no viable device (blocking — Load is already
     // disabled above), or a staged GPU load whose conservative VRAM estimate
     // exceeds the GPU's available memory (non-blocking). The two can't both
-    // fire — the VRAM check requires a staged `gpu` device, which
-    // `no_viable_device` rules out.
-    if no_viable_device {
+    // fire.
+    if state.no_device {
         column![
             picker_row,
-            no_viable_device_warning(staged_model.unwrap_or_default())
+            no_viable_device_warning(staged_model.as_deref().unwrap_or_default())
         ]
         .spacing(spacing.space_xs)
         .into()
-    } else if let Some((needed, available)) = staged_vram_shortfall(backend, app) {
+    } else if let Some((needed, available)) = state.vram_shortfall {
         column![picker_row, vram_warning(needed, available)]
             .spacing(spacing.space_xs)
             .into()
@@ -408,7 +349,7 @@ pub(super) fn operation_status(app: &AppModel, stage: Stage) -> Option<Element<'
     if let Some(build) = card_build_progress(app, stage) {
         return Some(build);
     }
-    match app.model_operations.get(stage) {
+    match app.models.operations.get(stage) {
         ModelOperationState::Ready => None,
         ModelOperationState::Provisioning {
             target_model,
@@ -416,18 +357,35 @@ pub(super) fn operation_status(app: &AppModel, stage: Stage) -> Option<Element<'
         } => Some(card_provisioning_progress(stage, target_model, progress)),
         ModelOperationState::Loading {
             target_model,
-            status_message,
+            cause,
             load,
         } => Some(match load {
             Some(load) => card_load_progress(target_model, load),
             None => text::body(crate::fl!(
                 "loading-model-status",
                 target_model = target_model.as_str(),
-                status_message = status_message.as_str()
+                status_message = load_cause(cause)
             ))
             .into(),
         }),
-        ModelOperationState::Error { message } => Some(card_error(message)),
+        // A failure the daemon gave no reason for.
+        ModelOperationState::Error { message } if message.is_empty() => {
+            Some(card_error(crate::fl!("model-switch-failed")))
+        }
+        ModelOperationState::Error { message } => Some(card_error(message.clone())),
+    }
+}
+
+/// What a load says while the backend says nothing of its own.
+fn load_cause(cause: &LoadCause) -> String {
+    match cause {
+        LoadCause::Switch => crate::fl!("progress-starting-switch"),
+        LoadCause::Reload => crate::fl!("progress-reloading-model"),
+        LoadCause::Move { device } => crate::fl!(
+            "progress-loading-on",
+            device = super::fmt::accel_name(device)
+        ),
+        LoadCause::Reported => crate::fl!("progress-loading-model"),
     }
 }
 
@@ -493,7 +451,7 @@ pub(super) fn card_provisioning_progress<'a>(
             widget::button::destructive(crate::fl!("cancel"))
                 // The card's own stage, so the cancel reaches the download
                 // this card is showing.
-                .on_press(Message::Download(DownloadMessage::CancelDownload(stage))),
+                .on_press(models(Input::CancelDownload(stage))),
         ]
         .align_y(Alignment::Center),
     ]
@@ -508,11 +466,7 @@ pub(super) fn card_provisioning_progress<'a>(
 #[allow(clippy::cast_precision_loss)]
 fn card_build_progress(app: &AppModel, stage: Stage) -> Option<Element<'_, Message>> {
     use super_voice_shared::registry::events::InstallPhase;
-    let pending = app
-        .models_page
-        .pending_build
-        .as_ref()
-        .filter(|p| p.downloading && p.stage == stage)?;
+    let pending = app.models.build_downloading(stage)?;
     let name = super::fmt::accel_name(&pending.framework);
     let status = app.registry.installs.get(&pending.source);
     let (phase, done, total) = status.map_or((InstallPhase::Resolving, 0, None), |s| {
@@ -615,10 +569,10 @@ fn card_load_progress<'a>(target_model: &str, load: &LoadProgress) -> Element<'a
 /// clears the moment the user fixes the underlying issue (or picks another
 /// model from the dropdown above). The Configure button up in the card header
 /// is the user-actionable path.
-pub(super) fn card_error(message: &str) -> Element<'_, Message> {
+pub(super) fn card_error<'a>(message: String) -> Element<'a, Message> {
     row![
         icons::phosphor_destructive(icons::WARNING, 18.0),
-        text::body(message.to_string()),
+        text::body(message),
     ]
     .spacing(cosmic::theme::spacing().space_xs)
     .align_y(Alignment::Center)

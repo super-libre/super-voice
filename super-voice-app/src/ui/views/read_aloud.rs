@@ -9,6 +9,7 @@ use super_voice_shared::models::read_method::ReadMethod;
 
 use crate::state::SpeakingStatus;
 use crate::ui::messages::{Message, ReadMethodMessage};
+use super_voice_app_core::pages::read_aloud as page;
 
 /// Read aloud section: where the shortcut reads from.
 pub(super) fn settings_section(read_method: ReadMethod) -> Element<'static, Message> {
@@ -24,7 +25,7 @@ pub(super) fn settings_section(read_method: ReadMethod) -> Element<'static, Mess
             settings::item::builder(crate::fl!("read-from"))
                 .description(crate::fl!("read-from-description"))
                 .control(widget::dropdown(names, selected, move |index| {
-                    Message::ReadMethod(ReadMethodMessage::Changed(methods[index]))
+                    Message::ReadMethod(ReadMethodMessage::Page(page::Input::Pick(methods[index])))
                 })),
         )
         .into()
@@ -38,8 +39,9 @@ pub(super) fn test_row(
     speaking_status: &SpeakingStatus,
 ) -> Element<'static, Message> {
     let idle = matches!(speaking_status, SpeakingStatus::Idle);
-    let action = button::suggested(crate::fl!("read"))
-        .on_press_maybe(idle.then_some(Message::ReadMethod(ReadMethodMessage::Test)));
+    let action = button::suggested(crate::fl!("read")).on_press_maybe(idle.then_some(
+        Message::ReadMethod(ReadMethodMessage::Page(page::Input::Test)),
+    ));
     let hint = match read_method {
         ReadMethod::Selection => crate::fl!("read-test-selection"),
         ReadMethod::Clipboard => crate::fl!("read-test-clipboard"),

@@ -3,14 +3,9 @@
 //! Shared `Task` builders re-used across handlers, so the same daemon call +
 //! result-to-`Message` mapping isn't re-rolled at each call site.
 
-use crate::daemon::client::{
-    get_current_audio_theme, get_preview_typing, get_read_method, get_recording_stop_mode,
-    get_volume, get_write_method, list_backends, ping_daemon,
-};
-use crate::state::AudioTheme;
-use crate::ui::messages::{BackendMessage, DaemonMessage, Message, ReadMethodMessage};
+use crate::daemon::client::{list_backends, ping_daemon};
+use crate::ui::messages::{BackendMessage, DaemonMessage, Message};
 use cosmic::prelude::*;
-use log::warn;
 use super_voice_app_core::pages::behavior;
 
 use super::behavior::page_action as behavior_action;
@@ -55,7 +50,9 @@ pub(in crate::core::app) fn reload_backends() -> Task<cosmic::Action<Message>> {
         // Which of them can fill each stage is the daemon's answer, not a
         // filter of the catalog above — and it changes for exactly the same
         // reasons, so it is re-asked here rather than anywhere else.
-        crate::core::app::AppModel::load_stage_backends(),
+        Task::done(super::models::models_action(
+            super_voice_app_core::pages::models::Input::ReloadBackends,
+        )),
     ])
 }
 
@@ -75,7 +72,6 @@ pub(in crate::core::app) fn build_load_settings_tasks() -> Task<cosmic::Action<M
     Task::batch([
         load_audio_theme(),
         load_volume(),
-        Task::batch(crate::state::BlockStage::ALL.map(super::stage::load_block)),
         // Contexts are global and the daemon owns them, so a restart under an
         // open Contexts page would otherwise leave the list showing whatever
         // the previous daemon had. The `settings_changed` topic covers a live
@@ -102,84 +98,35 @@ pub(in crate::core::app) fn build_load_settings_tasks() -> Task<cosmic::Action<M
 
 /// Fetch the sound theme.
 pub(in crate::core::app) fn load_audio_theme() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_current_audio_theme(), |result| match result {
-        Ok(theme) => behavior_action(behavior::Input::ThemeLoaded(theme)),
-        Err(e) => {
-            warn!("Failed to load audio theme: {e}");
-            behavior_action(behavior::Input::ThemeLoaded(AudioTheme::default()))
-        }
-    })
+    Task::perform(behavior::run_load_theme(), behavior_action)
 }
 
 /// Fetch the sound volume.
 pub(in crate::core::app) fn load_volume() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_volume(), |result| match result {
-        Ok(vol) => behavior_action(behavior::Input::VolumeLoaded(vol)),
-        Err(e) => {
-            warn!("Failed to load volume: {e}");
-            behavior_action(behavior::Input::VolumeLoaded(100))
-        }
-    })
+    Task::perform(behavior::run_load_volume(), behavior_action)
 }
 
 /// Fetch whether previews are typed.
 pub(in crate::core::app) fn load_preview_typing() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_preview_typing(), |result| match result {
-        Ok(enabled) => behavior_action(behavior::Input::PreviewTypingLoaded(enabled)),
-        Err(e) => {
-            log::warn!("Failed to load preview typing setting: {e}");
-            behavior_action(behavior::Input::PreviewTypingLoaded(false))
-        }
-    })
+    Task::perform(behavior::run_load_preview_typing(), behavior_action)
 }
 
 /// Fetch what stops a recording.
 pub(in crate::core::app) fn load_recording_stop_mode() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_recording_stop_mode(), |result| {
-        use super_voice_shared::models::recording_stop_mode::RecordingStopMode;
-        match result {
-            Ok(mode_str) => {
-                let mode = mode_str.parse::<RecordingStopMode>().unwrap_or_default();
-                behavior_action(behavior::Input::StopModeLoaded(mode))
-            }
-            Err(e) => {
-                log::warn!("Failed to load recording stop mode: {e}");
-                behavior_action(behavior::Input::StopModeLoaded(RecordingStopMode::default()))
-            }
-        }
-    })
+    Task::perform(behavior::run_load_stop_mode(), behavior_action)
 }
 
 /// Fetch where reading aloud takes its text from.
 pub(in crate::core::app) fn load_read_method() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_read_method(), |result| {
-        use super_voice_shared::models::read_method::ReadMethod;
-        let method = match result {
-            Ok(method) => method.parse::<ReadMethod>().unwrap_or_default(),
-            Err(e) => {
-                log::warn!("Failed to load the read method: {e}");
-                ReadMethod::default()
-            }
-        };
-        cosmic::Action::App(Message::ReadMethod(ReadMethodMessage::Loaded(method)))
-    })
+    Task::perform(
+        super_voice_app_core::pages::read_aloud::run_load(),
+        super::settings::page_action,
+    )
 }
 
 /// Fetch how transcripts are typed.
 pub(in crate::core::app) fn load_write_method() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_write_method(), |result| {
-        use super_voice_shared::models::write_method::WriteMethod;
-        match result {
-            Ok(method_str) => {
-                let method = method_str.parse::<WriteMethod>().unwrap_or_default();
-                behavior_action(behavior::Input::WriteMethodLoaded(method))
-            }
-            Err(e) => {
-                log::warn!("Failed to load write method: {e}");
-                behavior_action(behavior::Input::WriteMethodLoaded(WriteMethod::default()))
-            }
-        }
-    })
+    Task::perform(behavior::run_load_write_method(), behavior_action)
 }
 
 /// Re-fetch the self-update status. Used by connection-time settings loads

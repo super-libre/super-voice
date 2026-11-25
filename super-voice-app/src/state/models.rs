@@ -3,7 +3,6 @@
 //! Data models and types for the Super Voice application.
 
 // Re-export AudioTheme from shared crate
-pub use super_voice_shared::models::theme::AudioTheme;
 
 /// Daemon connection status: the core's, which the Connection page's logic
 /// keeps.

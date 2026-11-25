@@ -6,8 +6,7 @@ mod registry;
 pub(in crate::core::app) use install::library_action;
 
 use crate::core::app::AppModel;
-use crate::daemon::client::get_gpu_info;
-use crate::state::{ContextPage, DaemonStatus, ModelsTab};
+use crate::state::{ContextPage, ModelsTab};
 use crate::ui::messages::{Message, ModelsPageMessage};
 use cosmic::prelude::*;
 use super_voice_app_core::pages::configure::Input;
@@ -29,8 +28,6 @@ impl AppModel {
 
             ModelsPageMessage::OpenBackendConfig(_)
             | ModelsPageMessage::CloseBackendConfig
-            | ModelsPageMessage::RefreshGpuInfo
-            | ModelsPageMessage::GpuInfoLoaded(_)
             | ModelsPageMessage::ToggleInstalledMenu(_)
             | ModelsPageMessage::CloseInstalledMenu => self.handle_models_backend_config(message),
 
@@ -89,27 +86,6 @@ impl AppModel {
             ModelsPageMessage::CloseBackendConfig => {
                 self.core.window.show_context = false;
                 self.configure_input(Input::Close)
-            }
-
-            ModelsPageMessage::RefreshGpuInfo => {
-                // Periodic poll — only query when connected so the disconnected
-                // state doesn't spam failing requests.
-                if self.connection.status == DaemonStatus::Connected {
-                    Task::perform(get_gpu_info(), |result| {
-                        cosmic::Action::App(Message::ModelsPage(ModelsPageMessage::GpuInfoLoaded(
-                            result.unwrap_or_default(),
-                        )))
-                    })
-                } else {
-                    Task::none()
-                }
-            }
-
-            ModelsPageMessage::GpuInfoLoaded(gpus) => {
-                // Every GPU poll lands here; see `get_gpu_info`.
-                log::trace!("GpuInfoLoaded: storing {} GPU(s) in app state", gpus.len());
-                self.gpu_info = gpus;
-                Task::none()
             }
 
             ModelsPageMessage::ToggleInstalledMenu(source) => {

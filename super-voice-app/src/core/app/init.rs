@@ -2,11 +2,11 @@
 
 use crate::state::ContextPage;
 use crate::ui::icons;
-use crate::ui::messages::{Message, ModelMessage};
+use crate::ui::messages::Message;
 use cosmic::prelude::*;
 use cosmic::widget::nav_bar;
 
-use super::{AppModel, DeviceState};
+use super::AppModel;
 
 /// Builds the navigation bar: what both features share, then a section per
 /// feature, then the app's own settings, split by dividers. Each feature's
@@ -87,7 +87,11 @@ fn initial_load_tasks(
             // Small delay to let daemon connection establish
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         },
-        |()| cosmic::Action::App(Message::Model(ModelMessage::LoadInitialData)),
+        |()| {
+            cosmic::Action::App(Message::Models(crate::ui::messages::ModelsMessage::Page(
+                super_voice_app_core::pages::models::Input::Reload,
+            )))
+        },
     );
 
     Task::batch([title_command, load_themes, initial_ping, load_initial_data])
@@ -116,35 +120,18 @@ impl AppModel {
             udp_restart_counter: 0,
             last_udp_data: std::time::Instant::now(),
 
-            // Initialize model state
-            current_model: String::new(),
-            current_source: String::new(),
-            current_model_epoch: 0,
-            transcription_idle: None,
-            model_operations: crate::state::model_operations::ModelOperations::opening(crate::fl!(
-                "loading-initial-model-state"
-            )),
-
-            // Initialize device state
-            current_device: String::new(), // Empty until loaded from daemon
-            gpu_info: Vec::new(),
-            device_state: DeviceState::Ready,
+            models: super_voice_app_core::pages::models::ModelsState::default(),
             last_event_timestamp: None,
 
             // Initialize preview typing state (disabled by default as beta feature)
             // Replaced by the daemon's own state as soon as the settings load
             // completes; the default is the daemon's default too (off).
-            post_processor: crate::daemon::client::StageState::default(),
-            synthesis: crate::daemon::client::StageState::default(),
             voice: crate::state::VoiceState::default(),
             speech_to_text_tab: crate::state::Page::Notes,
             text_to_speech_tab: crate::state::Page::Clips,
             window_width: 0.0,
             speech: crate::state::SpeechState::default(),
             voices: crate::state::voices::VoicesState::default(),
-            staged_picks: crate::state::staged_picks::StagedPicks::default(),
-            device_offers: crate::state::device_offers::DeviceOffers::default(),
-            stage_catalog: crate::state::stage_catalog::StageCatalog::default(),
             shortcuts: crate::state::shortcuts::ShortcutsState::default(),
             assistants: crate::state::assistants::AssistantsState::default(),
             read_method: super_voice_shared::models::read_method::ReadMethod::default(),

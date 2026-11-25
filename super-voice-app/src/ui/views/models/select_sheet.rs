@@ -10,7 +10,7 @@ use crate::daemon::backends::BackendInfo;
 use crate::state::ContextPage;
 use crate::state::Stage;
 use crate::ui::icons;
-use crate::ui::messages::{Message, ShellMessage, StageMessage};
+use crate::ui::messages::{Message, ShellMessage};
 
 use super::active::backend_glyph_tile;
 use super::surface::muted_text_color;
@@ -40,7 +40,7 @@ pub(super) fn no_backend_empty_state<'a>(narrow: bool) -> Element<'a, Message> {
 pub fn select_backend_sheet(app: &AppModel) -> Element<'_, Message> {
     let spacing = cosmic::theme::spacing();
     let muted = muted_text_color();
-    let active = app.models_page.active_backend.as_deref();
+    let active = app.models.view(Stage::Transcription).source.as_deref();
 
     // What the daemon says can fill stage 1, not a filter of the catalog: a
     // backend serving nothing but post-processors would be selected, then show
@@ -48,7 +48,7 @@ pub fn select_backend_sheet(app: &AppModel) -> Element<'_, Message> {
     //
     // `None` is the answer still in flight; an empty answer is the daemon
     // saying nothing installed transcribes. The two read differently below.
-    let answered = app.stage_catalog.backends(Stage::Transcription);
+    let answered = app.models.catalog.backends(Stage::Transcription);
     let eligible: &[BackendInfo] = answered.unwrap_or_default();
     let mut col = widget::column::with_capacity(eligible.len() + 1)
         .spacing(spacing.space_xs)
@@ -122,10 +122,12 @@ pub(super) fn picker_row(
     } else {
         button::suggested(crate::fl!("select"))
             .leading_icon(icons::phosphor_handle(icons::PLAY))
-            .on_press(Message::Stage(StageMessage::SelectBackend {
-                stage,
-                source: backend.source.clone(),
-            }))
+            .on_press(super::active::models(
+                super_voice_app_core::pages::models::Input::PickBackend(
+                    stage,
+                    Some(backend.source.clone()),
+                ),
+            ))
             .into()
     };
 

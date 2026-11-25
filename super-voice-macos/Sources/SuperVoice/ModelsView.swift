@@ -374,7 +374,7 @@ struct Chip: View {
 }
 
 /// The model rows: the model, where it runs, and the buttons. A running model
-/// shows its name with Unload (and Reload on the later stages); a staged one
+/// shows its name with Unload (and Reload on synthesis); a staged one
 /// a menu of the backend's models with Load.
 struct CardModelRows: View {
     @ObservedObject var models: ModelsModel

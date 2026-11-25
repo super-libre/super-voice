@@ -60,7 +60,6 @@
     default = []
 
 [dev-dependencies]
-    mockito = "1.7.2"
     # Test directories that remove themselves.
     tempfile = "3.27.0"
 

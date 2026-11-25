@@ -24,7 +24,7 @@ pub fn uninstall_dialog(app: &AppModel) -> Option<Element<'_, Message>> {
         .map_or(source, |b| b.name.as_str());
     let in_use = Stage::ALL
         .iter()
-        .any(|stage| app.selected_backend(*stage).as_deref() == Some(source));
+        .any(|stage| app.models.view(*stage).source.as_deref() == Some(source));
     let mut body = crate::fl!("uninstall-backend-body");
     if in_use {
         body.push(' ');

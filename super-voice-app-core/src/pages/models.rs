@@ -13,11 +13,15 @@
 //! that started it answers once it is done. One change at a time per stage:
 //! while one runs, the card waits.
 //!
-//! The settings app still runs its cards on its own handlers, which share this
-//! page's rules (`rules::load`, `rules::memory`, the picks and device offers);
-//! this page is what the macOS app's cards run on.
+//! A framework picked whose build isn't installed asks first ([`Effect::OfferBuild`]),
+//! then installs the build through the Library's install, then moves the model
+//! onto it. A download or load the daemon stops reporting on fails after
+//! [`STALL_TIMEOUT`], on the app's [`Input::Tick`].
+//!
+//! Both apps' cards run on this page.
 
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use super_voice_shared::models::protocol::{DownloadProgress, GpuInfo};
 
@@ -25,8 +29,8 @@ use crate::daemon::backends::BackendInfo;
 use crate::daemon::client::{self, ModelState, StageState};
 use crate::rules::load::{StagedLoad, staged_load_device};
 use crate::state::Stage;
-use crate::state::device_offers::{DeviceOffers, staged_device};
-use crate::state::model_operations::{ModelOperationState, ModelOperations, Progressed};
+use crate::state::device_offers::{DeviceOffers, build_installed, staged_device};
+use crate::state::model_operations::{LoadCause, ModelOperationState, ModelOperations, Progressed};
 use crate::state::stage_catalog::StageCatalog;
 use crate::state::staged_picks::StagedPicks;
 
@@ -36,6 +40,32 @@ pub const STAGES: [Stage; 3] = [
     Stage::PostProcessing,
     Stage::Synthesis,
 ];
+
+/// How long a download or load may go without a word from the daemon before
+/// its card says it stalled. Generous, so a load onto the device that reports
+/// nothing for a while, or a slow download, isn't cut off.
+pub const STALL_TIMEOUT: Duration = Duration::from_mins(5);
+
+mod heard;
+pub use heard::heard;
+
+/// A framework picked for a stage's model whose backend doesn't have that
+/// build installed.
+///
+/// Picking one asks first, every time, because it is a download. Once the
+/// user agrees the build is installed in place of the one there, keeping the
+/// downloaded models, and the model moves onto the framework when the install
+/// is done.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingBuild {
+    pub stage: Stage,
+    /// The backend whose build this is.
+    pub source: String,
+    /// The framework picked, as the daemon names it (`cuda`).
+    pub framework: String,
+    /// The user agreed and the build is downloading. Until then the app asks.
+    pub downloading: bool,
+}
 
 /// The Models page's cards.
 #[derive(Debug, Default)]
@@ -56,15 +86,68 @@ pub struct ModelsState {
     pub gpus: Vec<GpuInfo>,
     /// The stages with a request in flight that isn't a load.
     pub busy: HashSet<Stage>,
+    /// A framework picked whose build isn't installed: being asked about, or
+    /// downloading.
+    pub pending_build: Option<PendingBuild>,
+}
+
+impl ModelsState {
+    /// `stage` as the daemon last reported it; empty before it has.
+    #[must_use]
+    pub fn view(&self, stage: Stage) -> &StageState {
+        static EMPTY: std::sync::OnceLock<StageState> = std::sync::OnceLock::new();
+        self.views
+            .get(&stage)
+            .unwrap_or_else(|| EMPTY.get_or_init(StageState::default))
+    }
+
+    /// The build downloading for `stage`, once the user agreed to it.
+    #[must_use]
+    pub fn build_downloading(&self, stage: Stage) -> Option<&PendingBuild> {
+        self.pending_build
+            .as_ref()
+            .filter(|p| p.downloading && p.stage == stage)
+    }
+
+    /// The build the app asks about, until the user answers.
+    #[must_use]
+    pub fn build_question(&self) -> Option<&PendingBuild> {
+        self.pending_build.as_ref().filter(|p| !p.downloading)
+    }
 }
 
 /// What happened.
 #[derive(Debug, Clone)]
 pub enum Input {
-    /// Read every stage: the page was opened, or the daemon is back.
+    /// Read every stage: the page was opened, or the daemon's events are
+    /// live again.
     Reload,
+    /// The daemon is back after it was gone: what was under way went with the
+    /// session it belonged to. Read every stage.
+    Reconnected,
+    /// Read which backends can fill each stage again: one was installed,
+    /// updated or removed, or its settings changed.
+    ReloadBackends,
+    /// Read the machine's GPUs again, for their memory in use.
+    RefreshGpus,
     /// Read `stage` again: the daemon said it changed.
     Changed(Stage),
+    /// The daemon said `stage` settled: its model came up (`loaded`), or left
+    /// memory. A load it reported is over; the stage is read again.
+    Ready {
+        stage: Stage,
+        loaded: bool,
+    },
+    /// The daemon said it started loading `model` in `stage`, whoever asked.
+    LoadStarted {
+        stage: Stage,
+        model: String,
+    },
+    /// The daemon couldn't move `stage`'s model to another device; it is back
+    /// on the one it had.
+    DeviceSwitchFailed(Stage, String),
+    /// Time passed: a download or load the daemon stopped reporting on fails.
+    Tick,
     ViewLoaded(Stage, Result<StageState, String>),
     BackendsLoaded(Stage, Result<Vec<BackendInfo>, String>),
     SecretsLoaded {
@@ -72,6 +155,12 @@ pub enum Input {
         items: Vec<(String, bool)>,
     },
     GpusLoaded(Vec<GpuInfo>),
+    /// What a stage's backend runs its models on, or why not.
+    BackendDevicesLoaded {
+        stage: Stage,
+        source: String,
+        result: Result<Vec<String>, String>,
+    },
     /// What the daemon offers a model on, and the device it has; or why not.
     DevicesLoaded {
         stage: Stage,
@@ -87,8 +176,23 @@ pub enum Input {
     PickBackend(Stage, Option<String>),
     /// A model was picked: staged for Load.
     PickModel(Stage, String),
-    /// A device was picked: staged, or the running model moved onto it.
+    /// A device was picked: staged, or the running model moved onto it. One
+    /// whose build isn't installed asks first ([`Effect::OfferBuild`]).
     PickDevice(Stage, String),
+    /// The user agreed to download the build asked about.
+    ConfirmBuild,
+    /// The user declined it. Nothing changes.
+    CancelBuild,
+    /// `source` finished installing: a build the user asked for moves the
+    /// model onto its framework.
+    BuildInstalled {
+        source: String,
+    },
+    /// `source` failed to install.
+    BuildFailed {
+        source: String,
+        error: String,
+    },
     /// Load the staged model on the staged device.
     Load(Stage),
     /// Bring the running model back up on the device it has.
@@ -124,6 +228,11 @@ pub enum Effect {
     ReadSecrets(String),
     /// Read the machine's GPUs: [`run_gpus`].
     ReadGpus,
+    /// Read what a stage's backend runs its models on: [`run_backend_devices`].
+    ReadBackendDevices {
+        stage: Stage,
+        source: String,
+    },
     /// Read what a model can run on: [`run_devices`].
     ReadDevices {
         stage: Stage,
@@ -150,6 +259,32 @@ pub enum Effect {
     ReloadModel(Stage),
     Unload(Stage),
     CancelDownload(Stage),
+    /// The card shows `model` now: read its language, and for synthesis its
+    /// voice.
+    Focus {
+        stage: Stage,
+        source: String,
+        model: String,
+    },
+    /// The synthesis model changed, or came up or went: what the Voices tab
+    /// offers follows it.
+    VoicesChanged,
+    /// Ask whether to download `source`'s build for `framework`
+    /// ([`ModelsState::build_question`]). An app that has the build on disk
+    /// already may answer [`Input::ConfirmBuild`] at once: that isn't a
+    /// download.
+    OfferBuild {
+        stage: Stage,
+        source: String,
+        framework: String,
+    },
+    /// Install `source`'s build for `framework`, through the Library's
+    /// install: [`run_install_build`]. Its end comes back as
+    /// [`Input::BuildInstalled`] or [`Input::BuildFailed`].
+    InstallBuild {
+        source: String,
+        framework: String,
+    },
 }
 
 /// Something to tell the user. The app says it in its own words.
@@ -157,6 +292,17 @@ pub enum Effect {
 pub enum Notice {
     CouldNotRead(Stage, String),
     CouldNotChange(Stage, String),
+    /// The daemon couldn't move the stage's model to another device.
+    DeviceSwitchFailed(Stage, String),
+    /// The build the user asked for didn't install.
+    BuildFailed {
+        stage: Stage,
+        framework: String,
+        error: String,
+    },
+    /// The stage's download or load stopped reporting; its card shows it
+    /// failed.
+    Stalled(Stage),
 }
 
 /// What an input came to.
@@ -196,17 +342,123 @@ impl Outcome {
 /// Take in `input`, and say what to do.
 pub fn update(cards: &mut ModelsState, input: Input) -> Outcome {
     match input {
-        Input::Reload => {
-            let mut effects: Vec<Effect> = STAGES
-                .iter()
-                .flat_map(|stage| [Effect::ReadView(*stage), Effect::ReadBackends(*stage)])
-                .collect();
-            effects.push(Effect::ReadGpus);
-            Outcome::effects(effects)
+        Input::Reload => reload(),
+        Input::Reconnected => {
+            cards.operations.reset();
+            cards.busy.clear();
+            reload()
         }
+        Input::ReloadBackends => Outcome::effects(STAGES.map(Effect::ReadBackends).to_vec()),
+        Input::RefreshGpus => Outcome::effects(vec![Effect::ReadGpus]),
         Input::Changed(stage) => Outcome::effects(vec![Effect::ReadView(stage)]),
+        input @ (Input::Ready { .. }
+        | Input::LoadStarted { .. }
+        | Input::DeviceSwitchFailed(..)
+        | Input::Tick) => daemon_said(cards, input),
+        input @ (Input::BackendsLoaded(..)
+        | Input::SecretsLoaded { .. }
+        | Input::GpusLoaded(_)
+        | Input::BackendDevicesLoaded { .. }
+        | Input::DevicesLoaded { .. }) => answered(cards, input),
+        input @ (Input::ConfirmBuild
+        | Input::CancelBuild
+        | Input::BuildInstalled { .. }
+        | Input::BuildFailed { .. }) => build(cards, input),
         Input::ViewLoaded(stage, Ok(view)) => Outcome::effects(view_loaded(cards, stage, view)),
         Input::ViewLoaded(stage, Err(e)) => Outcome::notice(Notice::CouldNotRead(stage, e)),
+        Input::Progress(stage, progress) | Input::Polled(stage, Some(progress)) => {
+            progressed(cards, stage, &progress);
+            Outcome::default()
+        }
+        Input::Polled(stage, None) => {
+            // Nothing is downloading. A load reports its own end, so only a
+            // download the card still shows is over.
+            if matches!(
+                cards.operations.get(stage),
+                ModelOperationState::Provisioning { .. }
+            ) {
+                cards.operations.set_ready(stage);
+            }
+            Outcome::default()
+        }
+        Input::PickBackend(stage, source) => pick_backend(cards, stage, source),
+        Input::PickModel(stage, model) => pick_model(cards, stage, model),
+        Input::PickDevice(stage, device) => pick_framework(cards, stage, device),
+        Input::Load(stage) => load(cards, stage),
+        Input::ReloadModel(stage) => {
+            let Some(model) = running_model(cards, stage).map(ToString::to_string) else {
+                return Outcome::default();
+            };
+            if !ready(cards, stage) {
+                return Outcome::default();
+            }
+            cards
+                .operations
+                .start(stage, loading(model, LoadCause::Reload));
+            Outcome::start(Effect::ReloadModel(stage))
+        }
+        Input::Unload(stage) => {
+            if !cards.busy.insert(stage) {
+                return Outcome::default();
+            }
+            cards.operations.set_ready(stage);
+            Outcome::start(Effect::Unload(stage))
+        }
+        Input::CancelDownload(stage) => Outcome::start(Effect::CancelDownload(stage)),
+        Input::Done(stage, change, result) => done(cards, stage, change, result),
+    }
+}
+
+/// What the daemon said on its own: a load started or ended, a device move
+/// failed; or time passed.
+fn daemon_said(cards: &mut ModelsState, input: Input) -> Outcome {
+    match input {
+        Input::Ready { stage, loaded } => {
+            // An unload says nothing of a load the user started meanwhile.
+            if loaded && cards.operations.get(stage).is_pending() {
+                cards.operations.set_ready(stage);
+            }
+            Outcome::effects(vec![Effect::ReadView(stage)])
+        }
+        Input::LoadStarted { stage, model } => {
+            // A load this app started already says so, maybe with more.
+            if !cards.operations.get(stage).is_pending() {
+                cards
+                    .operations
+                    .start(stage, loading(model, LoadCause::Reported));
+            }
+            Outcome::default()
+        }
+        Input::DeviceSwitchFailed(stage, error) => {
+            show_failure(cards, stage, &error);
+            let mut effects = vec![Effect::ReadView(stage)];
+            effects.extend(restage_device(cards, stage));
+            Outcome {
+                effects,
+                clear_notice: false,
+                notice: Some(Notice::DeviceSwitchFailed(stage, error)),
+            }
+        }
+        Input::Tick => {
+            // Worded by the app: the notice says which stage stalled.
+            let stalled = cards.operations.fail_stalled(STALL_TIMEOUT, "");
+            for stage in &stalled {
+                log::warn!(
+                    "The {stage} stage's download or load stalled: no word from the daemon for {}s",
+                    STALL_TIMEOUT.as_secs()
+                );
+            }
+            stalled.first().map_or_else(Outcome::default, |stage| {
+                Outcome::notice(Notice::Stalled(*stage))
+            })
+        }
+        _ => Outcome::default(),
+    }
+}
+
+/// What the daemon answered to a read the page asked for.
+fn answered(cards: &mut ModelsState, input: Input) -> Outcome {
+    match input {
         Input::BackendsLoaded(stage, Ok(backends)) => {
             // Each backend's secrets decide whether its card can load at all.
             let effects = backends
@@ -231,6 +483,23 @@ pub fn update(cards: &mut ModelsState, input: Input) -> Outcome {
             cards.gpus = gpus;
             Outcome::default()
         }
+        Input::BackendDevicesLoaded {
+            stage,
+            source,
+            result,
+        } => {
+            match result {
+                // An answer about a backend the stage no longer has would evict
+                // the current one's.
+                Ok(devices) if cards.view(stage).source.as_deref() == Some(source.as_str()) => {
+                    cards.offers.record(stage, source, None, devices);
+                }
+                Ok(_) => {}
+                // The chips fall back to the catalog's own reading.
+                Err(e) => log::warn!("Could not read the devices for {source}: {e}"),
+            }
+            Outcome::default()
+        }
         Input::DevicesLoaded {
             stage,
             source,
@@ -240,45 +509,57 @@ pub fn update(cards: &mut ModelsState, input: Input) -> Outcome {
             devices_loaded(cards, stage, source, &model, result);
             Outcome::default()
         }
-        Input::Progress(stage, progress) | Input::Polled(stage, Some(progress)) => {
-            progressed(cards, stage, &progress);
-            Outcome::default()
-        }
-        Input::Polled(stage, None) => {
-            // Nothing is downloading. A load reports its own end, so only a
-            // download the card still shows is over.
-            if matches!(
-                cards.operations.get(stage),
-                ModelOperationState::Provisioning { .. }
-            ) {
-                cards.operations.set_ready(stage);
+        _ => Outcome::default(),
+    }
+}
+
+/// A framework's build: the user's answer, and the install's end.
+fn build(cards: &mut ModelsState, input: Input) -> Outcome {
+    match input {
+        Input::ConfirmBuild => confirm_build(cards),
+        Input::CancelBuild => {
+            if cards.build_question().is_some() {
+                cards.pending_build = None;
             }
             Outcome::default()
         }
-        Input::PickBackend(stage, source) => pick_backend(cards, stage, source),
-        Input::PickModel(stage, model) => pick_model(cards, stage, model),
-        Input::PickDevice(stage, device) => pick_device(cards, stage, device),
-        Input::Load(stage) => load(cards, stage),
-        Input::ReloadModel(stage) => {
-            let Some(model) = running_model(cards, stage).map(ToString::to_string) else {
+        Input::BuildInstalled { source } => build_installed_for(cards, &source),
+        Input::BuildFailed { source, error } => {
+            let Some(pending) = take_build(cards, &source) else {
                 return Outcome::default();
             };
-            if !ready(cards, stage) {
-                return Outcome::default();
-            }
-            cards.operations.start(stage, loading(model));
-            Outcome::start(Effect::ReloadModel(stage))
+            // The build that was there is untouched.
+            Outcome::notice(Notice::BuildFailed {
+                stage: pending.stage,
+                framework: pending.framework,
+                error,
+            })
         }
-        Input::Unload(stage) => {
-            if !cards.busy.insert(stage) {
-                return Outcome::default();
-            }
-            cards.operations.set_ready(stage);
-            Outcome::start(Effect::Unload(stage))
-        }
-        Input::CancelDownload(stage) => Outcome::start(Effect::CancelDownload(stage)),
-        Input::Done(stage, change, result) => done(cards, stage, change, result),
+        _ => Outcome::default(),
     }
+}
+
+/// Read every stage, what can fill it, and the GPUs.
+fn reload() -> Outcome {
+    let mut effects: Vec<Effect> = STAGES
+        .iter()
+        .flat_map(|stage| [Effect::ReadView(*stage), Effect::ReadBackends(*stage)])
+        .collect();
+    effects.push(Effect::ReadGpus);
+    Outcome::effects(effects)
+}
+
+/// Show a failure on `stage`'s card, where the user is looking: the
+/// daemon's words, or the app's when it words them itself. The user's home
+/// directory is collapsed back to `$HOME`.
+pub fn show_failure(cards: &mut ModelsState, stage: Stage, message: &str) {
+    let home = std::env::var("HOME").unwrap_or_default();
+    cards.operations.set(
+        stage,
+        ModelOperationState::Error {
+            message: crate::rules::load::sanitize_home(message, &home),
+        },
+    );
 }
 
 /// Whether `stage` is free to start a change.
@@ -293,16 +574,17 @@ fn ready(cards: &ModelsState, stage: Stage) -> bool {
 
 /// A load of `model` just starting: the card says so until the daemon reports
 /// how far it is.
-fn loading(model: String) -> ModelOperationState {
+fn loading(model: String, cause: LoadCause) -> ModelOperationState {
     ModelOperationState::Loading {
         target_model: model,
-        status_message: String::new(),
+        cause,
         load: None,
     }
 }
 
 /// The model `stage` has up, as the daemon reports it.
-fn running_model(cards: &ModelsState, stage: Stage) -> Option<&str> {
+#[must_use]
+pub fn running_model(cards: &ModelsState, stage: Stage) -> Option<&str> {
     let view = cards.views.get(&stage)?;
     if view.loaded {
         view.model.as_deref()
@@ -313,7 +595,8 @@ fn running_model(cards: &ModelsState, stage: Stage) -> Option<&str> {
 
 /// The model `stage` keeps out of memory until its next use, when nothing is
 /// under way on it.
-fn idle_model(cards: &ModelsState, stage: Stage) -> Option<&str> {
+#[must_use]
+pub fn idle_model(cards: &ModelsState, stage: Stage) -> Option<&str> {
     let view = cards.views.get(&stage)?;
     if view.state == ModelState::Idle && cards.operations.is_ready(stage) {
         view.model.as_deref()
@@ -327,6 +610,13 @@ fn idle_model(cards: &ModelsState, stage: Stage) -> Option<&str> {
 /// the model the daemon remembers and asks what it runs on.
 fn view_loaded(cards: &mut ModelsState, stage: Stage, view: StageState) -> Vec<Effect> {
     let mut effects = Vec::new();
+    let previous = cards.view(stage);
+    let selection_changed = previous.selection() != view.selection();
+    let source_changed = previous.source != view.source;
+    // What the Voices tab offers follows the synthesis model.
+    let voices_changed =
+        stage == Stage::Synthesis && (selection_changed || previous.loaded != view.loaded);
+    let mut focus = selection_changed;
     match view.selection() {
         Some((model, source)) => {
             let own = cards
@@ -338,6 +628,14 @@ fn view_loaded(cards: &mut ModelsState, stage: Stage, view: StageState) -> Vec<E
                     .picks
                     .stage_model(stage, source.clone(), model.clone());
                 effects.push(Effect::ReadDevices {
+                    stage,
+                    source: source.clone(),
+                    model: model.clone(),
+                });
+                focus = true;
+            }
+            if focus {
+                effects.push(Effect::Focus {
                     stage,
                     source,
                     model,
@@ -352,11 +650,48 @@ fn view_loaded(cards: &mut ModelsState, stage: Stage, view: StageState) -> Vec<E
             }
         }
     }
+    // The card's chips are the daemon's answer for the backend there now.
+    if let Some(source) = &view.source
+        && (source_changed || cards.offers.backend(stage, source).is_none())
+    {
+        effects.push(Effect::ReadBackendDevices {
+            stage,
+            source: source.clone(),
+        });
+    }
     if cards.operations.get(stage).is_pending() {
         effects.push(Effect::Poll(stage));
+    } else {
+        adopt_running_device(cards, stage, &view);
+    }
+    if voices_changed {
+        effects.push(Effect::VoicesChanged);
     }
     cards.views.insert(stage, view);
     effects
+}
+
+/// Show the device the running model is on as its pick, when another client
+/// moved it. Only for the model the card has picked, and only a device the
+/// picker offers.
+fn adopt_running_device(cards: &mut ModelsState, stage: Stage, view: &StageState) {
+    let (Some(model), Some(source), Some(device)) = (
+        view.model.as_deref().filter(|_| view.loaded),
+        view.source.as_deref(),
+        view.device.as_ref().map(|d| d.preference.as_str()),
+    ) else {
+        return;
+    };
+    if cards.picks.model(stage, source) != Some(model) {
+        return;
+    }
+    let offered = cards
+        .offers
+        .model(stage, source, model)
+        .is_some_and(|devices| devices.iter().any(|d| d == device));
+    if offered {
+        cards.picks.set_device(stage, Some(device.to_string()));
+    }
 }
 
 /// Take what the daemon offers `model` on. An answer about a backend or a model
@@ -391,10 +726,7 @@ fn devices_loaded(
 }
 
 fn progressed(cards: &mut ModelsState, stage: Stage, progress: &DownloadProgress) {
-    if cards
-        .operations
-        .apply_progress(stage, progress, String::new, String::new)
-        == Progressed::Finished
+    if cards.operations.apply_progress(stage, progress) == Progressed::Finished
         && progress.status == "cancelled"
     {
         cards.operations.set_ready(stage);
@@ -428,14 +760,89 @@ fn pick_model(cards: &mut ModelsState, stage: Stage, model: String) -> Outcome {
         cards.operations.set_ready(stage);
     }
     Outcome {
-        effects: vec![Effect::ReadDevices {
-            stage,
-            source,
-            model,
-        }],
+        effects: vec![
+            Effect::ReadDevices {
+                stage,
+                source: source.clone(),
+                model: model.clone(),
+            },
+            // So the card shows the model's language and voice before Load.
+            Effect::Focus {
+                stage,
+                source,
+                model,
+            },
+        ],
         clear_notice: true,
         notice: None,
     }
+}
+
+/// A framework picked in `stage`'s Runs on row. One whose build is installed
+/// is chosen at once; one whose build isn't asks first, since getting it
+/// means installing it over the one there.
+fn pick_framework(cards: &mut ModelsState, stage: Stage, device: String) -> Outcome {
+    // One build at a time: the pick waits for it.
+    if cards.build_downloading(stage).is_some() {
+        return Outcome::default();
+    }
+    let source = cards.view(stage).source.clone();
+    let installed = source
+        .as_deref()
+        .and_then(|source| cards.catalog.backend(stage, source))
+        .is_none_or(|b| build_installed(&device, &b.installed_accel));
+    match source {
+        Some(source) if !installed => {
+            cards.pending_build = Some(PendingBuild {
+                stage,
+                source: source.clone(),
+                framework: device.clone(),
+                downloading: false,
+            });
+            Outcome::effects(vec![Effect::OfferBuild {
+                stage,
+                source,
+                framework: device,
+            }])
+        }
+        _ => pick_device(cards, stage, device),
+    }
+}
+
+/// The user agreed, or the build is on disk: install it.
+fn confirm_build(cards: &mut ModelsState) -> Outcome {
+    let Some(pending) = cards.pending_build.as_mut().filter(|p| !p.downloading) else {
+        return Outcome::default();
+    };
+    pending.downloading = true;
+    Outcome::start(Effect::InstallBuild {
+        source: pending.source.clone(),
+        framework: pending.framework.clone(),
+    })
+}
+
+/// The build the user agreed to for `source`, now its install has ended.
+fn take_build(cards: &mut ModelsState, source: &str) -> Option<PendingBuild> {
+    cards
+        .pending_build
+        .take_if(|p| p.downloading && p.source == source)
+}
+
+/// `source` installed. When that was a build the user asked for, move the
+/// model onto its framework: a running model reloads onto it, one not
+/// running has it staged for its Load. The catalog is read again, for the
+/// build it has now.
+fn build_installed_for(cards: &mut ModelsState, source: &str) -> Outcome {
+    let Some(pending) = take_build(cards, source) else {
+        return Outcome::default();
+    };
+    // The stage moved on to another backend while the build downloaded.
+    if cards.view(pending.stage).source.as_deref() != Some(source) {
+        return Outcome::default();
+    }
+    let mut outcome = pick_device(cards, pending.stage, pending.framework);
+    outcome.effects.push(Effect::ReadBackends(pending.stage));
+    outcome
 }
 
 /// Choose the device `stage`'s model runs on. Staged while nothing is up,
@@ -456,7 +863,15 @@ fn pick_device(cards: &mut ModelsState, stage: Stage, device: String) -> Outcome
         return Outcome::default();
     }
     if running {
-        cards.operations.start(stage, loading(picked.clone()));
+        cards.operations.start(
+            stage,
+            loading(
+                picked.clone(),
+                LoadCause::Move {
+                    device: device.clone(),
+                },
+            ),
+        );
     } else {
         cards.busy.insert(stage);
     }
@@ -483,7 +898,9 @@ fn load(cards: &mut ModelsState, stage: Stage) -> Outcome {
     else {
         return Outcome::default();
     };
-    cards.operations.start(stage, loading(pick.model.clone()));
+    cards
+        .operations
+        .start(stage, loading(pick.model.clone(), LoadCause::Switch));
     Outcome::start(Effect::Load {
         stage,
         model: pick.model,
@@ -509,13 +926,7 @@ fn done(
         // A failed load, move or unload shows on the card itself, where the
         // user is looking.
         (Change::Load | Change::Cancel | Change::Unload, Err(e)) => {
-            let home = std::env::var("HOME").unwrap_or_default();
-            cards.operations.set(
-                stage,
-                ModelOperationState::Error {
-                    message: crate::rules::load::sanitize_home(&e, &home),
-                },
-            );
+            show_failure(cards, stage, &e);
             // The device the daemon kept is the one to show again.
             effects.extend(restage_device(cards, stage));
         }
@@ -586,6 +997,8 @@ pub struct Card<'a> {
     pub operation: &'a ModelOperationState,
     /// A request is in flight; the card waits.
     pub busy: bool,
+    /// The build the user agreed to for this stage, while it downloads.
+    pub build: Option<&'a PendingBuild>,
 }
 
 /// `stage`'s card.
@@ -633,11 +1046,17 @@ pub fn card(cards: &ModelsState, stage: Stage) -> Card<'_> {
     let device = (shown_model.is_some() && shown_model == picked)
         .then(|| cards.picks.device(stage))
         .flatten();
+    let build = cards.build_downloading(stage);
+    // Not while a switch or a build is under way: the model is still on the
+    // old framework because it hasn't moved yet.
     let fallback = match &shown {
-        Shown::Running { idle: false, .. } if cards.operations.is_ready(stage) => view
-            .and_then(StageState::running_device)
-            .and_then(|running| crate::rules::load::fallback(device, running))
-            .map(ToString::to_string),
+        Shown::Running { idle: false, .. }
+            if cards.operations.is_ready(stage) && build.is_none() =>
+        {
+            view.and_then(StageState::running_device)
+                .and_then(|running| crate::rules::load::fallback(device, running))
+                .map(ToString::to_string)
+        }
         _ => None,
     };
     let staging = matches!(shown, Shown::Staging { .. });
@@ -680,6 +1099,7 @@ pub fn card(cards: &ModelsState, stage: Stage) -> Card<'_> {
         vram_shortfall,
         operation: cards.operations.get(stage),
         busy: cards.busy.contains(&stage),
+        build,
     }
 }
 
@@ -709,6 +1129,34 @@ pub async fn run_secrets(source: String) -> Input {
             Vec::new()
         });
     Input::SecretsLoaded { source, items }
+}
+
+/// What `source`, `stage`'s backend, runs its models on: the union over the
+/// models it serves there.
+pub async fn run_backend_devices(stage: Stage, source: String) -> Input {
+    Input::BackendDevicesLoaded {
+        stage,
+        result: client::list_stage_devices(stage)
+            .await
+            .map_err(|e| e.to_string()),
+        source,
+    }
+}
+
+/// Install `source`'s build for `framework`, as the Library installs: its
+/// progress and its end are the Library's to follow.
+pub async fn run_install_build(source: String, framework: String) -> crate::pages::library::Input {
+    use crate::pages::library::Input;
+    match crate::daemon::registry::install_by_source(&source, Some(&framework)).await {
+        Ok(accepted) => Input::InstallAccepted {
+            source,
+            install_id: accepted.install_id,
+        },
+        Err(e) => Input::InstallFailedToStart {
+            source,
+            error: e.to_string(),
+        },
+    }
 }
 
 pub async fn run_gpus() -> Input {
@@ -803,8 +1251,13 @@ pub async fn run_change(effect: Effect) -> Option<Input> {
         | Effect::ReadBackends(_)
         | Effect::ReadSecrets(_)
         | Effect::ReadGpus
+        | Effect::ReadBackendDevices { .. }
         | Effect::ReadDevices { .. }
-        | Effect::Poll(_) => return None,
+        | Effect::Poll(_)
+        | Effect::Focus { .. }
+        | Effect::VoicesChanged
+        | Effect::OfferBuild { .. }
+        | Effect::InstallBuild { .. } => return None,
     };
     Some(Input::Done(
         stage,

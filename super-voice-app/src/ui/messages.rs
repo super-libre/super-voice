@@ -8,28 +8,24 @@
 //! `match`es its sub-enum exhaustively — so a newly added variant is a compile
 //! error at both ends instead of silently falling through to `Task::none()`.
 
-use super_voice_shared::models::read_method::ReadMethod;
-
 use cosmic::widget::segmented_button;
 
 use crate::daemon::backends::BackendInfo;
 use crate::state::ContextPage;
-use crate::state::{BlockStage, Stage};
+use crate::state::Stage;
 
 /// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
 pub enum Message {
     Shell(ShellMessage),
     Daemon(DaemonMessage),
-    Model(ModelMessage),
+    /// The Models page's stage cards: which backend and model fills each
+    /// stage, and loading it.
+    Models(ModelsMessage),
     ModelsPage(ModelsPageMessage),
-    /// Filling a pipeline stage, for every stage.
-    Stage(StageMessage),
     Voice(VoiceMessage),
     Speech(SpeechMessage),
     Voices(VoicesMessage),
-    Device(DeviceMessage),
-    Download(DownloadMessage),
     Behavior(BehaviorMessage),
     /// Where the read-aloud shortcut reads from.
     ReadMethod(ReadMethodMessage),
@@ -114,43 +110,12 @@ pub enum DaemonMessage {
     DaemonEventsReceived(Vec<super_voice_shared::models::protocol::NotificationEvent>),
 }
 
-/// Model identity: startup load, and the current/loaded model.
+/// The Models page's stage cards.
 #[derive(Debug, Clone)]
-pub enum ModelMessage {
-    LoadInitialData, // Load device info at startup
-    CurrentModelLoaded {
-        model: String,
-        source: String,
-        /// The model stage 1 keeps idle, when nothing is loaded: see
-        /// `AppModel::transcription_idle`.
-        idle: Option<(String, String)>,
-        /// `current_model_epoch` captured when this snapshot was requested.
-        /// The handler applies the snapshot only if the epoch is unchanged —
-        /// otherwise a live `model_switched` superseded it and wins.
-        epoch: u64,
-    },
-    /// Stage 1 was re-read after its model left memory, for whether the
-    /// daemon reports it idle. Only that: the loaded model and the card's
-    /// operation are the events' to set. Applied under the same epoch as
-    /// [`Self::CurrentModelLoaded`].
-    IdleRead {
-        idle: Option<(String, String)>,
-        epoch: u64,
-    },
-    ModelChanged {
-        model: String,
-        source: String,
-    },
-    /// A `fetch_current_model` snapshot query failed. Carries the
-    /// `current_model_epoch` captured when the fetch was issued: the handler
-    /// clears the loaded model only if the epoch is unchanged. If a live
-    /// `model_switched` advanced the epoch since, the failure is stale and is
-    /// logged-and-dropped rather than clobbering the fresher state — the same
-    /// guard `CurrentModelLoaded` applies to its success path (audit 2 Tier 1 #8).
-    CurrentModelFetchFailed {
-        epoch: u64,
-        error: String,
-    },
+pub enum ModelsMessage {
+    /// Something the cards' logic handles: a press, what the daemon said, or
+    /// the answer to work it started. See `super_voice_app_core::pages::models`.
+    Page(super_voice_app_core::pages::models::Input),
 }
 
 /// Models-page UI: tabs, active-backend card, GPU readout, backend
@@ -168,12 +133,6 @@ pub enum ModelsPageMessage {
     OpenBackendConfig(String),
     /// Leave the configuration sub-view and return to the backend list.
     CloseBackendConfig,
-    /// Periodic tick that re-fetches GPU inventory + memory so the header
-    /// readout stays live. No-op when disconnected; on success it emits
-    /// [`ModelsPageMessage::GpuInfoLoaded`].
-    RefreshGpuInfo,
-    /// GPU inventory + memory loaded from the daemon (empty when none detected).
-    GpuInfoLoaded(Vec<super_voice_shared::models::protocol::GpuInfo>),
     /// Toggle the per-row overflow ("⋯") menu on an installed-backend card,
     /// keyed by backend `source`. Opening one closes any other.
     ToggleInstalledMenu(String),
@@ -186,163 +145,6 @@ pub enum ModelsPageMessage {
     ToggleBrowseMenu,
     /// Dismiss the Browse toolbar's overflow menu (click-outside).
     CloseBrowseMenu,
-}
-
-/// The stage-1 model's device + device-switch errors.
-#[derive(Debug, Clone)]
-pub enum DeviceMessage {
-    /// The accelerator the loaded model is on, from the startup read of
-    /// `GET /stt/pipeline/1`; `None` when nothing is loaded.
-    DeviceInfoLoaded(Option<String>),
-    DeviceError(String), // Device switching error
-}
-
-/// Model-download progress lifecycle.
-#[derive(Debug, Clone)]
-pub enum DownloadMessage {
-    /// A progress snapshot for `stage`, from a `download_progress` event or a
-    /// poll.
-    DownloadProgressUpdate {
-        stage: Stage,
-        progress: Box<super_voice_shared::models::protocol::DownloadProgress>,
-    },
-    /// Abandon the download the named stage has in flight. Every variant below
-    /// that settles a stage's card carries its stage for the same reason: the
-    /// two stages download independently, so an outcome that did not say whose
-    /// it was would settle whichever card happened to be showing.
-    CancelDownload(Stage),
-    DownloadCompleted(String), // model name
-    DownloadCancelled {
-        model: String,
-        stage: Stage,
-    },
-    DownloadError {
-        model: String,
-        error: String,
-        stage: Stage,
-    },
-    /// Ask every stage still owed an outcome for its progress.
-    CheckDownloadStatus,
-    /// The named stage has no download in flight after all.
-    NoDownloadInProgress(Stage),
-}
-
-/// Filling a pipeline stage: select a backend, stage a model and a device,
-/// load, unload.
-///
-/// Every variant carries the `stage` it is about, so one handler serves them
-/// all. The stages were two hand-maintained copies of this flow before, and the
-/// copies drifted — the newer one lost the re-entrancy guard, the stale-catalog
-/// check, the device rollback, and the check that a device was staged at all.
-///
-/// `stage` values come from `state::device_offers::{Stage::Transcription, Stage::PostProcessing}`,
-/// which are the daemon's own pipeline positions.
-#[derive(Debug, Clone)]
-pub enum StageMessage {
-    /// Select the backend filling this stage, without loading a model. Any
-    /// model from a different backend is unloaded.
-    SelectBackend { stage: Stage, source: String },
-    /// Empty the stage, forgetting its model with it.
-    DeselectBackend { stage: Stage },
-    /// The daemon took the selection (`None` = the stage is empty). Re-announced
-    /// after a successful select, which is what asks for the backend's devices.
-    BackendSelected {
-        stage: Stage,
-        source: Option<String>,
-        /// The model the daemon remembers for the stage, running or not.
-        ///
-        /// `None` for a backend the user has just picked, which has no model
-        /// yet. Carried on the startup read because a stage keeps its selection
-        /// through an unload, and the card offers that model again rather than
-        /// coming up empty.
-        model: Option<String>,
-    },
-    /// A select or deselect was refused: restore `prev` and report it on the
-    /// stage's card.
-    BackendSelectFailed {
-        stage: Stage,
-        prev: Option<String>,
-        message: String,
-    },
-    /// User picked a model in the card's dropdown. Staged for the Load button —
-    /// does *not* load. The device waits on the daemon, which is asked what the
-    /// model can run on here and which device it already has.
-    StageModel { stage: Stage, model: String },
-    /// User picked a device in the card's device dropdown.
-    ///
-    /// Staged locally while the model is not up. Once it is running the choice
-    /// is sent straight through: the daemon reloads the model onto the new
-    /// device in place, so switching device no longer means unload, re-pick,
-    /// load.
-    StageDevice { stage: Stage, device: String },
-    /// The user agreed to download the build for the framework they picked
-    /// ([`crate::state::models_page::PendingBuild`]).
-    ConfirmBuild,
-    /// The user declined it. Nothing changes.
-    CancelBuild,
-    /// A device change the daemon refused or could not apply.
-    ///
-    /// Distinct from [`StageMessage::LoadFailed`]: the model is still up, on
-    /// the device it had, so this rolls the picker back and reports the failure
-    /// without dropping the stage's identity the way a failed load does.
-    DeviceChangeFailed {
-        stage: Stage,
-        prev_device: Option<String>,
-        message: String,
-    },
-    /// The daemon answered what can fill `stage`: the backends, each already
-    /// narrowed to the models this stage can run.
-    ///
-    /// Re-asked whenever the installed catalog changes, since installing or
-    /// uninstalling a backend changes the answer — and never on selection,
-    /// because the answer does not depend on what is selected.
-    StageBackendsLoaded {
-        stage: Stage,
-        backends: Vec<BackendInfo>,
-    },
-    /// The daemon answered for the staged `model` of `source`: `devices` is what
-    /// it can be loaded onto here, `current` the device it already has. `source`
-    /// is the backend selected when the question was asked, so an answer a
-    /// switch has overtaken can be dropped.
-    StagedDevicesLoaded {
-        stage: Stage,
-        source: String,
-        model: String,
-        devices: Vec<String>,
-        current: Option<String>,
-    },
-    /// The daemon answered which devices this stage's backend can run its
-    /// models on — the union over the models it serves in this stage's role.
-    BackendDevicesLoaded {
-        stage: Stage,
-        source: String,
-        devices: Vec<String>,
-    },
-    /// User clicked Load. Sets the staged model's device, then runs it. A no-op
-    /// when nothing is staged or this stage already has an operation in flight.
-    Load { stage: Stage },
-    /// A load or unload failed: restore `prev_device` and report it on the
-    /// stage's card.
-    LoadFailed {
-        stage: Stage,
-        prev_device: String,
-        message: String,
-    },
-    /// User clicked Unload. Drops the model but keeps the backend selected.
-    Unload { stage: Stage },
-    /// User clicked Reload: bring the running model back up where it is.
-    Reload { stage: Stage },
-    /// Re-read `stage`'s block: a write succeeded, so read what the daemon
-    /// holds rather than assume the write took effect as sent.
-    RefreshBlock { stage: BlockStage },
-    /// `stage`'s block as the daemon holds it, from the startup load or after
-    /// a change.
-    BlockLoaded {
-        stage: BlockStage,
-        block: crate::daemon::client::StageState,
-    },
-    /// Re-reading `stage`'s block failed; the message is shown on its card.
-    BlockFailed { stage: BlockStage, message: String },
 }
 
 /// Text to speech's speech test.
@@ -398,13 +200,8 @@ pub enum AssistantsMessage {
 /// The Read aloud tab: where the shortcut reads from, and its test.
 #[derive(Debug, Clone)]
 pub enum ReadMethodMessage {
-    Changed(ReadMethod),
-    Loaded(ReadMethod),
-    Error(String),
-    /// Read what the setting names now and speak it, as the shortcut does.
-    Test,
-    /// The daemon could not read or speak it; carries its message.
-    TestFailed(String),
+    /// Its logic is the core's (`pages::read_aloud`).
+    Page(super_voice_app_core::pages::read_aloud::Input),
 }
 
 /// The Settings page.
@@ -543,10 +340,8 @@ message_from! {
     Speech => SpeechMessage,
     Voices => VoicesMessage,
     Daemon => DaemonMessage,
-    Model => ModelMessage,
+    Models => ModelsMessage,
     ModelsPage => ModelsPageMessage,
-    Device => DeviceMessage,
-    Download => DownloadMessage,
     Behavior => BehaviorMessage,
     ReadMethod => ReadMethodMessage,
     Shortcuts => ShortcutsMessage,

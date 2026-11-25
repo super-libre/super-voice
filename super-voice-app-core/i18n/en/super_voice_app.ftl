@@ -828,6 +828,7 @@ build-download-failed = Couldn't download the { $framework } build: { $error }
 device-switch-failed = Couldn't switch the device: { $error }
 model-download-failed = The download failed: { $error }
 model-switch-failed = The model switch failed.
+model-load-stalled = The model stopped loading. The daemon hasn't reported any progress for five minutes.
 relaunch-failed = Couldn't start Super Voice again. Start it yourself.
 post-processor = Post-processor
 speech-model = Speech model

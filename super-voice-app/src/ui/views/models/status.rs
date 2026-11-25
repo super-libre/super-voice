@@ -9,7 +9,7 @@ use super_voice_app_core::rules::status::{
 };
 
 use crate::core::app::AppModel;
-use crate::state::{BlockStage, Stage};
+use crate::state::Stage;
 
 /// How this app draws a [`ModelStatus`].
 pub(super) trait StatusLook {
@@ -48,27 +48,27 @@ impl StatusLook for ModelStatus {
 
 /// The [`ModelStatus`] of any stage, read from the app.
 pub(super) fn stage_status(app: &AppModel, stage: Stage) -> ModelStatus {
+    let view = app.models.view(stage);
     let status = match stage.block() {
-        None => classify_model_status(
-            app.models_page.active_backend.as_deref(),
-            &app.backends,
-            &app.configure.secrets_configured,
-            &app.current_model,
-            &app.current_source,
-        ),
-        Some(block) => classify_block_status(
-            app.block(block),
-            &app.backends,
-            &app.configure.secrets_configured,
-        ),
+        None => {
+            let running = super_voice_app_core::pages::models::running_model(&app.models, stage);
+            classify_model_status(
+                view.source.as_deref(),
+                &app.backends,
+                &app.configure.secrets_configured,
+                running.unwrap_or_default(),
+                view.source.as_deref().unwrap_or_default(),
+            )
+        }
+        Some(_) => classify_block_status(view, &app.backends, &app.configure.secrets_configured),
     };
     let no_voice = stage == Stage::Synthesis
-        && speaks_in_nothing(app.block(BlockStage::Synthesis), &app.voice);
+        && speaks_in_nothing(app.models.view(Stage::Synthesis), &app.voice);
     super_voice_app_core::rules::status::stage_status(
         stage,
-        app.model_operations.get(stage),
+        app.models.operations.get(stage),
         status,
-        app.idle_model(stage).is_some(),
+        super_voice_app_core::pages::models::idle_model(&app.models, stage).is_some(),
         no_voice,
     )
 }

@@ -60,11 +60,17 @@ impl AppModel {
                     Task::none()
                 };
                 // A build the user asked for moves the model onto it.
-                Task::batch([close, self.finish_build(&source)])
+                let build =
+                    self.models_input(super_voice_app_core::pages::models::Input::BuildInstalled {
+                        source,
+                    });
+                Task::batch([close, build])
             }
             Effect::InstallFailed { source, message } => {
-                self.fail_build(&source, &message);
-                Task::none()
+                self.models_input(super_voice_app_core::pages::models::Input::BuildFailed {
+                    source,
+                    error: message,
+                })
             }
         }
     }

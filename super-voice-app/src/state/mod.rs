@@ -13,8 +13,8 @@ pub mod models_page;
 pub use super_voice_app_core::state::update;
 
 pub use super_voice_app_core::state::{
-    assistants, behavior, device_offers, language, model_operations, registry, scripts, shortcuts,
-    stage_catalog, staged_picks, voices,
+    assistants, behavior, language, model_operations, registry, scripts, shortcuts, staged_picks,
+    voices,
 };
 
 /// The Clips tab's state, with libcosmic's editor for the next clip.
@@ -39,7 +39,6 @@ pub mod notes {
 // Re-export commonly used types
 pub use editor::Editor;
 pub use models::{
-    ActionError, AudioTheme, ContextPage, DaemonStatus, ErrorScope, MenuAction, ModelsTab, Page,
-    Section,
+    ActionError, ContextPage, DaemonStatus, ErrorScope, MenuAction, ModelsTab, Page, Section,
 };
 pub use super_voice_app_core::state::{BlockStage, SpeakingStatus, SpeechState, Stage, VoiceState};

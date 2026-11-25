@@ -31,6 +31,10 @@ use crate::status::PipelineStage;
 /// How often a run of the daemon's events reads the stages again.
 const SETTLE: Duration = Duration::from_millis(800);
 
+/// How many [`SETTLE`]s between checks for a download or load the daemon
+/// stopped reporting on.
+const TICK_EVERY: u32 = 6;
+
 /// What the app is told. Called from the store's own threads.
 #[uniffi::export(with_foreign)]
 pub trait ModelsObserver: Send + Sync {
@@ -249,7 +253,33 @@ impl ModelsStore {
             if let Some(notice) = outcome.notice {
                 held.notice = Some(notice_text(notice));
             }
-            (snapshot(&held), outcome.effects)
+            let mut effects = outcome.effects;
+            // This app has no question to ask before a build downloads yet:
+            // the pick is declined, and the notice says what it needs.
+            effects.retain(|effect| {
+                let Effect::OfferBuild {
+                    stage,
+                    source,
+                    framework,
+                } = effect
+                else {
+                    return true;
+                };
+                let backend = held
+                    .state
+                    .catalog
+                    .backend(*stage, source)
+                    .map_or_else(|| source.clone(), |b| b.name.clone());
+                held.notice = Some(crate::text_with(
+                    "backend-needs-its-build",
+                    args([("backend", backend), ("framework", accel_name(framework))]),
+                ));
+                false
+            });
+            if held.state.build_question().is_some() {
+                held.state.pending_build = None;
+            }
+            (snapshot(&held), effects)
         };
         self.observer.changed(page);
         for effect in effects {
@@ -266,6 +296,16 @@ impl ModelsStore {
                         model,
                     } => Some(page::run_devices(stage, source, model).await),
                     Effect::Poll(stage) => Some(page::run_poll(stage).await),
+                    Effect::ReadBackendDevices { stage, source } => {
+                        Some(page::run_backend_devices(stage, source).await)
+                    }
+                    // The app reads a shown model's language and voice, and the
+                    // voices, from their own stores; and a build is never
+                    // asked for, as the question above is declined.
+                    Effect::Focus { .. }
+                    | Effect::VoicesChanged
+                    | Effect::OfferBuild { .. }
+                    | Effect::InstallBuild { .. } => None,
                     change => page::run_change(change).await,
                 };
                 if let Some(input) = input {
@@ -308,6 +348,7 @@ fn follow(store: Weak<ModelsStore>) {
         }
     });
     RUNTIME.spawn(async move {
+        let mut settled = 0u32;
         loop {
             tokio::time::sleep(SETTLE).await;
             let Some(store) = store.upgrade() else {
@@ -317,6 +358,11 @@ fn follow(store: Weak<ModelsStore>) {
                 for stage in STAGES {
                     Arc::clone(&store).dispatch(Input::Changed(stage));
                 }
+            }
+            settled = (settled + 1) % TICK_EVERY;
+            let under_way = !store.lock().state.operations.pending_stages().is_empty();
+            if settled == 0 && under_way {
+                Arc::clone(&store).dispatch(Input::Tick);
             }
         }
     });
@@ -393,9 +439,9 @@ fn stage_card(cards: &ModelsState, card: &Card<'_>) -> StageCard {
         },
         progress: progress(card.operation),
         can_load: card.can_load,
-        // A reload is a model brought back up where it runs: the cards with
-        // one in the settings app.
-        reloadable: stage != Stage::Transcription
+        // A reload is a model brought back up where it runs: synthesis's
+        // card has one, as in the settings app.
+        reloadable: stage == Stage::Synthesis
             && matches!(card.shown, Shown::Running { idle: false, .. }),
         busy: card.busy,
     }
@@ -590,6 +636,18 @@ fn notice_text(notice: Notice) -> String {
     let (key, stage, error) = match notice {
         Notice::CouldNotRead(stage, e) => ("stage-could-not-read", stage, e),
         Notice::CouldNotChange(stage, e) => ("stage-could-not-change", stage, e),
+        Notice::DeviceSwitchFailed(_, error) => {
+            return crate::text_with("device-switch-failed", args([("error", error)]));
+        }
+        Notice::BuildFailed {
+            framework, error, ..
+        } => {
+            return crate::text_with(
+                "build-download-failed",
+                args([("framework", accel_name(&framework)), ("error", error)]),
+            );
+        }
+        Notice::Stalled(_) => return crate::text("model-load-stalled"),
     };
     crate::text_with(key, args([("stage", stage_name(stage)), ("error", error)]))
 }

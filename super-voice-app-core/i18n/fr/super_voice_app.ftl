@@ -828,6 +828,7 @@ build-download-failed = Impossible de télécharger la version { $framework } : 
 device-switch-failed = Impossible de changer d'appareil : { $error }
 model-download-failed = Le téléchargement a échoué : { $error }
 model-switch-failed = Le changement de modèle a échoué.
+model-load-stalled = Le modèle ne se charge plus. Le service n’a signalé aucune progression depuis cinq minutes.
 relaunch-failed = Impossible de relancer Super Voice. Lancez-le vous-même.
 post-processor = Post-traitement
 speech-model = Modèle de synthèse
