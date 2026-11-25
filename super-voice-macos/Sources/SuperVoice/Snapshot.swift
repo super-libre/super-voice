@@ -27,7 +27,10 @@
 // pointed at; `assistants-connected`, a made-up connected Claude Code's own
 // page with two sessions, for the layout; `updates`, the Updates page once
 // its status is read; `shortcuts`, the Shortcuts page once the daemon has
-// listed them; `notes-take`, the list with a made-up take recording a new note; or
+// listed them; `library`, the Library page's Installed tab; `library-browse`,
+// its Browse tab once the catalog is read (or why not); `library-sample` and
+// `library-sample-browse`, both tabs with made-up backends, for the layout;
+// `notes-take`, the list with a made-up take recording a new note; or
 // `note-take`, the newest note open with a made-up take adding to it. A take
 // scene's take, level and words are made up in the app, for the layout: a
 // real one needs a microphone and a model.
@@ -118,7 +121,8 @@ enum Snapshot {
                 MicrophoneModel.shared.pretend(Microphone(recording: true, level: 0.55, speech: true))
             }
         case "models", "models-running", "settings", "settings-languages", "assistants", "assistants-key",
-             "assistants-connected", "updates", "shortcuts":
+             "assistants-connected", "updates", "shortcuts", "library", "library-browse",
+             "library-sample", "library-sample-browse":
             // Shot from its own page; see `modelsShown`.
             return
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
@@ -354,6 +358,40 @@ enum Snapshot {
     /// them, for `shortcuts`.
     static func shortcutsShown(_ page: ShortcutsPage) {
         guard path != nil, !taken, scene == "shortcuts", page.loaded else { return }
+        taken = true
+        Task { await take() }
+    }
+
+    /// The Library page showed `page`: shoot it once the catalog is read
+    /// (or why not), for `library` and `library-browse`.
+    static func libraryShown(_ page: LibraryPage) {
+        guard path != nil, !taken, scene.hasPrefix("library"), page.catalogLoaded else { return }
+        if scene.hasPrefix("library-sample") {
+            var shown = page
+            shown.catalogError = nil
+            shown.installedTotal = 2
+            shown.installed = [
+                InstalledRow(source: "github.com/super-libre/super-stt-whisper", name: "Whisper", version: "0.2.1",
+                             description: "Local Whisper speech to text.", online: false, models: 6,
+                             updateTo: "0.2.2", installing: false, uninstallError: nil),
+                InstalledRow(source: "github.com/super-libre/super-tts-kokoro", name: "Kokoro", version: "0.1.4",
+                             description: "Fast local text to speech.", online: false, models: 1,
+                             updateTo: nil, installing: false, uninstallError: nil),
+            ]
+            shown.catalog = [
+                CatalogRow(source: "github.com/super-libre/super-stt-qwen-asr", name: "Qwen", version: "0.1.0",
+                           description: "Local Qwen3-ASR speech to text with streamed previews.", online: false,
+                           models: 2, compatible: true, incompatibleReason: nil, needsVersion: nil,
+                           install: .running(phase: .downloading, fraction: 0.42)),
+                CatalogRow(source: "github.com/super-libre/super-stt-deepgram", name: "Deepgram", version: "0.3.0",
+                           description: "Deepgram's speech to text, online.", online: true, models: 3,
+                           compatible: true, incompatibleReason: nil, needsVersion: nil, install: .idle),
+                CatalogRow(source: "github.com/super-libre/super-stt-voxtral", name: "Voxtral", version: "0.4.0",
+                           description: "Mistral's Voxtral, local.", online: false, models: 2,
+                           compatible: true, incompatibleReason: nil, needsVersion: "v0.4.0", install: .idle),
+            ]
+            LibraryModel.shared.pretend(shown)
+        }
         taken = true
         Task { await take() }
     }
