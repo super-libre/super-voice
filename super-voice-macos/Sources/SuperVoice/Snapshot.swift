@@ -90,10 +90,13 @@ enum Snapshot {
         // A moment for the new size's layout, and the list's rows, to draw.
         try? await Task.sleep(for: .milliseconds(700))
         // The frame view, so the title bar is in the shot too.
-        if !window.isKeyWindow {
-            FileHandle.standardError.write(Data(
-                "snapshot: the window isn't key (is the screen locked?); it draws without its accent colour\n".utf8
-            ))
+        // Not in front, the window draws without its accent colours: a shot
+        // of that is not what the app looks like, so it is refused, unless
+        // the run asked for one anyway (`SUPER_VOICE_SNAPSHOT_INACTIVE=1`).
+        if !(NSApp.isActive && window.isKeyWindow),
+           ProcessInfo.processInfo.environment["SUPER_VOICE_SNAPSHOT_INACTIVE"] != "1"
+        {
+            fail("the app isn't in front (a screen saver, a locked screen, or another app in the way), so the window would draw without its accent colours")
         }
         guard let view = window.contentView?.superview ?? window.contentView,
               let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)

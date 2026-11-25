@@ -20,16 +20,16 @@ enum Destination: Hashable, CaseIterable {
         }
     }
 
-    var symbol: String {
+    var icon: Icon {
         switch self {
-        case .models: "cpu"
-        case .library: "books.vertical"
-        case .speechToText: "mic"
-        case .textToSpeech: "speaker.wave.2"
-        case .shortcuts: "keyboard"
-        case .assistants: "sparkles"
-        case .settings: "gearshape"
-        case .updates: "arrow.triangle.2.circlepath"
+        case .models: .brain
+        case .library: .books
+        case .speechToText: .microphone
+        case .textToSpeech: .speakerHigh
+        case .shortcuts: .keyboard
+        case .assistants: .robot
+        case .settings: .gear
+        case .updates: .arrowsClockwise
         }
     }
 }
@@ -62,15 +62,20 @@ struct ContentView: View {
             case .speechToText:
                 SpeechToTextView(notes: notes)
             case let other?:
-                NotYetView(title: other.title)
+                NotYetView(title: other.title, icon: other.icon)
             case nil:
-                NotYetView(title: "Super Voice")
+                NotYetView(title: "Super Voice", icon: .microphone)
             }
         }
     }
 
     private func row(_ destination: Destination) -> some View {
-        Label(destination.title, systemImage: destination.symbol).tag(destination)
+        Label {
+            Text(destination.title)
+        } icon: {
+            IconView(icon: destination.icon)
+        }
+        .tag(destination)
     }
 }
 
@@ -85,8 +90,8 @@ struct SpeechToTextView: View {
         Group {
             switch tab {
             case .notes: NotesView(model: notes)
-            case .contexts: NotYetView(title: "Contexts")
-            case .behavior: NotYetView(title: "Behavior")
+            case .contexts: NotYetView(title: "Contexts", icon: .microphone)
+            case .behavior: NotYetView(title: "Behavior", icon: .microphone)
             }
         }
         .navigationTitle("Speech to text")
@@ -107,13 +112,18 @@ struct SpeechToTextView: View {
 /// A page this app doesn't have yet.
 struct NotYetView: View {
     let title: String
+    let icon: Icon
 
     var body: some View {
-        ContentUnavailableView(
-            title,
-            systemImage: "hammer",
-            description: Text("This page is in the Linux app, and not here yet.")
-        )
+        ContentUnavailableView {
+            Label {
+                Text(title)
+            } icon: {
+                IconView(icon: icon, size: 40)
+            }
+        } description: {
+            Text("This page is in the Linux app, and not here yet.")
+        }
         .navigationTitle(title)
     }
 }

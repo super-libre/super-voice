@@ -530,6 +530,9 @@ macos-swift-app config="release":
     sed -e "s|__VERSION__|$version|g" -e "s|__BUILD__|${version%%-*}|g" \
         super-voice-macos/Info.plist > "$bundle/Contents/Info.plist"
     cp "$bin/SuperVoice" "$bundle/Contents/MacOS/"
+    # The settings app's own icons, so both apps draw the same files.
+    mkdir -p "$bundle/Contents/Resources/icons"
+    cp super-voice-app/resources/icons/phosphor/*.svg "$bundle/Contents/Resources/icons/"
     codesign --force --sign - "$bundle"
     codesign --verify --strict "$bundle"
 
@@ -539,6 +542,9 @@ macos-swift-app config="release":
 #
 # A debug build draws its own window once the page is in `scene`'s state, at
 # one size, and quits: no Screen Recording permission, so it works over ssh.
+# The app has to come to the front for its accent colours; a run where it
+# can't fails rather than shooting a grey window; set
+# SUPER_VOICE_SNAPSHOT_INACTIVE=1 to take it anyway, for layout alone.
 # Scenes: `notes`, the list; `note`, the newest note open; and `edited`, that
 # note with a sentence typed into it and saved. It reads a copy of the sample
 # notes in super-voice-macos/Fixtures, never yours, so `edited` changes only
@@ -553,11 +559,16 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
     data=$(mktemp -d)
     trap 'rm -rf "$data"' EXIT
     cp -R super-voice-macos/Fixtures/super-voice "$data/"
+    # The user is active, as far as macOS knows: wakes a sleeping display and
+    # dismisses a screen saver, either of which would keep the app from
+    # coming to the front. The shot is refused if it still can't.
+    caffeinate -u -t 1
     # A new instance (-n), so a copy already open can't take the request and
     # ignore the environment; -W waits for it to quit.
     open -n -W \
         --env SUPER_VOICE_SNAPSHOT="$out" \
         --env SUPER_VOICE_SCENE="{{ scene }}" \
+        ${SUPER_VOICE_SNAPSHOT_INACTIVE:+--env SUPER_VOICE_SNAPSHOT_INACTIVE=1} \
         --env XDG_DATA_HOME="$data" \
         "target/debug/Super Voice (SwiftUI).app"
     if [ ! -s "$out" ]; then

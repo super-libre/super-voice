@@ -67,11 +67,15 @@ struct NotesListView: View {
         }
         .overlay {
             if model.page.loaded && model.page.notes.isEmpty {
-                ContentUnavailableView(
-                    "No notes yet",
-                    systemImage: "note.text",
-                    description: Text(model.page.folder)
-                )
+                ContentUnavailableView {
+                    Label {
+                        Text("No notes yet")
+                    } icon: {
+                        IconView(icon: .microphone, size: 40)
+                    }
+                } description: {
+                    Text(model.page.folder)
+                }
             }
         }
     }
@@ -90,8 +94,7 @@ struct NoteRow: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Image(systemName: "chevron.right")
-                .foregroundStyle(.tertiary)
+            IconView(icon: .caretRight, size: 14, color: .tertiaryLabelColor)
         }
         .contentShape(Rectangle())
         .padding(.vertical, 4)
@@ -138,7 +141,11 @@ struct OpenNoteView: View {
                 Button {
                     model.send(.close)
                 } label: {
-                    Label("All notes", systemImage: "chevron.left")
+                    Label {
+                        Text("All notes")
+                    } icon: {
+                        IconView(icon: .caretLeft)
+                    }
                 }
             }
         }
@@ -159,7 +166,11 @@ struct NoticeBanner: View {
     let text: String
 
     var body: some View {
-        Label(text, systemImage: "exclamationmark.triangle")
+        Label {
+            Text(text)
+        } icon: {
+            IconView(icon: .warning)
+        }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
             .background(.orange.opacity(0.15))
