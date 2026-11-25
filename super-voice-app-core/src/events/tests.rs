@@ -154,3 +154,25 @@ fn a_settings_change_names_its_setting() {
     assert_eq!(setting_changed(&ready), None);
     assert_eq!(setting_changed(&Event::Connected), None);
 }
+
+/// A dropped stream is heard, so an app can ask the daemon at once whether
+/// it is gone; a token asked for again is not.
+#[test]
+fn a_dropped_stream_is_heard() {
+    assert!(matches!(
+        from_update(WidgetSubscriptionUpdate::Disconnected {
+            reason: "connection reset".into()
+        }),
+        Some(Event::Disconnected)
+    ));
+    assert!(matches!(
+        from_update(WidgetSubscriptionUpdate::Connected),
+        Some(Event::Connected)
+    ));
+    assert!(
+        from_update(WidgetSubscriptionUpdate::NeedsReauth {
+            reason: "expired".into()
+        })
+        .is_none()
+    );
+}

@@ -142,6 +142,7 @@ impl Shell {
             readiness,
             events,
         } = services;
+        cx.set_global(crate::connection::Current(connection.clone()));
         let shared = Shared {
             connection: connection.clone(),
             readiness: readiness.clone(),
@@ -230,6 +231,9 @@ impl Shell {
                 self.shared
                     .readiness
                     .update(cx, |readiness, cx| readiness.send(ReadinessInput::Lost, cx));
+                // The Connection page says the daemon can't be reached; a
+                // page's toast saying it again goes.
+                crate::ui::toast::drop_unreachable(window, cx);
             }
             ConnectionEvent::Resubscribe => self.events.update(cx, DaemonEvents::restart),
         }
@@ -245,6 +249,7 @@ impl Shell {
         let connection = match event {
             Event::Connected => Some(ConnectionInput::Reached),
             Event::Blocked(reason) => Some(ConnectionInput::Refused(reason.clone())),
+            Event::Disconnected => Some(ConnectionInput::StreamDropped),
             _ => None,
         };
         if let Some(input) = connection {

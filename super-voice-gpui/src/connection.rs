@@ -13,7 +13,7 @@
 
 use std::time::Duration;
 
-use gpui_kit::{AsyncApp, Context, EventEmitter, Task, WeakEntity};
+use gpui_kit::{App, AsyncApp, Context, Entity, EventEmitter, Global, Task, WeakEntity};
 use super_voice_app_core::pages::connection::{self as page, Effect, Fix, Input};
 use super_voice_app_core::state::connection::{ConnectionState, DaemonStatus};
 use super_voice_shared::daemon::http_client::HttpError;
@@ -33,6 +33,20 @@ pub enum ConnectionEvent {
     /// Start the daemon's event stream again: it ended when the user refused
     /// the app.
     Resubscribe,
+}
+
+/// The window's connection, for what must know whether the daemon is down
+/// without being handed it: a page's toast ([`crate::ui::toast`]).
+pub struct Current(pub Entity<Connection>);
+
+impl Global for Current {}
+
+/// Whether the daemon is down, as the window's connection has it: the
+/// Connection page shows in place of the pages that need it.
+#[must_use]
+pub fn is_down(cx: &App) -> bool {
+    cx.try_global::<Current>()
+        .is_some_and(|current| current.0.read(cx).is_down())
 }
 
 /// The connection, as a GPUI model.
