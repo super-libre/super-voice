@@ -378,8 +378,7 @@ impl PageView for LibraryPage {
     }
 
     fn sidebar_mark(&self, _: &App) -> Option<SidebarMark> {
-        (page::updates_ready(&self.registry, &self.library) > 0)
-            .then_some(SidebarMark::Dot(Dot::Green))
+        (page::updates_ready(&self.registry, &self.library) > 0).then_some(SidebarMark::Update)
     }
 
     #[cfg(feature = "screenshot")]
@@ -793,11 +792,8 @@ impl LibraryPage {
 
     /// Configure `source`: the Configure sheet the Models page opens.
     fn configure(&mut self, source: &str, window: &mut Window, cx: &mut Context<Self>) {
-        // TODO(gpui-models): open the Configure sheet the Models page owns
-        // (branch `gpui-models`) for `source`, once it lands, through the
-        // function it exposes; one sheet, not a second one here. Until then
-        // the press shows the Models page of the backend's feature, where
-        // Configure… is on its step.
+        // The Models page of the backend's feature owns the one Configure
+        // sheet; it opens it over `source`.
         let feature = page::row(&self.registry, &self.library, source)
             .and_then(|row| row.features.first().copied())
             .unwrap_or(Feature::SpeechToText);
@@ -809,7 +805,9 @@ impl LibraryPage {
             Feature::SpeechToText => Page::SttModels,
             Feature::TextToSpeech => Page::TtsModels,
         };
-        self.shared.nav.go(models, window, cx);
+        self.shared
+            .nav
+            .go_and_run(models, format!("configure:{source}"), window, cx);
     }
 
     /// The toolbar above the table: the search, then the filters as three

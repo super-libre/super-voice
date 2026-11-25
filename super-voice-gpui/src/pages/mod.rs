@@ -44,7 +44,6 @@ use super_voice_app_core::pages::readiness::Feature;
 
 use crate::shared::Shared;
 use crate::shell::Shell;
-use crate::ui::status::Dot;
 
 /// Build `page`'s view. One line per page; a page not built yet is a
 /// placeholder.
@@ -186,8 +185,9 @@ impl PaletteCommand {
 pub enum SidebarMark {
     /// How many it holds: notes, clips, voices. Hidden at 0.
     Count(usize),
-    /// A bare dot: an update is ready.
-    Dot(Dot),
+    /// A bare dot in the theme's info colour: an update is ready. Not a
+    /// status dot, so not one of their colours.
+    Update,
 }
 
 /// A built page, as the window holds it: its view, and its [`PageView`]

@@ -36,7 +36,6 @@ use crate::shared::{Navigator, Shared};
 use crate::ui::card::Card;
 use crate::ui::page_header::PageHeader;
 use crate::ui::settings_row::SettingsRow;
-use crate::ui::status::Dot;
 use crate::ui::toast::{self, Toast};
 use crate::ui::{code_line, width};
 use crate::{t, t_with, version};
@@ -115,7 +114,7 @@ impl PageView for UpdatesPage {
     fn sidebar_mark(&self, _: &App) -> Option<SidebarMark> {
         self.state
             .header_badge_visible()
-            .then_some(SidebarMark::Dot(Dot::Green))
+            .then_some(SidebarMark::Update)
     }
 
     #[cfg(feature = "screenshot")]

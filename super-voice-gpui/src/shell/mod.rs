@@ -65,7 +65,6 @@ pub const KEYS: &[&str] = &[
     "daemon-connecting",
     "daemon-not-answering",
     "daemon-access-refused",
-    "page-not-built",
     "go-to-or-run",
     "palette-commands",
     "palette-go-to",
@@ -282,11 +281,20 @@ impl Shell {
     fn run_pick(&mut self, pick: palette::Pick, window: &mut Window, cx: &mut Context<Self>) {
         match pick {
             palette::Pick::GoTo(page) => self.go(page, window, cx),
-            palette::Pick::Run(page, id) => {
-                self.go(page, window, cx);
-                self.handle(page).clone().run(&id, window, cx);
-            }
+            palette::Pick::Run(page, id) => self.go_and_run(page, &id, window, cx),
         }
+    }
+
+    /// Show `page`, then run its command `id`, as a palette pick does.
+    pub fn go_and_run(
+        &mut self,
+        page: Page,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.go(page, window, cx);
+        self.handle(page).clone().run(id, window, cx);
     }
 
     fn on_back(&mut self, _: &Back, window: &mut Window, cx: &mut Context<Self>) {
