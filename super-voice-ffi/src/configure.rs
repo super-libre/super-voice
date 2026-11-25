@@ -185,7 +185,6 @@ impl ConfigureStore {
     /// app sends [`ConfigureAction::Open`].
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn ConfigureObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

@@ -169,7 +169,6 @@ impl BehaviorStore {
     /// app sends [`BehaviorAction::Reload`].
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn BehaviorObserver>) -> Arc<Self> {
-        crate::identify();
         Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

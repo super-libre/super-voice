@@ -293,7 +293,6 @@ impl VoicesStore {
     /// app sends [`VoicesAction::Refresh`].
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn VoicesObserver>) -> Arc<Self> {
-        crate::identify();
         Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

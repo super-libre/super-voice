@@ -83,7 +83,7 @@ macos_bundle_dst := '/Applications' / macos_bundle_name
 # The CLI inside the installed bundle. `voice service` has to run as this copy:
 # ServiceManagement finds the agents through the caller's bundle.
 macos_bundle_cli := macos_bundle_dst / 'Contents' / 'MacOS' / cli_name
-macos_resources := 'super-voice-app' / 'resources' / 'macos'
+macos_resources := 'super-voice-macos'
 
 # macOS launchd agent (the counterpart to the systemd user unit above).
 # A per-user LaunchAgent, not a root-owned LaunchDaemon: the daemon needs the
@@ -395,10 +395,10 @@ linux-only-gui:
         exit 1
     fi
 
-# Build Super Voice.app into target/release: the settings app, the daemon and
-# the CLI; the two LaunchAgents that run the daemon and the global shortcut;
-# and an icon rendered from the app's SVG. `just install` puts it in
-# /Applications.
+# Build Super Voice.app into target/release: the app (the SwiftUI one in
+# super-voice-macos, see `macos-swift-build`), the daemon and the CLI; the two
+# LaunchAgents that run the daemon and the global shortcut; and an icon
+# rendered from the app's SVG. `just install` puts it in /Applications.
 #
 # Signed as a whole, inside out. The daemon and the CLI go first, each with
 # the identifier `build-daemon` and `build-cli` give them, so macOS goes on
@@ -422,7 +422,7 @@ bundle-macos:
     fi
 
     # One build per binary; the package selection is explained above `run-app`.
-    cargo build --release {{ app_select }}
+    just macos-swift-build release
     cargo build --release {{ daemon_select }}
     cargo build --release {{ cli_select }}
 
@@ -442,13 +442,14 @@ bundle-macos:
     mkdir -p "$contents/MacOS" "$contents/Helpers" "$contents/Resources" \
         "$contents/Library/LaunchAgents"
 
-    version=$(cargo pkgid -p {{ app_name }} | sed 's/.*[#@]//')
+    version=$(cargo pkgid -p {{ daemon_bin_name }} | sed 's/.*[#@]//')
     sed -e "s|__VERSION__|$version|g" -e "s|__BUILD__|${version%%-*}|g" \
         {{ macos_resources }}/Info.plist > "$contents/Info.plist"
 
-    # Copies, not links: signing rewrites them, and the originals are cargo's.
-    cp target/release/{{ app_name }} target/release/{{ daemon_bin_name }} \
-        target/release/{{ cli_name }} "$contents/MacOS/"
+    # Copies, not links: signing rewrites them, and the originals are cargo's
+    # and Swift's.
+    just macos-swift-into "$contents" release
+    cp target/release/{{ daemon_bin_name }} target/release/{{ cli_name }} "$contents/MacOS/"
     # A second CLI for the shortcut agent, which must not run from
     # Contents/MacOS; see super-voice-cli/launchd/.
     cp target/release/{{ cli_name }} "$contents/Helpers/"
@@ -479,25 +480,22 @@ bundle-macos:
 
     echo "✓ Built $bundle ($version)"
 
-# The SwiftUI app for macOS, on super-voice-app-core through the `UniFFI`
-# bindings in super-voice-ffi. An early version: it shows the notes.
+# Build the macOS app's executable: the SwiftUI app in super-voice-macos, on
+# super-voice-app-core through the `UniFFI` bindings in super-voice-ffi.
 #
-# Four steps: the core as a static library (and a dynamic one, which
+# Three steps: the core as a static library (and a dynamic one, which
 # uniffi-bindgen reads the exported interface from); the Swift bindings and C
-# header generated from it, into super-voice-macos/Generated; the Swift
-# package; and the bundle, `target/<config>/Super Voice (SwiftUI).app`, signed
-# ad hoc. Beside the libcosmic app, not in place of it.
-#
-# `config` is the Swift package's: `release`, or `debug` for a build that can
-# take a screenshot of itself (see `macos-swift-shot`). The core is always a
-# release build.
-#
-# Usage: just macos-swift-app [release|debug]
-macos-swift-app config="release":
+# header generated from it, into super-voice-macos/Generated; and the Swift
+# package. `config` is the Swift package's: `release`, or `debug` for a build
+# that can take a screenshot of itself (see `macos-swift-shot`). The core is
+# always a release build. `bundle-macos` puts the release build in
+# Super Voice.app; `macos-swift-app` bundles either on its own.
+[private]
+macos-swift-build config="release":
     #!/usr/bin/env bash
     set -euo pipefail
     if [ "$(uname)" != Darwin ]; then
-        echo "❌ macos-swift-app builds on macOS only" >&2
+        echo "❌ The macOS app builds on macOS only" >&2
         exit 1
     fi
 
@@ -521,18 +519,37 @@ macos-swift-app config="release":
         -output "$gen/SuperVoiceFFI.xcframework" >/dev/null
 
     swift build --package-path super-voice-macos -c {{ config }}
-    bin=$(swift build --package-path super-voice-macos -c {{ config }} --show-bin-path)
 
-    bundle="target/{{ config }}/Super Voice (SwiftUI).app"
+# Put the macOS app's executable and what it draws with into the bundle at
+# `contents` (its `Contents` directory): the executable under the settings
+# app's name (see super-voice-macos/Info.plist), and the Phosphor icons.
+[private]
+macos-swift-into contents config="release":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bin=$(swift build --package-path super-voice-macos -c {{ config }} --show-bin-path)
+    mkdir -p "{{ contents }}/MacOS" "{{ contents }}/Resources/icons"
+    cp "$bin/SuperVoice" "{{ contents }}/MacOS/{{ app_name }}"
+    cp super-voice-app/resources/icons/phosphor/*.svg "{{ contents }}/Resources/icons/"
+
+# The macOS app on its own, for development: `target/<config>/Super Voice
+# (dev).app`, signed ad hoc, with no daemon or LaunchAgents beside it (point it
+# at a daemon with SUPER_VOICE_HTTP_SOCKET). Its identifier is its own, so it
+# doesn't take the installed app's place with macOS, and in DEBUG it keeps its
+# session token apart from the installed app's. See `macos-swift-build`.
+#
+# Usage: just macos-swift-app [release|debug]
+macos-swift-app config="release": (macos-swift-build config)
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bundle="target/{{ config }}/Super Voice (dev).app"
     rm -rf "$bundle"
-    mkdir -p "$bundle/Contents/MacOS"
+    mkdir -p "$bundle/Contents"
     version=$(cargo pkgid -p super-voice-ffi | sed 's/.*[#@]//')
     sed -e "s|__VERSION__|$version|g" -e "s|__BUILD__|${version%%-*}|g" \
-        super-voice-macos/Info.plist > "$bundle/Contents/Info.plist"
-    cp "$bin/SuperVoice" "$bundle/Contents/MacOS/"
-    # The settings app's own icons, so both apps draw the same files.
-    mkdir -p "$bundle/Contents/Resources/icons"
-    cp super-voice-app/resources/icons/phosphor/*.svg "$bundle/Contents/Resources/icons/"
+        -e "s|<string>ai.menjivar.super-voice-app</string>|<string>ai.menjivar.super-voice-app-dev</string>|" \
+        {{ macos_resources }}/Info.plist > "$bundle/Contents/Info.plist"
+    just macos-swift-into "$bundle/Contents" {{ config }}
     codesign --force --sign - "$bundle"
     codesign --verify --strict "$bundle"
 
@@ -621,7 +638,7 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
         ${XDG_STATE_HOME:+--env XDG_STATE_HOME="$XDG_STATE_HOME"} \
         ${SUPER_VOICE_LANGUAGE:+--env SUPER_VOICE_LANGUAGE="$SUPER_VOICE_LANGUAGE"} \
         --env XDG_DATA_HOME="$data" \
-        "target/debug/Super Voice (SwiftUI).app"
+        "target/debug/Super Voice (dev).app"
     if [ ! -s "$out" ]; then
         cat "$said" >&2 2>/dev/null || true
         echo "❌ no screenshot at $out" >&2
@@ -635,7 +652,7 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
     echo "✓ $out"
 
 # Render the macOS app icon into an .icns at `out`, from the SVG the Linux
-# desktop entry uses. See super-voice-app/resources/macos/app-icon.swift.
+# desktop entry uses. See super-voice-macos/app-icon.swift.
 [private]
 macos-icon out:
     #!/usr/bin/env bash

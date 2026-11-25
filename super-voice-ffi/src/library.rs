@@ -436,7 +436,6 @@ pub struct LibraryStore {
 impl LibraryStore {
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn LibraryObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

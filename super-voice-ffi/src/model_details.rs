@@ -130,7 +130,6 @@ impl ModelDetailsStore {
     /// clients make. Nothing is read until the app focuses a model.
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn ModelDetailsObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

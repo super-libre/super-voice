@@ -21,7 +21,6 @@ static HUB: LazyLock<broadcast::Sender<Event>> = LazyLock::new(|| {
     let (sender, _) = broadcast::channel(BACKLOG);
     let hub = sender.clone();
     RUNTIME.spawn(async move {
-        crate::identify();
         loop {
             let mut events = Box::pin(super_voice_app_core::events::subscribe());
             while let Some(event) = events.next().await {

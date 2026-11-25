@@ -182,7 +182,6 @@ impl ClipsStore {
     /// app sends [`ClipsAction::Reload`].
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn ClipsObserver>) -> Arc<Self> {
-        crate::identify();
         Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

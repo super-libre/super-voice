@@ -16,6 +16,11 @@ enum Entry {
         if Notifier.requested {
             Notifier.run()
         }
+        #if DEBUG
+        // A development build keeps its session token apart from the
+        // installed app's.
+        useDevelopmentToken()
+        #endif
         SuperVoiceApp.main()
     }
 }
@@ -53,7 +58,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is looking at Super Voice, not the first time a dictation fails. Once
     /// they have answered, macOS answers for them.
     func applicationDidFinishLaunching(_ notification: Notification) {
-        registerLaunchAgents()
+        // Only Super Voice.app carries the services; a development build
+        // alone has none to register.
+        let agents = Bundle.main.bundleURL.appendingPathComponent("Contents/Library/LaunchAgents")
+        if FileManager.default.fileExists(atPath: agents.path) {
+            registerLaunchAgents()
+        }
         // Outside a bundle Notification Center raises an exception rather
         // than answering.
         if Bundle.main.bundleIdentifier != nil {
@@ -103,7 +113,7 @@ func showAbout() {
     NSApp.activate()
 }
 
-/// `SuperVoice --notify <title> <body>`: post one banner to Notification
+/// `super-voice-app --notify <title> <body>`: post one banner to Notification
 /// Center as Super Voice, then exit. The daemon runs this; see
 /// `super-voice-daemon/src/output/notification_center.rs`.
 ///
@@ -136,7 +146,7 @@ enum Notifier {
     static func run() -> Never {
         let args = Array(CommandLine.arguments.dropFirst(2))
         guard args.count == 2 else {
-            FileHandle.standardError.write(Data("usage: SuperVoice \(flag) <title> <body>\n".utf8))
+            FileHandle.standardError.write(Data("usage: super-voice-app \(flag) <title> <body>\n".utf8))
             exit(2)
         }
         let app = NSApplication.shared

@@ -222,7 +222,6 @@ impl ContextsStore {
     /// app sends [`ContextsAction::Reload`].
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn ContextsObserver>) -> Arc<Self> {
-        crate::identify();
         Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

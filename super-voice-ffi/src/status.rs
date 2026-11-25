@@ -205,7 +205,6 @@ impl StatusStore {
     /// it changes.
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn StatusObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             last: Mutex::new(HeaderStatus::DISCONNECTED),
             observer,

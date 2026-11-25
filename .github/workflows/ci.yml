@@ -238,6 +238,11 @@ jobs:
       - name: Check backend-feature combinations
         run: just check-features
 
+      # The app macOS ships: the SwiftUI app over super-voice-app-core, which
+      # the Linux jobs never see. The Linux settings app is the Linux jobs'.
+      - name: Build the macOS app
+        run: just macos-swift-app release
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

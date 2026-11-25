@@ -143,7 +143,6 @@ impl UpdatesStore {
     /// update events.
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn UpdatesObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

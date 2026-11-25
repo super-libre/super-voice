@@ -53,7 +53,6 @@ impl MicrophoneStore {
     /// now on.
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn MicrophoneObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,
