@@ -20,6 +20,7 @@ use super::width;
 #[derive(IntoElement)]
 pub struct SettingsRow {
     title: SharedString,
+    heading: Option<AnyElement>,
     description: Option<SharedString>,
     control: Option<AnyElement>,
     width: Option<Pixels>,
@@ -31,11 +32,20 @@ impl SettingsRow {
     pub fn new(title: impl Into<SharedString>) -> Self {
         Self {
             title: title.into(),
+            heading: None,
             description: None,
             control: None,
             width: None,
             inline: false,
         }
+    }
+
+    /// Draw this in the title's place: the title with a status pill beside
+    /// it.
+    #[must_use]
+    pub fn heading(mut self, heading: impl IntoElement) -> Self {
+        self.heading = Some(heading.into_any_element());
+        self
     }
 
     /// The muted line under the title.
@@ -79,12 +89,12 @@ impl RenderOnce for SettingsRow {
             .flex_1()
             .min_w_0()
             .gap_0p5()
-            .child(
-                div()
-                    .text_sm()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(self.title),
-            )
+            .child(div().text_sm().font_weight(FontWeight::MEDIUM).map(
+                |title| match self.heading {
+                    Some(heading) => title.child(heading),
+                    None => title.child(self.title),
+                },
+            ))
             .when_some(self.description, |text, description| {
                 text.child(
                     div()

@@ -15,6 +15,7 @@ icon_assets!(
         Brain,
         Bug,
         FileVolume,
+        KeyRound,
         Keyboard,
         LibraryBig,
         Microchip,
