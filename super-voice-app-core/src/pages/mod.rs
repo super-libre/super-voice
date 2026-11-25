@@ -10,3 +10,4 @@
 
 pub mod clips;
 pub mod notes;
+pub mod voices;

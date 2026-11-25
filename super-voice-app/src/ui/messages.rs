@@ -522,70 +522,17 @@ pub enum SpeechMessage {
 /// adds to it.
 #[derive(Debug, Clone)]
 pub enum VoicesMessage {
-    /// Fetch the library and the loaded model's cloning capability.
-    Refresh,
-    VoicesLoaded {
-        voices: Vec<super_voice_shared::tts::models::voices::VoiceInfo>,
-        model: Option<super_voice_shared::tts::models::voices::VoiceModelSupport>,
-    },
-    LoadFailed(String),
-
-    /// The user picked a reading script, or chose to read their own words
-    /// (`None`). Carries the script's id rather than the picker's row number:
-    /// the picker is ordered by speech language, so a row number means nothing
-    /// once the language changes underneath it.
-    ScriptSelected(Option<&'static str>),
-
-    /// Open the microphone and start capturing.
-    StartRecording,
-    /// One tick of the level meter and elapsed readout while recording.
-    RecordingTick,
-    /// Stop capturing and keep what was recorded as the pending sample. Also
-    /// how a capture that ended by itself — the cap, or a device failure —
-    /// is collected, so there is one path out of recording.
-    StopRecording,
-
-    /// Open the file picker.
-    ImportFile,
-    /// A file was chosen and read. `None` when the user cancelled.
-    FileImported(Option<(String, Vec<u8>)>),
-    /// The chosen file could not be read.
-    ImportFailed(String),
-
-    LabelChanged(String),
-    TranscriptChanged(String),
-    /// Throw the pending sample away without saving it.
-    DiscardPending,
-    /// Upload the pending sample as a new voice.
-    Save,
-    Saved(super_voice_shared::tts::models::voices::VoiceInfo),
-    SaveFailed(String),
-
-    /// Start editing one voice's label. Carries the id and the label to seed
-    /// the field with.
-    BeginRename {
-        id: String,
-        label: String,
-    },
-    RenameChanged(String),
-    CommitRename,
-    CancelRename,
-    Renamed(super_voice_shared::tts::models::voices::VoiceInfo),
-    RenameFailed(String),
-
-    Delete(String),
-    Deleted(String),
-    DeleteFailed {
-        id: String,
-        message: String,
-    },
-
-    /// Speak a fixed sentence in this voice, so the user can hear it.
+    /// Something the page's logic handles: a press, or the answer to work it
+    /// started. See `super_voice_app_core::pages::voices`.
+    Page(super_voice_app_core::pages::voices::Input),
+    /// Hear a voice, in the model text to speech speaks in, which the app
+    /// knows.
     Preview(String),
-    /// The daemon accepted the preview — registration is done and the audio is
-    /// on its way, so the row stops saying it is preparing one.
-    Previewed,
-    PreviewFailed(String),
+    /// One tick of the level meter and the time while recording.
+    RecordingTick,
+    /// Close the microphone and keep what it heard. Also how a recording that
+    /// stopped by itself (the limit, or a device failure) is collected.
+    StopRecording,
 }
 
 /// The synthesis model's voice.

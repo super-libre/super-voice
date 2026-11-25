@@ -185,7 +185,9 @@ impl AppModel {
             }),
             if voices_changed {
                 Task::done(cosmic::Action::App(Message::Voices(
-                    crate::ui::messages::VoicesMessage::Refresh,
+                    crate::ui::messages::VoicesMessage::Page(
+                        super_voice_app_core::pages::voices::Input::Refresh,
+                    ),
                 )))
             } else {
                 Task::none()

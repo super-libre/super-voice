@@ -643,7 +643,9 @@ impl AppModel {
             ]),
             crate::state::Page::Voices => Task::batch([
                 Task::done(cosmic::Action::App(Message::Voices(
-                    crate::ui::messages::VoicesMessage::Refresh,
+                    crate::ui::messages::VoicesMessage::Page(
+                        super_voice_app_core::pages::voices::Input::Refresh,
+                    ),
                 ))),
                 self.update_title(),
             ]),

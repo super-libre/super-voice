@@ -393,7 +393,9 @@ impl AppModel {
             // another client added one.
             "voices" => Some(Task::batch([
                 Task::done(cosmic::Action::App(Message::Voices(
-                    crate::ui::messages::VoicesMessage::Refresh,
+                    crate::ui::messages::VoicesMessage::Page(
+                        super_voice_app_core::pages::voices::Input::Refresh,
+                    ),
                 ))),
                 self.reload_model_voices(),
             ])),
