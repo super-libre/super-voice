@@ -39,7 +39,6 @@ pub mod notes {
 // Re-export commonly used types
 pub use editor::Editor;
 pub use models::{
-    ActionError, AudioTheme, ContextPage, DaemonStatus, ErrorScope, MenuAction, ModelsTab, Page,
-    Section,
+    ActionError, ContextPage, DaemonStatus, ErrorScope, MenuAction, ModelsTab, Page, Section,
 };
 pub use super_voice_app_core::state::{BlockStage, SpeakingStatus, SpeechState, Stage, VoiceState};

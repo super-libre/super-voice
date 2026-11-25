@@ -7231,7 +7231,6 @@ dependencies = [
  "libc",
  "libcosmic",
  "log",
- "mockito",
  "open",
  "rfd 0.18.0",
  "serde",

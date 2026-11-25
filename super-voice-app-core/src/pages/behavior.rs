@@ -375,32 +375,79 @@ pub async fn run_tick() -> Input {
 /// daemon can't say comes back as its default, as the settings app does at
 /// startup.
 pub async fn run_load() -> Vec<Input> {
-    let (stop_mode, preview_typing, write_method, theme, volume, themes) = tokio::join!(
-        get_recording_stop_mode(),
-        get_preview_typing(),
-        get_write_method(),
-        get_current_audio_theme(),
-        get_volume(),
-        load_audio_themes(),
+    let (themes, stop_mode, preview_typing, write_method, theme, volume) = tokio::join!(
+        run_load_themes(),
+        run_load_stop_mode(),
+        run_load_preview_typing(),
+        run_load_write_method(),
+        run_load_theme(),
+        run_load_volume(),
     );
     vec![
-        Input::ThemesLoaded(themes),
-        Input::StopModeLoaded(
-            stop_mode
-                .ok()
-                .and_then(|m| m.parse().ok())
-                .unwrap_or_default(),
-        ),
-        Input::PreviewTypingLoaded(preview_typing.unwrap_or(false)),
-        Input::WriteMethodLoaded(
-            write_method
-                .ok()
-                .and_then(|m| m.parse().ok())
-                .unwrap_or_default(),
-        ),
-        Input::ThemeLoaded(theme.unwrap_or_default()),
-        Input::VolumeLoaded(volume.unwrap_or(100)),
+        themes,
+        stop_mode,
+        preview_typing,
+        write_method,
+        theme,
+        volume,
     ]
+}
+
+// One reader per setting, for when the daemon says that one changed. Each
+// falls back to the setting's default when the daemon can't say.
+
+/// Read what stops a recording.
+pub async fn run_load_stop_mode() -> Input {
+    Input::StopModeLoaded(
+        get_recording_stop_mode()
+            .await
+            .inspect_err(|e| log::warn!("Could not read the recording stop mode: {e}"))
+            .ok()
+            .and_then(|m| m.parse().ok())
+            .unwrap_or_default(),
+    )
+}
+
+/// Read whether previews are typed.
+pub async fn run_load_preview_typing() -> Input {
+    Input::PreviewTypingLoaded(
+        get_preview_typing()
+            .await
+            .inspect_err(|e| log::warn!("Could not read whether previews are typed: {e}"))
+            .unwrap_or(false),
+    )
+}
+
+/// Read how transcripts are typed.
+pub async fn run_load_write_method() -> Input {
+    Input::WriteMethodLoaded(
+        get_write_method()
+            .await
+            .inspect_err(|e| log::warn!("Could not read the write method: {e}"))
+            .ok()
+            .and_then(|m| m.parse().ok())
+            .unwrap_or_default(),
+    )
+}
+
+/// Read the sound theme.
+pub async fn run_load_theme() -> Input {
+    Input::ThemeLoaded(
+        get_current_audio_theme()
+            .await
+            .inspect_err(|e| log::warn!("Could not read the sound theme: {e}"))
+            .unwrap_or_default(),
+    )
+}
+
+/// Read the sound volume.
+pub async fn run_load_volume() -> Input {
+    Input::VolumeLoaded(
+        get_volume()
+            .await
+            .inspect_err(|e| log::warn!("Could not read the volume: {e}"))
+            .unwrap_or(100),
+    )
 }
 
 /// Read the sound themes, or the built-in list when the daemon can't say.

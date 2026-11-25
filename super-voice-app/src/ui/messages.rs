@@ -8,8 +8,6 @@
 //! `match`es its sub-enum exhaustively — so a newly added variant is a compile
 //! error at both ends instead of silently falling through to `Task::none()`.
 
-use super_voice_shared::models::read_method::ReadMethod;
-
 use cosmic::widget::segmented_button;
 
 use crate::daemon::backends::BackendInfo;
@@ -398,13 +396,8 @@ pub enum AssistantsMessage {
 /// The Read aloud tab: where the shortcut reads from, and its test.
 #[derive(Debug, Clone)]
 pub enum ReadMethodMessage {
-    Changed(ReadMethod),
-    Loaded(ReadMethod),
-    Error(String),
-    /// Read what the setting names now and speak it, as the shortcut does.
-    Test,
-    /// The daemon could not read or speak it; carries its message.
-    TestFailed(String),
+    /// Its logic is the core's (`pages::read_aloud`).
+    Page(super_voice_app_core::pages::read_aloud::Input),
 }
 
 /// The Settings page.

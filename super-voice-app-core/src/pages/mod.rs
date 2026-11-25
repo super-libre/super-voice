@@ -20,6 +20,7 @@ pub mod model_language;
 pub mod model_voice;
 pub mod models;
 pub mod notes;
+pub mod read_aloud;
 pub mod recording_test;
 pub mod settings;
 pub mod shortcuts;

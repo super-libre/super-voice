@@ -195,7 +195,7 @@ fn count_label(filled: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::{count_label, editor_title};
-    use crate::state::contexts::{ContextDraft, RowId};
+    use crate::state::contexts::ContextDraft;
     use super_voice_shared::models::contexts::DictationContext;
 
     #[test]
