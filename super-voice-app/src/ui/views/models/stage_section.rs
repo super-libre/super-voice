@@ -23,15 +23,16 @@ use cosmic::iced::widget::row;
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, text};
 
+use super_voice_app_core::pages::models::{self as page, Input};
+
 use super::language::language_button;
 use crate::core::app::AppModel;
 use crate::daemon::backends::BackendInfo;
 use crate::state::{BlockStage, ContextPage};
 use crate::ui::icons;
-use crate::ui::messages::{Message, ModelsPageMessage, ShellMessage, StageMessage};
+use crate::ui::messages::{Message, ModelsPageMessage, ShellMessage};
 
-use super::active::backend_glyph_tile;
-use super::chips::model_is_online;
+use super::active::{backend_glyph_tile, models};
 use super::surface::{
     backend_description, card_divider, card_surface, empty_state, muted_text_color, repo_button,
 };
@@ -81,12 +82,12 @@ pub fn sheet_title(stage: BlockStage) -> String {
 /// `None` while the answer is in flight, which the sheet draws differently from
 /// an empty answer: one is loading, the other is "install one".
 pub(crate) fn stage_backends(app: &AppModel, stage: BlockStage) -> Option<&[BackendInfo]> {
-    app.stage_catalog.backends(stage.stage())
+    app.models.catalog.backends(stage.stage())
 }
 
 /// The model names one backend serves in `stage`, in manifest order.
 fn stage_models(app: &AppModel, stage: BlockStage, backend: &BackendInfo) -> Vec<String> {
-    app.stage_catalog.models(stage.stage(), &backend.source)
+    app.models.catalog.models(stage.stage(), &backend.source)
 }
 
 /// The backend the card is about: the one the daemon has selected.
@@ -95,7 +96,7 @@ fn stage_models(app: &AppModel, stage: BlockStage, backend: &BackendInfo) -> Vec
 /// and `source` alone is the "backend chosen, nothing running" state — exactly
 /// what `/active_backend` holds for transcription.
 fn selected_backend(app: &AppModel, stage: BlockStage) -> Option<&BackendInfo> {
-    let source = app.block(stage).source.as_deref()?;
+    let source = app.models.view(stage.stage()).source.as_deref()?;
     app.backends.iter().find(|b| b.source == source)
 }
 
@@ -105,8 +106,8 @@ fn selected_backend(app: &AppModel, stage: BlockStage) -> Option<&BackendInfo> {
 /// [`super::surface::card_header`]).
 pub(crate) fn section(app: &AppModel, stage: BlockStage, width: f32) -> Element<'_, Message> {
     let copy = copy(stage);
-    let block = app.block(stage);
-    let idle = app.idle_model(stage.stage()).is_some();
+    let block = app.models.view(stage.stage());
+    let idle = page::idle_model(&app.models, stage.stage()).is_some();
     let narrow = width < super::surface::NARROW_CARD;
 
     // None chosen: there is no backend to put in a card, so the section is the
@@ -191,9 +192,7 @@ fn header<'a>(
         )),
         super::surface::deselect_button(
             crate::fl!("deselect-this-backend"),
-            Message::Stage(StageMessage::DeselectBackend {
-                stage: stage.stage()
-            }),
+            models(Input::PickBackend(stage.stage(), None)),
         ),
     ]
     .spacing(spacing.space_xs)
@@ -239,8 +238,9 @@ fn control_row<'a>(
     stage: BlockStage,
     backend: &'a BackendInfo,
 ) -> Element<'a, Message> {
-    let block = app.block(stage);
-    let idle = app.idle_model(stage.stage()).is_some();
+    let block = app.models.view(stage.stage());
+    let card = page::card(&app.models, stage.stage());
+    let idle = page::idle_model(&app.models, stage.stage()).is_some();
 
     // An idle model shows as a running one: the next use loads it.
     if block.enabled || idle {
@@ -257,7 +257,7 @@ fn control_row<'a>(
         if let Some(devices) =
             super::active::device_dropdown(stage.stage(), &backend.source, &model, app)
         {
-            let note = super::active::device_note(app, stage.stage(), &backend.source);
+            let note = super::active::device_note(&card);
             rows.push((crate::fl!("runs-on"), note, devices));
         }
         // Voice before language: it is the one a user changes between
@@ -280,34 +280,27 @@ fn control_row<'a>(
         buttons.push(
             button::standard(crate::fl!("unload"))
                 .leading_icon(icons::phosphor_handle(icons::STOP))
-                .on_press(Message::Stage(StageMessage::Unload {
-                    stage: stage.stage(),
-                }))
+                .on_press(models(Input::Unload(stage.stage())))
                 .into(),
         );
         return super::surface::control_rows(rows, buttons);
     }
 
-    let models = stage_models(app, stage, backend);
+    let names = stage_models(app, stage, backend);
     let shown = shown_model(
-        app.staged_picks.for_backend(stage.stage(), &backend.source),
+        app.models.picks.for_backend(stage.stage(), &backend.source),
         block.model.as_deref(),
     );
     let selected = shown
         .as_deref()
-        .and_then(|m| models.iter().position(|n| n == m));
-    let models_pick = models.clone();
-    let dropdown = widget::dropdown(models, selected, move |index| {
-        Message::Stage(StageMessage::StageModel {
-            stage: stage.stage(),
-            model: models_pick[index].clone(),
-        })
+        .and_then(|m| names.iter().position(|n| n == m));
+    let names_pick = names.clone();
+    let dropdown = widget::dropdown(names, selected, move |index| {
+        models(Input::PickModel(stage.stage(), names_pick[index].clone()))
     })
     .placeholder(crate::fl!("select-model"));
 
-    let note = shown
-        .as_deref()
-        .and_then(|m| super::active::memory_note(backend, m));
+    let note = super::active::memory_note(&card);
     let mut rows: Vec<super::surface::ControlRow<'a>> =
         vec![(crate::fl!("model"), note, dropdown.into())];
     let mut buttons = Vec::new();
@@ -342,23 +335,14 @@ fn control_row<'a>(
         rows.push((crate::fl!("language"), None, lang_button));
     }
 
-    // Load — enabled only when a model is staged AND (a device is staged OR the
-    // model is online and has none to stage), and only while this stage is
-    // free. The device check is the transcription card's; without it a Load
-    // whose device answer was empty or still in flight sent no device at all.
-    let staged_online = shown
-        .as_deref()
-        .is_some_and(|m| model_is_online(backend, m));
-    let staged_ok =
-        selected.is_some() && (app.staged_picks.device(stage.stage()).is_some() || staged_online);
+    // Load — enabled once a model is staged on a device (or is online, and
+    // needs none), while this stage is free.
     buttons.push(
         button::suggested(crate::fl!("load-model"))
             .leading_icon(icons::phosphor_handle(icons::PLAY))
-            .on_press_maybe((staged_ok && app.is_model_ready(stage.stage())).then_some(
-                Message::Stage(StageMessage::Load {
-                    stage: stage.stage(),
-                }),
-            ))
+            .on_press_maybe(
+                (card.can_load && selected.is_some()).then_some(models(Input::Load(stage.stage()))),
+            )
             .into(),
     );
     super::surface::control_rows(rows, buttons)
@@ -373,11 +357,12 @@ fn reload_button(app: &AppModel, stage: BlockStage) -> Element<'_, Message> {
     super::surface::rounded_tooltip(
         widget::button::icon(icons::phosphor_handle(icons::ARROWS_CLOCKWISE))
             .class(cosmic::theme::Button::Standard)
-            .on_press_maybe(app.is_model_ready(stage.stage()).then_some(Message::Stage(
-                StageMessage::Reload {
-                    stage: stage.stage(),
-                },
-            ))),
+            .on_press_maybe(
+                app.models
+                    .operations
+                    .is_ready(stage.stage())
+                    .then_some(models(Input::ReloadModel(stage.stage()))),
+            ),
         text::body(crate::fl!("reload-this-model")),
         widget::tooltip::Position::Bottom,
     )
@@ -386,12 +371,12 @@ fn reload_button(app: &AppModel, stage: BlockStage) -> Element<'_, Message> {
 /// The model the card's controls act on: the running one, or the one its
 /// pickers show.
 fn card_model(app: &AppModel, stage: BlockStage, backend: &BackendInfo) -> Option<String> {
-    let block = app.block(stage);
-    if block.enabled || app.idle_model(stage.stage()).is_some() {
+    let block = app.models.view(stage.stage());
+    if block.enabled || page::idle_model(&app.models, stage.stage()).is_some() {
         block.model.clone()
     } else {
         shown_model(
-            app.staged_picks.for_backend(stage.stage(), &backend.source),
+            app.models.picks.for_backend(stage.stage(), &backend.source),
             block.model.as_deref(),
         )
     }
@@ -440,7 +425,7 @@ pub fn sheet(app: &AppModel, stage: BlockStage) -> Element<'_, Message> {
     let spacing = cosmic::theme::spacing();
     let muted = muted_text_color();
     let copy = copy(stage);
-    let selected = app.block(stage).source.as_deref();
+    let selected = app.models.view(stage.stage()).source.as_deref();
 
     let answered = stage_backends(app, stage);
     let eligible: &[BackendInfo] = answered.unwrap_or_default();

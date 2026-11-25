@@ -39,13 +39,28 @@ pub enum ModelOperationState {
     /// Loading the model into memory, after any download finished.
     Loading {
         target_model: String,
-        status_message: String,
+        /// What started it, for the app to say.
+        cause: LoadCause,
         /// What the backend reports of its load — a first-time setup, the
         /// step it is on, how far through — once it reports anything.
         load: Option<super_voice_shared::models::protocol::LoadProgress>,
     },
     /// The operation failed, with the daemon's reason.
     Error { message: String },
+}
+
+/// What started a load, for the card to say while the backend says nothing
+/// of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadCause {
+    /// The user's Load: the switch is starting.
+    Switch,
+    /// The running model brought back up where it runs.
+    Reload,
+    /// The running model moving onto `device`.
+    Move { device: String },
+    /// A load the daemon reported, whoever asked for it.
+    Reported,
 }
 
 impl ModelOperationState {
@@ -91,23 +106,6 @@ pub struct ModelOperations {
 }
 
 impl ModelOperations {
-    /// The state the app opens in: stage 1 is loading, because the first thing
-    /// the app does is read what the daemon already has. Every other stage is
-    /// idle until the daemon says otherwise.
-    #[must_use]
-    pub fn opening(status_message: String) -> Self {
-        let mut ops = Self::default();
-        ops.start(
-            Stage::Transcription,
-            ModelOperationState::Loading {
-                target_model: String::new(),
-                status_message,
-                load: None,
-            },
-        );
-        ops
-    }
-
     fn slot(&self, stage: Stage) -> &StageOperation {
         match stage {
             Stage::Transcription => &self.transcription,
@@ -180,10 +178,9 @@ impl ModelOperations {
     /// Take in a report of how `stage`'s model is coming along: a download
     /// tick, the daemon's poll of one, or the load that follows it.
     ///
-    /// - `loading_model`: loading, with what the backend says of its load
-    ///   (`loading` words it when the backend says nothing).
-    /// - `error`: failed, with the daemon's reason (`failed` words a report
-    ///   that gives none).
+    /// - `loading_model`: loading, with what the backend says of its load.
+    /// - `error`: failed, with the daemon's reason; empty when the report
+    ///   gives none, for the app to word.
     /// - `completed`, `cancelled`: over. Nothing changes here: the answer to
     ///   the request that started it, or the next read of the stage, ends it.
     /// - Anything else (`verifying`, `downloading`, and what the daemon adds
@@ -193,8 +190,6 @@ impl ModelOperations {
         &mut self,
         stage: Stage,
         progress: &super_voice_shared::models::protocol::DownloadProgress,
-        loading: impl FnOnce() -> String,
-        failed: impl FnOnce() -> String,
     ) -> Progressed {
         let target_model = progress.model_name.clone();
         match progress.status.as_str() {
@@ -203,14 +198,14 @@ impl ModelOperations {
                     stage,
                     ModelOperationState::Loading {
                         target_model,
-                        status_message: loading(),
+                        cause: LoadCause::Reported,
                         load: progress.load.clone(),
                     },
                 );
                 Progressed::Moved
             }
             "error" => {
-                let message = progress.error.clone().unwrap_or_else(failed);
+                let message = progress.error.clone().unwrap_or_default();
                 self.set(stage, ModelOperationState::Error { message });
                 Progressed::Failed
             }
@@ -257,7 +252,7 @@ mod tests {
     fn loading(model: &str) -> ModelOperationState {
         ModelOperationState::Loading {
             target_model: model.to_string(),
-            status_message: "Loading model...".to_string(),
+            cause: LoadCause::Switch,
             load: None,
         }
     }
@@ -357,14 +352,6 @@ mod tests {
 
         ops.reset();
         assert!(ops.is_ready(Stage::Transcription));
-        assert!(ops.is_ready(Stage::PostProcessing));
-    }
-
-    #[test]
-    fn the_app_opens_reading_the_transcription_stage() {
-        let ops = ModelOperations::opening("Loading initial model state...".to_string());
-        assert!(!ops.is_ready(Stage::Transcription));
-        assert_eq!(ops.pending_stages(), vec![Stage::Transcription]);
         assert!(ops.is_ready(Stage::PostProcessing));
     }
 }

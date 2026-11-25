@@ -742,7 +742,7 @@ mod model_status_tests {
         for stage in Stage::ALL {
             let loading = ModelOperationState::Loading {
                 target_model: "m".to_string(),
-                status_message: String::new(),
+                cause: crate::state::model_operations::LoadCause::Switch,
                 load: None,
             };
             assert_eq!(

@@ -54,8 +54,9 @@ impl AppModel {
     /// voice text to speech uses, by its label. Kept with each clip, and shown
     /// on its row.
     fn clip_voice_label(&self) -> Option<String> {
-        let source = self.synthesis.source.as_ref()?;
-        let model = self.synthesis.model.as_ref()?;
+        let synthesis = self.models.view(crate::state::Stage::Synthesis);
+        let source = synthesis.source.as_ref()?;
+        let model = synthesis.model.as_ref()?;
         if self.voice.target.as_ref() != Some(&(source.clone(), model.clone())) {
             return None;
         }
@@ -73,7 +74,8 @@ impl AppModel {
     /// speech uses, for the card's picker.
     pub(in crate::core::app) fn clips_shown(&self) -> Task<cosmic::Action<Message>> {
         let reload = Task::done(page_action(Input::Reload));
-        let voice = match (&self.synthesis.source, &self.synthesis.model) {
+        let synthesis = self.models.view(crate::state::Stage::Synthesis);
+        let voice = match (&synthesis.source, &synthesis.model) {
             (Some(source), Some(model)) => super::voice::load_model_voice(source, model.clone()),
             _ => Task::none(),
         };

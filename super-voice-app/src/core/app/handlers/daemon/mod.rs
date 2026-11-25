@@ -2,9 +2,9 @@
 
 mod events;
 
+use crate::core::app::AppModel;
 use crate::core::app::handlers::tasks::{build_load_settings_tasks, ping_task};
-use crate::core::app::{AppModel, DeviceState};
-use crate::ui::messages::{DaemonMessage, Message, ModelMessage};
+use crate::ui::messages::{DaemonMessage, Message};
 use cosmic::prelude::*;
 use log::info;
 use super_voice_app_core::pages::connection::{self as page, Effect, Input, Outcome};
@@ -20,24 +20,25 @@ impl AppModel {
                 cosmic::Action::App(Message::Daemon(DaemonMessage::Connection(input)))
             }),
 
-            DaemonMessage::PingTimeout => {
-                // Surface a stalled model switch (no progress for too long)
-                // rather than letting the UI spin on the now-untimed POST.
-                self.check_switch_stall();
-                self.connection(Input::Tick).1
-            }
+            DaemonMessage::PingTimeout => Task::batch([
+                // A download or load the daemon stopped reporting on fails,
+                // rather than spinning on the card for ever.
+                self.models_input(super_voice_app_core::pages::models::Input::Tick),
+                self.connection(Input::Tick).1,
+            ]),
 
             DaemonMessage::DaemonConnected => self.handle_daemon_connected(),
 
             DaemonMessage::EventStreamConnected => {
-                // Same connection-status handling as DaemonConnected, plus a
-                // current-model re-fetch: the live event stream is now
-                // subscribed, so re-read the daemon's authoritative model state
-                // to capture anything that changed before this point (e.g. a
-                // startup-load broadcast that fired before we subscribed). The
-                // fetch is epoch-guarded, so it can't clobber a live event that
-                // arrives while it's in flight.
-                Task::batch([self.handle_daemon_connected(), self.fetch_current_model()])
+                // Same connection-status handling as DaemonConnected, plus the
+                // stages read again: the live event stream is now subscribed,
+                // so anything that changed before this point (a startup load
+                // whose broadcast fired before the subscription, say) is read
+                // rather than missed.
+                Task::batch([
+                    self.handle_daemon_connected(),
+                    self.models_input(super_voice_app_core::pages::models::Input::Reload),
+                ])
             }
 
             DaemonMessage::DaemonError(_)
@@ -96,10 +97,6 @@ impl AppModel {
         let was_disconnected = self.connection(Input::Reached).0.reconnected;
         // Only clear potentially stuck switching states on actual reconnect, not periodic pings
         if was_disconnected {
-            self.device_state = DeviceState::Ready;
-            // Every stage: an operation the app was tracking belongs to a
-            // session that is gone.
-            self.model_operations.reset();
             // It asks for nothing: it only forgets the test.
             let _ = super_voice_app_core::pages::recording_test::update(
                 &mut self.recording_test,
@@ -134,7 +131,10 @@ impl AppModel {
             // Fresh connection — drop any banner left over from before the drop.
             self.action_error = None;
             Task::batch([
-                self.handle_model_messages(ModelMessage::LoadInitialData),
+                // Every stage: an operation the app was tracking belongs to a
+                // session that is gone, so each is read again.
+                self.models_input(super_voice_app_core::pages::models::Input::Reconnected),
+                crate::core::app::handlers::tasks::reload_backends(),
                 build_load_settings_tasks(),
                 super::settings_page::load_language(),
             ])

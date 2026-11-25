@@ -19,21 +19,9 @@ use cosmic::prelude::*;
 use cosmic::widget::{menu, nav_bar};
 use std::collections::HashMap;
 
-/// The model operation a pipeline stage has in flight. Defined with the
-/// per-stage container that holds it, and re-exported here because every
-/// handler reaches it through the app model.
-pub use crate::state::model_operations::{ModelOperationState, ModelOperations};
-
-/// Device switching state
-#[derive(Debug, Clone, PartialEq)]
-pub enum DeviceState {
-    Ready,
-    Switching {
-        target_device: String,
-        status_message: String,
-    },
-    Cooldown, // Brief period after switching to avoid premature device requests
-}
+/// The model operation a pipeline stage has in flight, as the cards' views
+/// read it.
+pub use crate::state::model_operations::ModelOperationState;
 
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
@@ -64,48 +52,14 @@ pub struct AppModel {
     /// Last UDP data timestamp
     pub last_udp_data: std::time::Instant,
 
-    // Model management state
-    /// Currently loaded model
-    pub current_model: String,
-    /// Source (serving backend repo id) of the currently loaded model
-    pub current_source: String,
-    /// Monotonic counter bumped every time a live daemon event (e.g.
-    /// `model_switched`) updates the model identity. A point-in-time
-    /// `get_current_model` snapshot captures this at issue time and is
-    /// discarded on arrival if the counter has since advanced — so a slow,
-    /// stale reconnect query can never clobber a fresher live event.
-    pub current_model_epoch: u64,
-    /// Stage 1's `(model, source)` while the daemon reports that model idle:
-    /// out of memory until its next use loads it; `None` otherwise. Read with
-    /// the same snapshots as the loaded model, under the same epoch.
-    pub transcription_idle: Option<(String, String)>,
-    /// What each pipeline stage has in flight: a download, a load, a failure,
-    /// or nothing. Per stage because the stages provision independently, so
-    /// one stage's work must neither render on another's card nor keep its
-    /// Load button disabled.
-    pub model_operations: ModelOperations,
-
-    // Device management state
-    /// The accelerator the loaded stage-1 model is on (`cpu`/`cuda`/…), from
-    /// the daemon's `ready` events; empty when nothing is loaded. Each
-    /// model's own cpu/gpu *preference* is read from the daemon when the
-    /// model is staged.
-    pub current_device: String,
-    /// GPU inventory + memory from the daemon's `GET /gpu_info` (gpu-probe).
-    pub gpu_info: Vec<super_voice_shared::models::protocol::GpuInfo>,
-    /// Device switching state
-    pub device_state: DeviceState,
+    /// The Models page's stage cards: what each stage runs, what can fill
+    /// it, what each card has picked for Load, and each stage's download or
+    /// load. The daemon is the one that knows: each stage is read again when
+    /// it says one changed.
+    pub models: super_voice_app_core::pages::models::ModelsState,
     /// Last event timestamp for polling daemon events
     pub last_event_timestamp: Option<String>,
 
-    /// The transcript post-processor: whether it runs, which model is
-    /// selected, and whether that model is actually loaded. Mirrors the
-    /// daemon's `/post_processor` block; the daemon stays authoritative, so
-    /// this is replaced wholesale by every `Loaded` message rather than being
-    /// edited field-by-field.
-    pub post_processor: crate::daemon::client::StageState,
-    /// Text to speech's synthesis stage, read back from the daemon.
-    pub synthesis: crate::daemon::client::StageState,
     /// The synthesis model's voice control.
     pub voice: crate::state::VoiceState,
     /// The tab each feature's section shows, kept while the user is elsewhere.
@@ -118,21 +72,6 @@ pub struct AppModel {
     pub speech: crate::state::SpeechState,
     /// The Voices tab: the cloned-voice library and a recording in progress.
     pub voices: crate::state::voices::VoicesState,
-    /// What each stage's card has picked but not yet loaded. One store for
-    /// every stage: a pick is local until Load commits it, which is true of
-    /// every stage's card, so there is no per-stage copy of the rule.
-    pub staged_picks: crate::state::staged_picks::StagedPicks,
-    /// The device lists the daemon has answered for, per pipeline stage: what
-    /// its selected backend can run models on, and what each staged model can
-    /// be loaded onto. Read by the pickers instead of deriving availability
-    /// from the catalog, so the app and the daemon cannot disagree about what
-    /// this install can run.
-    pub device_offers: crate::state::device_offers::DeviceOffers,
-    /// What the daemon says each stage can be filled with — its eligible
-    /// backends and their models for that stage. Read rather than derived from
-    /// the catalog, so a picker cannot offer what the daemon would refuse.
-    pub stage_catalog: crate::state::stage_catalog::StageCatalog,
-
     /// The Shortcuts page: where each shortcut stands.
     pub shortcuts: crate::state::shortcuts::ShortcutsState,
     /// The Assistants page: where each assistant stands, and its dialogs.
@@ -369,8 +308,13 @@ impl cosmic::Application for AppModel {
                 .map(|_| Message::Daemon(DaemonMessage::PingTimeout)),
             // Periodic GPU inventory/memory refresh (gated on connection in the
             // handler, so it's a no-op while disconnected).
-            cosmic::iced::time::every(std::time::Duration::from_secs(GPU_POLL_INTERVAL_SECS))
-                .map(|_| Message::ModelsPage(ModelsPageMessage::RefreshGpuInfo)),
+            cosmic::iced::time::every(std::time::Duration::from_secs(GPU_POLL_INTERVAL_SECS)).map(
+                |_| {
+                    Message::Models(crate::ui::messages::ModelsMessage::Page(
+                        super_voice_app_core::pages::models::Input::RefreshGpus,
+                    ))
+                },
+            ),
             // The window's width, for what the header has room for.
             cosmic::iced::window::resize_events()
                 .map(|(id, size)| Message::Shell(ShellMessage::WindowWidth(id, size.width))),

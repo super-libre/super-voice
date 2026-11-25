@@ -42,6 +42,7 @@ pub use add_sheet::{add_backend_footer, add_backend_sheet};
 pub use build_dialog::build_dialog;
 pub use configure::configure_sheet;
 pub(crate) use fmt::accel_name;
+pub(crate) use pipeline::stage_name;
 pub use select_sheet::select_backend_sheet;
 pub use uninstall_dialog::uninstall_dialog;
 
@@ -167,7 +168,7 @@ fn feature_pill<'a>(
 pub(crate) fn gpu_summary(app: &AppModel, compact: bool) -> Option<Element<'_, Message>> {
     use fmt::{fmt_gib, fmt_gib_pair, short_gpu_name, vram_meter};
     use surface::rounded_tooltip;
-    let primary = app.gpu_info.first()?;
+    let primary = app.models.gpus.first()?;
     let name = short_gpu_name(&primary.name);
     // Live "used / total" when the daemon reports usage; total-only otherwise.
     let label = match primary.used_bytes {
@@ -175,7 +176,8 @@ pub(crate) fn gpu_summary(app: &AppModel, compact: bool) -> Option<Element<'_, M
         None => format!("{name} · {}", fmt_gib(primary.total_bytes)),
     };
     let detail = app
-        .gpu_info
+        .models
+        .gpus
         .iter()
         .map(|g| match (g.used_bytes, g.free_bytes) {
             (Some(used), Some(free)) => crate::fl!(
@@ -236,8 +238,9 @@ pub fn page(app: &AppModel) -> Element<'_, Message> {
             // installed); otherwise the empty state that opens the "Select a
             // backend" sheet.
             None => match app
-                .models_page
-                .active_backend
+                .models
+                .view(stage)
+                .source
                 .as_deref()
                 .and_then(|source| app.backends.iter().find(|b| b.source == source))
             {

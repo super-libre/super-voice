@@ -29,7 +29,7 @@ use crate::ui::messages::{Message, ModelsPageMessage};
 use crate::ui::views::common::status_dot;
 
 /// The name a stage goes by on its step and above its card.
-pub(super) fn stage_name(stage: Stage) -> String {
+pub(crate) fn stage_name(stage: Stage) -> String {
     match stage {
         Stage::Transcription => crate::fl!("transcription"),
         Stage::PostProcessing => crate::fl!("post-processing"),
@@ -140,23 +140,26 @@ fn operation(op: &ModelOperationState) -> Option<(String, Option<f32>)> {
 }
 
 fn summary(app: &AppModel, stage: Stage) -> StepSummary {
+    let view = app.models.view(stage);
     let mut summary = if let Some(block) = stage.block() {
-        block_summary(block, app.block(block))
+        block_summary(block, view)
     } else {
-        let active = app.models_page.active_backend.as_deref();
-        let name = active
+        let name = view
+            .source
+            .as_deref()
             .and_then(|source| app.backends.iter().find(|b| b.source == source))
             .map(|b| b.name.as_str());
+        let running = super_voice_app_core::pages::models::running_model(&app.models, stage);
         transcription_summary(
             name,
-            &app.current_model,
-            active == Some(app.current_source.as_str()),
-            &app.current_device,
+            running.unwrap_or_default(),
+            running.is_some(),
+            view.running_device().unwrap_or_default(),
         )
     };
     // A model out of memory until its next use runs on nothing yet, so the
     // line is its name alone. The step marks it idle in its corner.
-    if let Some(model) = app.idle_model(stage) {
+    if let Some(model) = super_voice_app_core::pages::models::idle_model(&app.models, stage) {
         summary.detail = model.to_string();
     }
     summary
@@ -305,8 +308,9 @@ fn end<'a>(name: String, caption: String, stacked: bool) -> Element<'a, Message>
 fn step(app: &AppModel, stage: Stage, selected: Stage) -> Element<'_, Message> {
     let open = stage == selected;
     let mut summary = summary(app, stage);
-    let in_flight = operation(app.model_operations.get(stage));
-    let idle = in_flight.is_none() && app.idle_model(stage).is_some();
+    let in_flight = operation(app.models.operations.get(stage));
+    let idle = in_flight.is_none()
+        && super_voice_app_core::pages::models::idle_model(&app.models, stage).is_some();
     let mut progress = None;
     if let Some((detail, fraction)) = in_flight {
         summary.detail = detail;

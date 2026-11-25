@@ -19,7 +19,8 @@ use cosmic::prelude::*;
 use super::{AppModel, Scene};
 use crate::daemon::client::{StageState, get_stage_view};
 use crate::state::Stage;
-use crate::ui::messages::{Message, ShellMessage, StageMessage};
+use crate::ui::messages::{Message, ModelsMessage, ShellMessage};
+use super_voice_app_core::pages::models::Input;
 
 /// How long the daemon gets to take a change before the next is asked for.
 const TAKE: Duration = Duration::from_secs(1);
@@ -103,14 +104,14 @@ enum Change {
 impl Change {
     fn message(&self) -> Message {
         let stage = Stage::Transcription;
-        Message::Stage(match self.clone() {
-            Self::Deselect => StageMessage::DeselectBackend { stage },
-            Self::Select(source) => StageMessage::SelectBackend { stage, source },
-            Self::Pick(model) => StageMessage::StageModel { stage, model },
-            Self::Device(device) => StageMessage::StageDevice { stage, device },
-            Self::Load => StageMessage::Load { stage },
-            Self::Unload => StageMessage::Unload { stage },
-        })
+        Message::Models(ModelsMessage::Page(match self.clone() {
+            Self::Deselect => Input::PickBackend(stage, None),
+            Self::Select(source) => Input::PickBackend(stage, Some(source)),
+            Self::Pick(model) => Input::PickModel(stage, model),
+            Self::Device(device) => Input::PickDevice(stage, device),
+            Self::Load => Input::Load(stage),
+            Self::Unload => Input::Unload(stage),
+        }))
     }
 }
 
@@ -238,7 +239,7 @@ impl AppModel {
             .asked
             .as_ref()
             .is_some_and(|(_, at, _)| at.elapsed() < TAKE);
-        if taking || !self.is_model_ready(Stage::Transcription) {
+        if taking || !self.models.operations.is_ready(Stage::Transcription) {
             return Next::Wait;
         }
 
@@ -285,7 +286,7 @@ impl AppModel {
 
         // Load it, as the card does: pick the model, wait for the daemon to
         // say what it runs on, put it on the device asked for, then Load.
-        let Some(pick) = self.staged_picks.get(Stage::Transcription) else {
+        let Some(pick) = self.models.picks.get(Stage::Transcription) else {
             return Next::Ask(Change::Pick(model));
         };
         if pick.source != source || pick.model != model {
@@ -295,7 +296,8 @@ impl AppModel {
             return Next::Wait;
         };
         let offered = self
-            .device_offers
+            .models
+            .offers
             .model(Stage::Transcription, &source, &model)
             .unwrap_or_default();
         if let Some(device) = goal.device.as_deref()
@@ -307,20 +309,17 @@ impl AppModel {
         Next::Ask(Change::Load)
     }
 
-    /// `Done` once the app shows what the daemon has: the card follows the
-    /// daemon's events, which can land after the read that found the stage
-    /// ready.
+    /// `Done` once the app shows what the daemon has: the card reads the
+    /// stage again on the daemon's events, which can land after the read that
+    /// found the stage ready.
     fn once_shown(&self, state: Stt, view: &StageState) -> Next {
-        let selected = self.models_page.active_backend.as_deref() == view.source.as_deref();
-        let shown = selected
+        let shown = self.models.view(Stage::Transcription);
+        let same = shown.source == view.source
             && match state {
-                Stt::Running => {
-                    Some(self.current_source.as_str()) == view.source.as_deref()
-                        && Some(self.current_model.as_str()) == view.model.as_deref()
-                }
-                Stt::Empty | Stt::Selected | Stt::Unloaded => self.current_model.is_empty(),
+                Stt::Running => shown.loaded && shown.model == view.model,
+                Stt::Empty | Stt::Selected | Stt::Unloaded => !shown.loaded,
             };
-        if shown { Next::Done } else { Next::Wait }
+        if same { Next::Done } else { Next::Wait }
     }
 
     fn scene_failed(&mut self, why: &str) -> Task<cosmic::Action<Message>> {

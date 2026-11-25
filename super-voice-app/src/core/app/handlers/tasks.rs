@@ -50,7 +50,9 @@ pub(in crate::core::app) fn reload_backends() -> Task<cosmic::Action<Message>> {
         // Which of them can fill each stage is the daemon's answer, not a
         // filter of the catalog above — and it changes for exactly the same
         // reasons, so it is re-asked here rather than anywhere else.
-        crate::core::app::AppModel::load_stage_backends(),
+        Task::done(super::models::models_action(
+            super_voice_app_core::pages::models::Input::ReloadBackends,
+        )),
     ])
 }
 
@@ -70,7 +72,6 @@ pub(in crate::core::app) fn build_load_settings_tasks() -> Task<cosmic::Action<M
     Task::batch([
         load_audio_theme(),
         load_volume(),
-        Task::batch(crate::state::BlockStage::ALL.map(super::stage::load_block)),
         // Contexts are global and the daemon owns them, so a restart under an
         // open Contexts page would otherwise leave the list showing whatever
         // the previous daemon had. The `settings_changed` topic covers a live

@@ -12,9 +12,6 @@ use crate::state::ModelsTab;
 pub struct ModelsPageState {
     /// Installed / Download tab bar (the active tab carries a [`ModelsTab`]).
     pub models_tabs: segmented_button::SingleSelectModel,
-    /// Source of the currently-selected (active) backend, shown in the card
-    /// above the tabs. `None` when the daemon is idle.
-    pub active_backend: Option<String>,
     /// `source` of the installed-backend card whose overflow ("⋯") menu is
     /// open, if any. Only one is open at a time.
     pub installed_menu_open: Option<String>,
@@ -24,28 +21,6 @@ pub struct ModelsPageState {
     pub browse_menu_open: bool,
     /// The pipeline step whose card the Models page shows under the rows.
     pub pipeline_step: crate::state::Stage,
-    /// A framework picked whose build is not installed: asked about in a
-    /// dialog, then downloaded, then switched to.
-    pub pending_build: Option<PendingBuild>,
-}
-
-/// A framework picked for a stage's model whose backend does not have that
-/// build installed.
-///
-/// Picking one asks first, every time, because it is a download. Once the
-/// user agrees the build is installed in place of the one there, keeping the
-/// downloaded models, and the model is moved to the framework when the
-/// install completes.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingBuild {
-    pub stage: crate::state::Stage,
-    /// The backend whose build this is.
-    pub source: String,
-    /// The framework picked, as the daemon names it (`cuda`).
-    pub framework: String,
-    /// The user agreed and the build is downloading. Until then the dialog
-    /// is up.
-    pub downloading: bool,
 }
 
 impl Default for ModelsPageState {
@@ -62,11 +37,9 @@ impl Default for ModelsPageState {
             .data(ModelsTab::Download);
         Self {
             models_tabs,
-            active_backend: None,
             installed_menu_open: None,
             browse_menu_open: false,
             pipeline_step: crate::state::Stage::Transcription,
-            pending_build: None,
         }
     }
 }

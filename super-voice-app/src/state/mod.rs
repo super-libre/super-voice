@@ -13,8 +13,8 @@ pub mod models_page;
 pub use super_voice_app_core::state::update;
 
 pub use super_voice_app_core::state::{
-    assistants, behavior, device_offers, language, model_operations, registry, scripts, shortcuts,
-    stage_catalog, staged_picks, voices,
+    assistants, behavior, language, model_operations, registry, scripts, shortcuts, staged_picks,
+    voices,
 };
 
 /// The Clips tab's state, with libcosmic's editor for the next clip.

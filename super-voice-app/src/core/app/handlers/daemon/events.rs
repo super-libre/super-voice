@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use crate::core::app::{AppModel, DeviceState};
-use crate::state::{BlockStage, Stage};
-use crate::ui::messages::{DaemonMessage, DeviceMessage, DownloadMessage, Message, UpdateMessage};
+use crate::core::app::AppModel;
+use crate::ui::messages::{DaemonMessage, Message, UpdateMessage};
 use cosmic::prelude::*;
 use log::{info, warn};
 use super_voice_shared::models::protocol::{DaemonStatusEvent, NotificationEvent};
@@ -55,12 +54,13 @@ impl AppModel {
                     // Update timestamp for next polling
                     self.last_event_timestamp = Some(event.timestamp.clone());
 
-                    if event.event_type == "daemon_status_changed" {
-                        if let Some(task) = self.process_daemon_status_event(&event) {
-                            tasks.push(task);
-                        }
-                    } else if event.event_type == "download_progress"
-                        && let Some(task) = self.process_download_progress_event(&event)
+                    // What it means for the Models page's cards: a stage to
+                    // read again, a load started or ended, a download tick.
+                    for input in super_voice_app_core::pages::models::heard(&event) {
+                        tasks.push(self.models_input(input));
+                    }
+                    if event.event_type == "daemon_status_changed"
+                        && let Some(task) = self.process_daemon_status_event(&event)
                     {
                         tasks.push(task);
                     }
@@ -98,113 +98,7 @@ impl AppModel {
             }
         };
         match event {
-            // Stage 2 reports its own lifecycle on this topic, so every arm
-            // that acts on a stage's model checks whose it is first: reading a
-            // post-processor's load as the transcription model's would clear
-            // the wrong card and report the wrong device.
-            DaemonStatusEvent::Ready { stage, .. } if is_post_processing(stage) => {
-                self.model_operations.set_ready(Stage::PostProcessing);
-                // The daemon is authoritative about what stage 2 is running,
-                // and this is the only notice of a load it started itself (at
-                // startup, say) or one another client asked for.
-                Some(crate::core::app::handlers::stage::load_block(
-                    BlockStage::PostProcessing,
-                ))
-            }
-            DaemonStatusEvent::Ready {
-                model_loaded,
-                model_state,
-                actual_device,
-                preferred_device,
-                ..
-            } => {
-                self.handle_daemon_ready(actual_device.as_deref(), model_loaded);
-                self.adopt_transcription_device(model_loaded, preferred_device);
-                if !model_loaded {
-                    // An unload this app may not have asked for, such as the
-                    // daemon's own of an idle model. The event says nothing is
-                    // loaded, so clear the model here and let the event outdate
-                    // any snapshot still in flight. Re-reading the whole stage
-                    // instead would also reset the card, wiping the Loading of
-                    // a load the user started while the unload finished.
-                    let was = (!self.current_model.is_empty())
-                        .then(|| (self.current_model.clone(), self.current_source.clone()));
-                    self.current_model_epoch = self.current_model_epoch.wrapping_add(1);
-                    self.clear_loaded_model();
-                    return self.take_transcription_idle(model_state, was);
-                }
-                None
-            }
-            // Stage 2 moves to another device the way stage 1 does, and
-            // reports each step on its own stage. Its card shows the load, and
-            // the `ready` that ends the switch re-reads its block; the device
-            // state below is stage 1's, so none of this touches it.
-            DaemonStatusEvent::LoadingModelForDevice { model, stage, .. }
-                if is_post_processing(stage) =>
-            {
-                self.set_model_loading(
-                    model,
-                    crate::fl!("progress-loading-model"),
-                    Stage::PostProcessing,
-                );
-                None
-            }
-            DaemonStatusEvent::DeviceSwitchError { error, stage, .. }
-                if is_post_processing(stage) =>
-            {
-                warn!("The post-processor's device switch failed: {error}");
-                None
-            }
-            DaemonStatusEvent::SwitchingDevice { stage, .. } if is_post_processing(stage) => None,
-            DaemonStatusEvent::DeviceSwitchError { error, .. } => {
-                Some(self.handle_daemon_device_error(&error))
-            }
-            // Stage 2's identity change needs no separate handling: the
-            // `ready` that follows it re-reads the post-processor block, which
-            // is where the app keeps that stage's identity.
-            DaemonStatusEvent::ModelSwitched { stage, .. } if is_post_processing(stage) => None,
-            DaemonStatusEvent::ModelSwitched {
-                model_name, source, ..
-            } => Some(self.handle_daemon_model_switched(&model_name, &source)),
-            DaemonStatusEvent::SwitchingDevice { target_device, .. } => {
-                info!("Received switching_device event -> {target_device}");
-                // Keep device_state as Switching and wait for the `ready` event;
-                // this event just confirms the switch is in progress.
-                if !matches!(self.device_state, DeviceState::Switching { .. }) {
-                    warn!("Received switching_device event but not in switching state");
-                    let switching = crate::fl!("progress-switching-device");
-                    self.set_device_switching(target_device, switching);
-                }
-                None
-            }
-            DaemonStatusEvent::LoadingModelForDevice {
-                model,
-                target_device,
-                ..
-            } => {
-                info!("Received loading_model_for_device event: {model} on {target_device}");
-                let status_message = loading_on(&model, &target_device);
-                self.set_device_switching(target_device, status_message);
-                None
-            }
             DaemonStatusEvent::SettingsChanged { setting } => self.handle_setting_changed(&setting),
-            // Stage 2's load-start is the card's only cue for a load with
-            // nothing to download, and for one this app did not ask for.
-            DaemonStatusEvent::LoadingModel { new_model, stage } if is_post_processing(stage) => {
-                self.set_model_loading(
-                    new_model,
-                    crate::fl!("progress-loading-model"),
-                    Stage::PostProcessing,
-                );
-                None
-            }
-            // Stage 1's is still ignored: its own Load click already set the
-            // card loading, and a load from elsewhere is reported by the
-            // `model_switched` / `ready` pair that closes it.
-            DaemonStatusEvent::LoadingModel { .. } => None,
-            DaemonStatusEvent::ActiveBackendChanged { source } => {
-                self.adopt_transcription_backend(source)
-            }
             // The daemon completed a periodic self-update check and found a
             // newer release. Re-fetch the status so the header badge and the
             // Updates page pick it up without waiting for the user to open
@@ -215,123 +109,15 @@ impl AppModel {
                     super_voice_app_core::pages::updates::Input::Available,
                 )))
             }
+            // A stage's model: the Models page's cards take these (`heard`).
+            DaemonStatusEvent::Ready { .. }
+            | DaemonStatusEvent::LoadingModel { .. }
+            | DaemonStatusEvent::LoadingModelForDevice { .. }
+            | DaemonStatusEvent::ModelSwitched { .. }
+            | DaemonStatusEvent::SwitchingDevice { .. }
+            | DaemonStatusEvent::DeviceSwitchError { .. }
+            | DaemonStatusEvent::ActiveBackendChanged { .. } => None,
         }
-    }
-
-    pub(in crate::core::app) fn handle_daemon_ready(
-        &mut self,
-        actual_device: Option<&str>,
-        model_loaded: bool,
-    ) {
-        // Handle device readiness
-        if let Some(actual_device) = actual_device {
-            info!(
-                "Received ready event: current_device={} -> {}",
-                self.current_device, actual_device
-            );
-            self.current_device = actual_device.to_string();
-
-            // If we were switching devices, this marks completion
-            if matches!(self.device_state, DeviceState::Switching { .. }) {
-                info!("Device switch completed to: {actual_device}");
-            }
-            self.device_state = DeviceState::Ready;
-        }
-
-        // Handle model readiness - clear switching state
-        if model_loaded {
-            info!("Received ready event: model loading completed");
-            // Stage 2's `ready` is intercepted before this, so this one is
-            // stage 1's.
-            info!(
-                "Stage 1 model state before ready event: {:?}",
-                self.model_operations.get(Stage::Transcription)
-            );
-            self.model_operations.set_ready(Stage::Transcription);
-        }
-    }
-
-    pub(in crate::core::app) fn handle_daemon_device_error(
-        &mut self,
-        error: &str,
-    ) -> Task<cosmic::Action<Message>> {
-        warn!("Received device switch error event: {error}");
-        // Reset device state from switching to ready
-        if matches!(self.device_state, DeviceState::Switching { .. }) {
-            info!("Device switch failed, reverting to ready state");
-        }
-        self.device_state = DeviceState::Ready;
-        let error_message = error.to_string();
-        // Show error to user
-        Task::perform(async move { error_message }, |msg| {
-            cosmic::Action::App(Message::Device(DeviceMessage::DeviceError(msg)))
-        })
-    }
-
-    /// Take on a stage 1 backend chosen by another client.
-    ///
-    /// The app holds stage 1's selection itself, so its card can move the
-    /// moment the user picks; the daemon's `active_backend_changed` was
-    /// ignored, and a backend another client chose never reached the card.
-    /// It kept showing the old one as not loaded, and its Load failed, the
-    /// device it sets first being looked up in the backend the daemon
-    /// actually had. This app's own choice comes back with the backend it
-    /// already shows, and changes nothing.
-    fn adopt_transcription_backend(
-        &mut self,
-        source: Option<String>,
-    ) -> Option<Task<cosmic::Action<Message>>> {
-        if self.selected_backend(Stage::Transcription) == source {
-            return None;
-        }
-        info!("Stage 1's backend changed elsewhere: {source:?}");
-        self.staged_picks.clear(Stage::Transcription);
-        self.clear_loaded_model();
-        self.transcription_idle = None;
-        // What the app does after choosing a backend itself: record it, and
-        // ask for its devices. The model, if one loads, follows in its own
-        // `model_switched`.
-        Some(Task::done(cosmic::Action::App(Message::Stage(
-            crate::ui::messages::StageMessage::BackendSelected {
-                stage: Stage::Transcription,
-                source,
-                model: None,
-            },
-        ))))
-    }
-
-    pub(in crate::core::app) fn handle_daemon_model_switched(
-        &mut self,
-        model_name: &str,
-        source: &str,
-    ) -> Task<cosmic::Action<Message>> {
-        let model = model_name.to_string();
-        let source = source.to_string();
-        info!(
-            "Received model_switched event: current_model={:?} -> {:?} from source ({source})",
-            self.current_model, model
-        );
-        // A live identity change supersedes any in-flight reconnect snapshot: bump
-        // the epoch so a stale get_current_model response can't revert this.
-        self.current_model_epoch = self.current_model_epoch.wrapping_add(1);
-        self.current_model.clone_from(&model);
-        self.current_source.clone_from(&source);
-        self.transcription_idle = None;
-        self.model_operations.set_ready(Stage::Transcription);
-        info!("Stage 1 model state updated to Ready after model_switched event");
-        // Mirror CurrentModelLoaded/ModelChanged: fetch the per-model language
-        // block so the active-backend card's language button shows the model's
-        // resolved language instead of the neutral "Language" label. A client that
-        // learns the active model only via this broadcast — e.g. the settings app
-        // reconnecting after a daemon restart, where the startup load now emits
-        // model_switched — would otherwise leave model_language_for unset.
-        let language = self.load_model_language(Stage::Transcription, &source, model.clone());
-        // A model loaded elsewhere — by another client, or after the backend
-        // changed under the card — is staged the way the daemon's selection is
-        // at startup, which is what asks for the devices its Runs on row
-        // lists. A pick this app already holds is left alone.
-        let staged = self.stage_selection_if_unstaged(Stage::Transcription, &model, &source);
-        Task::batch([language, staged])
     }
 
     /// A setting changed — possibly from another client, or this very client's
@@ -353,21 +139,9 @@ impl AppModel {
                     )),
                 ]))
             }
-            // Another client (or this one) changed the post-processor.
-            // Re-read it so the section shows the current selection and
-            // its live `loaded` state.
-            "post_processor" => Some(crate::core::app::handlers::stage::load_block(
-                BlockStage::PostProcessing,
-            )),
-            // Whether each stage's model is idle follows the setting: the
-            // daemon reports a model out of memory as idle only while the next
-            // use would load it. So every stage is read again with it.
-            "idle_unload" => Some(Task::batch([
-                crate::core::app::handlers::settings_page::load_idle_unload(),
-                crate::core::app::handlers::stage::load_block(BlockStage::PostProcessing),
-                crate::core::app::handlers::stage::load_block(BlockStage::Synthesis),
-                self.read_transcription_idle(),
-            ])),
+            // The Models page's cards read every stage again with it
+            // (`heard`): whether a model out of memory is idle follows it.
+            "idle_unload" => Some(crate::core::app::handlers::settings_page::load_idle_unload()),
             // The rest of the daemon's settings: another client may have
             // changed one, and this app shows each of them somewhere.
             "audio_theme" => Some(crate::core::app::handlers::tasks::load_audio_theme()),
@@ -409,7 +183,8 @@ impl AppModel {
             // removed. The catalog carries each option's value, and reloading
             // it asks again which secrets are configured: without this, a
             // Configure sheet opened after another client's change showed the
-            // value from when the app started.
+            // value from when the app started. The cards read theirs with
+            // it (`heard`).
             "options" | "secrets" => Some(Task::done(cosmic::Action::App(Message::Backend(
                 crate::ui::messages::BackendMessage::BackendsReload,
             )))),
@@ -439,31 +214,6 @@ impl AppModel {
         }
     }
 
-    /// Show `device` as the transcription model's Runs on pick, when a model
-    /// is loaded and the pick is for the model the daemon reports.
-    ///
-    /// The `ready` that ends a load or a device move names the device the
-    /// model was asked to run on. The pick is otherwise the app's own, set
-    /// when this app chose a device, so after another client moved the model
-    /// the row kept its old framework above a caption saying it ran on
-    /// another. A pick staged for some other model is a choice still to be
-    /// loaded, and stays.
-    fn adopt_transcription_device(&mut self, loaded: bool, device: Option<String>) {
-        let Some(device) = device.filter(|_| loaded) else {
-            return;
-        };
-        if self.current_model.is_empty()
-            || self
-                .staged_picks
-                .model(Stage::Transcription, &self.current_source)
-                != Some(self.current_model.as_str())
-        {
-            return;
-        }
-        self.staged_picks
-            .set_device(Stage::Transcription, Some(device));
-    }
-
     /// Text to speech's events, on its one stage.
     ///
     /// Parsed with that feature's own event type: it reports voice preparation,
@@ -482,29 +232,7 @@ impl AppModel {
                 return None;
             }
         };
-        let refresh = || crate::core::app::handlers::stage::load_block(BlockStage::Synthesis);
         match event {
-            // The daemon is authoritative about what the stage is running, and
-            // this is the only notice of a load it started itself or another
-            // client asked for.
-            SynthesisEvent::Ready { .. } => {
-                self.model_operations.set_ready(Stage::Synthesis);
-                Some(refresh())
-            }
-            // The card's only cue for a load with nothing to download, and for
-            // one this app did not ask for.
-            SynthesisEvent::LoadingModel { new_model } => {
-                self.set_model_loading(
-                    new_model,
-                    crate::fl!("progress-loading-model"),
-                    Stage::Synthesis,
-                );
-                None
-            }
-            SynthesisEvent::DeviceSwitchError { error, .. } => {
-                self.set_stage_error(Stage::Synthesis, &error);
-                Some(refresh())
-            }
             SynthesisEvent::SettingsChanged { setting } => self.handle_setting_changed(&setting),
             SynthesisEvent::UpdateAvailable { latest_version } => {
                 log::info!("Daemon reports update available: {latest_version}");
@@ -512,11 +240,12 @@ impl AppModel {
                     super_voice_app_core::pages::updates::Input::Available,
                 )))
             }
-            // A backend selected or deselected elsewhere, with no load to
-            // follow it and no `ready` to say so.
-            SynthesisEvent::ActiveBackendChanged { .. } => Some(refresh()),
-            // The `ready` that closes each of these re-reads the stage.
-            SynthesisEvent::ModelSwitched { .. }
+            // The stage's model: the Models page's cards take these (`heard`).
+            SynthesisEvent::Ready { .. }
+            | SynthesisEvent::LoadingModel { .. }
+            | SynthesisEvent::DeviceSwitchError { .. }
+            | SynthesisEvent::ActiveBackendChanged { .. }
+            | SynthesisEvent::ModelSwitched { .. }
             | SynthesisEvent::SwitchingDevice { .. }
             | SynthesisEvent::LoadingModelForDevice { .. } => None,
             // The wait is the same whoever started it, so the Voices tab shows
@@ -546,59 +275,11 @@ impl AppModel {
             }
         }
     }
-
-    pub(in crate::core::app) fn process_download_progress_event(
-        &mut self,
-        event: &NotificationEvent,
-    ) -> Option<Task<cosmic::Action<Message>>> {
-        // Handle download progress events
-        let progress = serde_json::from_value::<
-            super_voice_shared::models::protocol::DownloadProgress,
-        >(event.data.clone())
-        .ok()?;
-
-        // The daemon says which stage it is provisioning for, so the progress
-        // lands on the card that started it rather than on whichever card
-        // happens to render the operation.
-        let stage = Stage::from_wire(feature_of(&event.data), progress.stage)?;
-        self.apply_download_progress(stage, &progress);
-
-        // Handle download completion/failure. The `error` case is fully
-        // handled by `apply_download_progress` above (it sets the Error banner
-        // with the daemon's failure detail and clears the selection), so it
-        // needs no follow-up message here — emitting a generic `DownloadError`
-        // would only reset the state and overwrite the detailed message.
-        if progress.status == "completed" {
-            // Send download completed message; model_switched event from the daemon
-            // will update state if needed — no explicit reload required.
-            return Some(Task::perform(async move { progress.model_name }, |model| {
-                cosmic::Action::App(Message::Download(DownloadMessage::DownloadCompleted(model)))
-            }));
-        } else if progress.status == "cancelled" {
-            let model = progress.model_name;
-            return Some(Task::perform(
-                async move { (model, stage) },
-                |(model, stage)| {
-                    cosmic::Action::App(Message::Download(DownloadMessage::DownloadCancelled {
-                        model,
-                        stage,
-                    }))
-                },
-            ));
-        }
-        None
-    }
 }
 
 /// The feature an event names, or `None` for the daemon's own news.
 fn feature_of(data: &serde_json::Value) -> Option<&str> {
     data.get("feature").and_then(serde_json::Value::as_str)
-}
-
-/// Whether an event's stage number is post-processing's. Stage 2 reports its
-/// own lifecycle on the same topic as stage 1.
-fn is_post_processing(stage: u32) -> bool {
-    Stage::speech_to_text(stage) == Some(Stage::PostProcessing)
 }
 
 #[cfg(test)]
@@ -629,14 +310,5 @@ mod tests {
     fn other_settings_including_language_are_not_self_update_settings() {
         assert_eq!(self_update_setting_route("language"), None);
         assert_eq!(self_update_setting_route("something_else"), None);
-    }
-}
-
-/// What a device switch says while it loads `model` on `device`.
-fn loading_on(model: &str, device: &str) -> String {
-    if device == "cpu" {
-        crate::fl!("progress-loading-on-cpu", model = model)
-    } else {
-        crate::fl!("progress-loading-on-gpu", model = model)
     }
 }

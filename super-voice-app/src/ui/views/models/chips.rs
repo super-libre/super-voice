@@ -6,8 +6,8 @@ use cosmic::{Apply, Element};
 // The rules behind the chips are the core's; the views reach them here.
 use super_voice_app_core::rules::backends::{Capabilities, ModelKind, model_groups};
 pub(super) use super_voice_app_core::rules::backends::{
-    backend_has_user_url, backend_is_online, model_is_online, stage_clones_voices,
-    stage_device_support, stage_hears_context, update_offer,
+    backend_has_user_url, backend_is_online, stage_clones_voices, stage_device_support,
+    stage_hears_context, update_offer,
 };
 
 use crate::state::registry::{FeatureFilter, RoleFilter};
@@ -117,7 +117,7 @@ pub(super) fn stage_chips(
         hosts: backend.allowed_hosts.as_slice(),
         user_url: backend_has_user_url(backend),
     });
-    let compute = stage_device_support(app.device_offers.backend(stage, &backend.source), backend);
+    let compute = stage_device_support(app.models.offers.backend(stage, &backend.source), backend);
     let caps = capability_chips(
         compute.gpu,
         compute.cpu,
@@ -126,7 +126,7 @@ pub(super) fn stage_chips(
         stage_clones_voices(stage, backend),
         true,
     );
-    let count = app.stage_catalog.models(stage, &backend.source).len();
+    let count = app.models.catalog.models(stage, &backend.source).len();
     if caps.is_none() && count == 0 {
         return None;
     }
