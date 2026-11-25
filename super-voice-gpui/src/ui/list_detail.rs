@@ -34,6 +34,7 @@ pub struct ListDetail {
     detail: Option<AnyElement>,
     placeholder: Option<AnyElement>,
     back: Option<(SharedString, OnBack)>,
+    back_actions: Option<AnyElement>,
     list_width: Pixels,
 }
 
@@ -47,6 +48,7 @@ impl ListDetail {
             detail: None,
             placeholder: None,
             back: None,
+            back_actions: None,
             list_width: px(280.),
         }
     }
@@ -75,6 +77,15 @@ impl ListDetail {
         on_back: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.back = Some((list_name.into(), Rc::new(on_back)));
+        self
+    }
+
+    /// Controls at the end of the back button's row, for a detail shown
+    /// alone: the detail's own actions (Dictate more, "…"), so they take no
+    /// row of their own.
+    #[must_use]
+    pub fn back_actions(mut self, actions: impl IntoElement) -> Self {
+        self.back_actions = Some(actions.into_any_element());
         self
     }
 
@@ -119,6 +130,7 @@ impl RenderOnce for ListDetail {
                 .child(self.list)
                 .into_any_element();
         };
+        let actions = self.back_actions;
         v_flex()
             .id(self.id)
             .size_full()
@@ -126,7 +138,9 @@ impl RenderOnce for ListDetail {
                 let label = t_with("back-to", &[("page", &name)]);
                 pane.child(
                     h_flex()
-                        .px_2()
+                        .gap_2()
+                        .pl_2()
+                        .pr_3()
                         .py_2()
                         .border_b_1()
                         .border_color(cx.theme().border)
@@ -137,7 +151,9 @@ impl RenderOnce for ListDetail {
                                 .label(name)
                                 .accessibility_label(label)
                                 .on_click(move |event, window, cx| on_back(event, window, cx)),
-                        ),
+                        )
+                        .child(div().flex_1())
+                        .children(actions),
                 )
             })
             .child(div().flex_1().min_h_0().child(detail))
