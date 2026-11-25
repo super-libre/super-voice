@@ -250,6 +250,12 @@ impl PageView for ModelsPage {
             self.unload_all(window, cx);
             return;
         }
+        // `configure:<backend source>`: the Library's Configure… opens this
+        // page's sheet over that backend.
+        if let Some(source) = id.strip_prefix("configure:") {
+            self.open_configure(source.to_owned(), window, cx);
+            return;
+        }
         let Some((verb, stage)) = id.split_once(':') else {
             return;
         };
