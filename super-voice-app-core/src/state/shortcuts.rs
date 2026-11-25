@@ -2,7 +2,7 @@
 //! The Shortcuts page: what the daemon says about each shortcut, and on
 //! macOS, the shortcut listener's keys and where its agent stands.
 
-use super_voice_shared::models::shortcuts::ShortcutList;
+use super_voice_shared::models::shortcuts::{ShortcutId, ShortcutList};
 
 use crate::state::connection::AgentStatus;
 
@@ -17,4 +17,7 @@ pub struct ShortcutsState {
     /// Where the shortcut listener's agent stands with macOS. `None` until
     /// read, and always on other systems.
     pub listener: Option<AgentStatus>,
+    /// The shortcut being added or removed, until the daemon answers: the
+    /// desktop may be asking the user about it.
+    pub changing: Option<ShortcutId>,
 }

@@ -410,6 +410,50 @@ pub fn used_ago(last_used_at: Option<&str>, now: DateTime<Utc>) -> Option<Ago> {
     })
 }
 
+/// [`used_ago`], as of now.
+#[must_use]
+pub fn used_ago_now(last_used_at: Option<&str>) -> Option<Ago> {
+    used_ago(last_used_at, Utc::now())
+}
+
+/// When a key was made, as the page says it: today or yesterday at a time,
+/// or the date and time for anything older, in the viewer's time zone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MadeOn {
+    /// Today, at this time (`09:42`).
+    Today(String),
+    /// Yesterday, at this time.
+    Yesterday(String),
+    /// Before then: `2026-11-16 11:03`.
+    Earlier(String),
+    /// Not a time the page can read: the daemon's words, as they came.
+    Unread(String),
+}
+
+/// When a key made at `created_at` (RFC 3339) was made, as of `now`.
+#[must_use]
+pub fn made_on<Tz: chrono::TimeZone>(created_at: &str, now: &DateTime<Tz>) -> MadeOn {
+    let Ok(at) = DateTime::parse_from_rfc3339(created_at) else {
+        return MadeOn::Unread(created_at.to_string());
+    };
+    let at = at.with_timezone(&now.timezone()).naive_local();
+    let today = now.naive_local().date();
+    let time = at.format("%H:%M").to_string();
+    if at.date() == today {
+        MadeOn::Today(time)
+    } else if today.pred_opt() == Some(at.date()) {
+        MadeOn::Yesterday(time)
+    } else {
+        MadeOn::Earlier(at.format("%Y-%m-%d %H:%M").to_string())
+    }
+}
+
+/// [`made_on`], as of now in the viewer's time zone.
+#[must_use]
+pub fn made_on_now(created_at: &str) -> MadeOn {
+    made_on(created_at, &chrono::Local::now())
+}
+
 pub async fn run_list() -> Input {
     Input::Loaded(client::list_assistants().await.map_err(|e| e.to_string()))
 }

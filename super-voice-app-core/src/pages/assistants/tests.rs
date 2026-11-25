@@ -205,3 +205,28 @@ fn a_session_shows_when_it_last_spoke_or_listened() {
     assert_eq!(used_ago(None, now), None);
     assert_eq!(used_ago(Some("soon"), now), None);
 }
+
+/// A key says when it was made: today or yesterday at a time, the date
+/// before that, and the daemon's own words when they are not a time.
+#[test]
+fn a_key_says_when_it_was_made() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-11-25T15:00:00Z")
+        .expect("a time")
+        .with_timezone(&chrono::Utc);
+    assert_eq!(
+        made_on("2026-11-25T09:42:10Z", &now),
+        MadeOn::Today("09:42".into())
+    );
+    assert_eq!(
+        made_on("2026-11-24T22:25:00Z", &now),
+        MadeOn::Yesterday("22:25".into())
+    );
+    assert_eq!(
+        made_on("2026-11-16T11:03:00Z", &now),
+        MadeOn::Earlier("2026-11-16 11:03".into())
+    );
+    assert_eq!(
+        made_on("last week", &now),
+        MadeOn::Unread("last week".into())
+    );
+}
