@@ -23,12 +23,13 @@ struct NotesView: View {
     }
 }
 
-/// The list, with the card a new note is recorded from.
+/// The list, with the card a new note is recorded from: grouped boxes, as
+/// System Settings draws them and as the settings app's cards are.
 struct NotesListView: View {
     @ObservedObject var model: NotesModel
 
     var body: some View {
-        List {
+        Form {
             Section {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -39,16 +40,27 @@ struct NotesListView: View {
                     }
                     Spacer()
                     Button("Record") {}
+                        .buttonStyle(.borderedProminent)
                         .disabled(true)
                 }
-                .padding(.vertical, 4)
-            } footer: {
-                Text("Notes are saved on this computer, in the app's own folder.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            } header: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Speak a note and it is kept here. Nothing is typed into other apps.")
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    Text("Notes are saved on this computer, in the app's own folder.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .textCase(nil)
+                .padding(.bottom, 6)
             }
 
             Section {
+                if model.page.loaded && model.page.notes.isEmpty {
+                    Text("No notes yet. Record one above.")
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(model.page.notes, id: \.id) { note in
                     Button {
                         model.send(.open(id: note.id))
@@ -62,22 +74,12 @@ struct NotesListView: View {
                     Text("Notes")
                     Spacer()
                     Text(count(model.page.notes.count, "note"))
+                        .foregroundStyle(.secondary)
                 }
+                .textCase(nil)
             }
         }
-        .overlay {
-            if model.page.loaded && model.page.notes.isEmpty {
-                ContentUnavailableView {
-                    Label {
-                        Text("No notes yet")
-                    } icon: {
-                        IconView(icon: .microphone, size: 40)
-                    }
-                } description: {
-                    Text(model.page.folder)
-                }
-            }
-        }
+        .formStyle(.grouped)
     }
 }
 
@@ -97,7 +99,6 @@ struct NoteRow: View {
             IconView(icon: .caretRight, size: 14, color: .tertiaryLabelColor)
         }
         .contentShape(Rectangle())
-        .padding(.vertical, 4)
     }
 }
 
@@ -105,23 +106,47 @@ struct NoteRow: View {
 struct OpenNoteView: View {
     @ObservedObject var model: NotesModel
     let open: OpenNotePage
+    @FocusState private var editing: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Button {
+                model.send(.close)
+            } label: {
+                HStack(spacing: 4) {
+                    IconView(icon: .caretLeft, size: 14, color: .controlAccentColor)
+                    Text("All notes")
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .buttonStyle(.plain)
+
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(when(open.created))
                     .font(.title2.bold())
                 Text("\(count(Int(open.words), "word")) · \(open.saved ? "Saved" : "Saving…")")
                     .foregroundStyle(.secondary)
             }
+
             TextEditor(text: $model.text)
                 .font(.body)
+                .focused($editing)
                 .scrollContentBackground(.hidden)
                 .padding(8)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(
+                            editing ? Color.accentColor : Color(nsColor: .separatorColor),
+                            lineWidth: editing ? 2 : 1
+                        )
+                )
                 .onChange(of: model.text) { _, text in model.edited(text) }
+
             HStack {
                 Button("Delete", role: .destructive) { model.send(.deleteRequested) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
                 Spacer()
                 if let exported = model.page.exported {
                     Text("Exported to \(exported)")
@@ -132,23 +157,14 @@ struct OpenNoteView: View {
                 }
                 Button("Export…") { model.send(.export) }
                 Button("Dictate more") {}
+                    .buttonStyle(.borderedProminent)
                     .disabled(true)
             }
         }
-        .padding()
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    model.send(.close)
-                } label: {
-                    Label {
-                        Text("All notes")
-                    } icon: {
-                        IconView(icon: .caretLeft)
-                    }
-                }
-            }
-        }
+        // The list's grouped cards' inset, so the page doesn't shift sideways
+        // when a note opens.
+        .padding(.horizontal, 28)
+        .padding(.vertical)
         .confirmationDialog(
             "Delete this note?",
             isPresented: Binding(

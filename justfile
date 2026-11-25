@@ -564,10 +564,13 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
     # doesn't hand it back.
     said="$data/stderr.log"
     cp -R super-voice-macos/Fixtures/super-voice "$data/"
-    # The user is active, as far as macOS knows: wakes a sleeping display and
-    # dismisses a screen saver, either of which would keep the app from
-    # coming to the front. The shot is refused if it still can't.
-    caffeinate -u -t 1
+    # The user is active, as far as macOS knows, for the next few seconds:
+    # wakes a display that is off and dismisses a screen saver, either of
+    # which keeps the app from coming to the front. The display takes a moment
+    # to come back, so the app opens after it. The shot is refused if it still
+    # can't come to the front.
+    caffeinate -u -t 8 &
+    sleep 3
     # A new instance (-n), so a copy already open can't take the request and
     # ignore the environment; -W waits for it to quit.
     open -n -W --stderr "$said" \

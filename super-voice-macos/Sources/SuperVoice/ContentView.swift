@@ -104,7 +104,9 @@ struct SpeechToTextView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            .padding([.horizontal, .top])
+            // In line with the grouped cards below it.
+            .padding(.top)
+            .padding(.horizontal, 28)
             switch tab {
             case .notes: NotesView(model: notes)
             case .contexts: NotYetView(title: "Contexts", icon: .microphone)
