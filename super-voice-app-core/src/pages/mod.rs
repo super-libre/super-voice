@@ -8,6 +8,7 @@
 //! runners do the work, each answering with the next `Input`. An app wires the
 //! two together on its own runtime, and says each notice in its own words.
 
+pub mod assistants;
 pub mod behavior;
 pub mod clips;
 pub mod contexts;

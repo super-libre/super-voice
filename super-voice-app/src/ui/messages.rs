@@ -8,7 +8,6 @@
 //! `match`es its sub-enum exhaustively — so a newly added variant is a compile
 //! error at both ends instead of silently falling through to `Task::none()`.
 
-use super_voice_shared::models::assistants::{AssistantId, AssistantList, NewKey};
 use super_voice_shared::models::read_method::ReadMethod;
 use super_voice_shared::models::shortcuts::{ShortcutId, ShortcutList};
 
@@ -541,50 +540,9 @@ pub enum ShortcutsMessage {
 /// assistant.
 #[derive(Debug, Clone)]
 pub enum AssistantsMessage {
-    /// Ask the daemon where each assistant stands.
-    Refresh,
-    /// The daemon's answer to a refresh.
-    Loaded(Result<AssistantList, String>),
-    /// The daemon's answer to a change: the list, or what to show.
-    Changed(Result<AssistantList, String>),
-    /// Open the Connect dialog for this assistant.
-    AskConnect(AssistantId),
-    /// Open a connected assistant's own page: its switches and sessions.
-    Open(AssistantId),
-    /// Back from an assistant's page to the list.
-    Close,
-    /// The Connect dialog's Cancel.
-    CancelConnect,
-    /// The Connect dialog's Connect.
-    Connect,
-    /// The daemon's answer to a connect: the list, or why not.
-    Connected(AssistantId, Result<AssistantList, String>),
-    /// Disconnect this assistant.
-    Disconnect(AssistantId),
-    /// The daemon's answer to a disconnect: the list, or why not.
-    Disconnected(AssistantId, Result<AssistantList, String>),
-    /// Whether Super Voice says aloud when this assistant needs the user.
-    SetAnnounceWhenNeeded(AssistantId, bool),
-    /// Whether this assistant's `listen` calls are heard with the context
-    /// they bring from the conversation.
-    SetConversationContext(AssistantId, bool),
-    /// Whether this assistant's plugin shows Talk above its prompt.
-    SetShowTalk(AssistantId, bool),
-    /// Whether this assistant's plugin sends a prompt dictated into it by
-    /// itself, after a countdown.
-    SetAutosendDictatedPrompts(AssistantId, bool),
-    /// Open the dialog that makes a key for another assistant.
-    AskKey,
-    /// The key's name, as typed.
-    KeyNameChanged(String),
-    /// The key dialog's Create.
-    CreateKey,
-    /// The daemon's answer to Create: the key, or why not.
-    KeyCreated(Result<NewKey, String>),
-    /// The key dialog's Cancel, or Done once the key is shown.
-    CloseKey,
-    /// Revoke the key made by hand with this id.
-    RemoveKey(String),
+    /// Something the page's logic handles. See
+    /// `super_voice_app_core::pages::assistants`.
+    Page(super_voice_app_core::pages::assistants::Input),
 }
 
 /// The Read aloud tab: where the shortcut reads from, and its test.

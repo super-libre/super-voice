@@ -437,7 +437,11 @@ impl cosmic::Application for AppModel {
         {
             subs.push(
                 cosmic::iced::time::every(std::time::Duration::from_secs(ASSISTANTS_POLL_SECS))
-                    .map(|_| Message::Assistants(crate::ui::messages::AssistantsMessage::Refresh)),
+                    .map(|_| {
+                        Message::Assistants(crate::ui::messages::AssistantsMessage::Page(
+                            super_voice_app_core::pages::assistants::Input::Refresh,
+                        ))
+                    }),
             );
         }
         // The Notes tab's elapsed time while a note records.
@@ -596,7 +600,9 @@ impl AppModel {
             // hand, since the page was last shown.
             crate::state::Page::Assistants => Task::batch([
                 Task::done(cosmic::Action::App(Message::Assistants(
-                    crate::ui::messages::AssistantsMessage::Refresh,
+                    crate::ui::messages::AssistantsMessage::Page(
+                        super_voice_app_core::pages::assistants::Input::Refresh,
+                    ),
                 ))),
                 self.update_title(),
             ]),
