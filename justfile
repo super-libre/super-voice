@@ -617,11 +617,31 @@ app-watch *args:
 # on the desktop, through GPUI's headless renderer (wgpu on Linux, Metal on
 # macOS). `page` is one of the sidebar's pages (stt-models, notes, contexts,
 # stt-behavior, tts-models, clips, voices, tts-behavior, library, shortcuts,
-# assistants, settings, updates, about); `mode` is light or dark. The daemon
-# is not asked: the status bar shows it connected.
+# assistants, settings, updates, about); `mode` is light or dark; `width` is
+# the window's width in px (1200 by default, 360 at least: 720 shows the rail
+# of icons, 420 the drawer), its height 760.
 #
-# Usage: just app-shot <out.png> [page] [light|dark]
-app-shot out page="stt-models" mode="light":
+# `scenes`, comma-separated, pick a state to draw. The shell's: `palette`
+# (Ctrl+K open), `drawer` (the pages' drawer, under 600 px), `refused` and
+# `stopped` (the Connection page, as access refused or the daemon not
+# running). A page adds its own.
+#
+# The daemon is never asked: what the window shows is made up. The shell's
+# (the daemon connected, each feature's readiness, the GPU) is in
+# super-voice-gpui/src/shot.rs. A page adds its own in its `PageView::pretend`
+# (super-voice-gpui/src/pages/mod.rs), which every shot calls with the scenes:
+# it fills the page's core state with made-up values (real backend and model
+# names), and draws a scene of its own when it is named, e.g.
+#
+#     #[cfg(feature = "screenshot")]
+#     fn pretend(&mut self, scenes: &[&str], _: &mut Window, _: &mut Context<Self>) {
+#         self.state.notes = made_up_notes();
+#         self.dictating = scenes.contains(&"dictating");
+#     }
+#
+# Usage: just app-shot <out.png> [page] [light|dark] [width] [scenes]
+#   just app-shot /tmp/notes.png notes dark 420 dictating,drawer
+app-shot out page="stt-models" mode="light" width="1200" scenes="":
     #!/usr/bin/env bash
     set -euo pipefail
     out="{{ out }}"
@@ -634,7 +654,7 @@ app-shot out page="stt-models" mode="light":
     exe=$(cargo build -p super-voice-gpui --features screenshot --bin {{ app_name }} \
         --message-format=json-render-diagnostics \
         | sed -n 's|.*"executable":"\([^"]*/{{ app_name }}\)".*|\1|p')
-    exec "$exe" --shot "$out" "{{ page }}" "{{ mode }}"
+    exec "$exe" --shot "$out" "{{ page }}" "{{ mode }}" "{{ width }}" "{{ scenes }}"
 
 # Run the daemon for testing purposes.
 #

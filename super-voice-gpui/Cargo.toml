@@ -20,7 +20,7 @@
     # `super-voice-app --shot`: the window drawn off screen into a PNG
     # (`just app-shot`, src/shot.rs). It needs GPUI's headless renderer, which
     # comes with the kit's test support, so release builds leave it out.
-    screenshot = ["dep:image", "gpui-kit/test-support"]
+    screenshot = ["dep:image", "dep:serde_json", "gpui-kit/test-support"]
     # Hot-patching while developing: `just app-watch` (src/hot.rs).
     hotpatch = ["dep:dioxus-devtools", "dep:subsecond"]
 
@@ -36,6 +36,8 @@
     # Default features: components, the default Lucide icons, and X11 beside
     # Wayland on Linux, which the app before this one had too.
     gpui-kit = "=0.11.0"
+    # Reading the daemon's event stream (src/daemon_events.rs).
+    futures-util.workspace = true
     # The desktop's languages, for the words (the catalogs are the core's).
     i18n-embed.workspace = true
     log.workspace = true
@@ -49,6 +51,9 @@
     # For the screenshot binary: the image crate GPUI's screenshots are made
     # with, to save one as a PNG.
     image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+    # For the screenshot binary: a made-up download's progress, as the daemon
+    # sends one.
+    serde_json = { workspace = true, optional = true }
     # For `hotpatch`: Dioxus's hot-patching engine, and its link to `dx serve`.
     # At the version of the `dx` that serves the patches, which `just
     # app-watch` checks: a patch from another version does not apply.

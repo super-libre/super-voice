@@ -7,17 +7,23 @@ use std::borrow::Cow;
 use gpui_kit::assets::icon_assets;
 use gpui_kit::{AssetSource, Result, SharedString};
 
-// The Lucide icons the sidebar draws beyond the kit's default set.
+// The Lucide icons the app draws beyond the kit's default set.
 icon_assets!(
     ExtraIcons,
     [
-        AudioLines,
-        Box,
+        BookOpenText,
+        Brain,
+        Bug,
+        FileVolume,
         Keyboard,
-        Library,
+        LibraryBig,
+        Microchip,
         NotebookPen,
+        ServerOff,
+        ShieldX,
         SlidersHorizontal,
         UserRoundPen,
+        Volume2,
     ]
 );
 
