@@ -918,3 +918,7 @@ about-read-the-license = Read the license
 about-notices = Third-party notices
 about-copy-details = Copy details
 about-copied = The version details are on the clipboard.
+
+# The General pages: Shortcuts, Assistants, Settings and Updates
+shortcuts-description = Keys that dictate or read aloud, from any app.
+shortcut-change-keys = Change the shortcut's keys

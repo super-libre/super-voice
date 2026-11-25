@@ -918,3 +918,7 @@ about-read-the-license = Lire la licence
 about-notices = Mentions des logiciels tiers
 about-copied = Les détails de version sont dans le presse-papiers.
 about-copy-details = Copier les détails
+
+# The General pages: Shortcuts, Assistants, Settings and Updates
+shortcuts-description = Les touches qui dictent ou lisent à voix haute, depuis n'importe quelle app.
+shortcut-change-keys = Changer les touches du raccourci
