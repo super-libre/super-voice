@@ -3,14 +3,15 @@
 //!
 //! The settings app draws its pages with libcosmic; whatever decides what they
 //! show lives here, so another app can draw the same thing with its own
-//! toolkit. So far that is the daemon client, the app's state, the rules that
-//! decide what its pages show, what the Notes page's buttons do, the words in
-//! every language, the notes and clips the app keeps, and the audio it records
-//! and plays itself.
+//! toolkit. So far that is the daemon client and its event stream, the app's
+//! state, the rules that decide what its pages show, what its pages' buttons
+//! do, the words in every language, the notes and clips the app keeps, and the
+//! audio it records and plays itself.
 
 pub mod audio;
 pub mod clips;
 pub mod daemon;
+pub mod events;
 pub mod i18n;
 pub mod notes;
 pub mod pages;
