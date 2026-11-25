@@ -5,6 +5,7 @@
 //! [`TextBuffer`]), so each app keeps its toolkit's own.
 
 pub mod assistants;
+pub mod behavior;
 pub mod clips;
 pub mod contexts;
 pub mod device_offers;

@@ -12,14 +12,12 @@ use super_voice_shared::models::assistants::{AssistantId, AssistantList, NewKey}
 use super_voice_shared::models::notification_method::NotificationMethod;
 use super_voice_shared::models::protocol::PreviewSource;
 use super_voice_shared::models::read_method::ReadMethod;
-use super_voice_shared::models::recording_stop_mode::RecordingStopMode;
 use super_voice_shared::models::shortcuts::{ShortcutId, ShortcutList};
-use super_voice_shared::models::write_method::WriteMethod;
 
 use cosmic::widget::segmented_button;
 
 use crate::daemon::backends::BackendInfo;
-use crate::state::{AudioTheme, ContextPage};
+use crate::state::ContextPage;
 use crate::state::{BlockStage, Stage};
 
 /// Messages emitted by the application and its widgets.
@@ -36,9 +34,7 @@ pub enum Message {
     Voices(VoicesMessage),
     Device(DeviceMessage),
     Download(DownloadMessage),
-    PreviewTyping(PreviewTypingMessage),
-    RecordingStopMode(RecordingStopModeMessage),
-    WriteMethod(WriteMethodMessage),
+    Behavior(BehaviorMessage),
     /// Where the read-aloud shortcut reads from.
     ReadMethod(ReadMethodMessage),
     /// The Shortcuts page.
@@ -147,8 +143,6 @@ pub enum DaemonMessage {
     // Settings loaded from daemon at connection time (replaces the
     // legacy bulk fetch_daemon_config). Each is fetched with its own
     // GET endpoint.
-    CurrentAudioThemeLoaded(AudioTheme),
-    VolumeLoaded(u8),
     // Carries the typed error so `classify_daemon_error` can decide
     // blocked-vs-retry on the variant, not the wording.
     DaemonError(super_voice_shared::daemon::http_client::HttpError),
@@ -360,14 +354,6 @@ pub enum DownloadMessage {
     NoDownloadInProgress(Stage),
 }
 
-/// Preview-typing setting.
-#[derive(Debug, Clone)]
-pub enum PreviewTypingMessage {
-    Toggled(bool),       // User toggled the setting
-    SettingLoaded(bool), // Setting loaded from daemon
-    Error(String),       // Error setting or getting preview typing
-}
-
 /// Filling a pipeline stage: select a backend, stage a model and a device,
 /// load, unload.
 ///
@@ -538,14 +524,6 @@ pub enum VoiceMessage {
     VoiceError(String),
 }
 
-/// Recording stop-mode setting.
-#[derive(Debug, Clone)]
-pub enum RecordingStopModeMessage {
-    Changed(RecordingStopMode),
-    Loaded(RecordingStopMode),
-    Error(String),
-}
-
 /// The Shortcuts page.
 #[derive(Debug, Clone)]
 pub enum ShortcutsMessage {
@@ -621,31 +599,6 @@ pub enum ReadMethodMessage {
     Test,
     /// The daemon could not read or speak it; carries its message.
     TestFailed(String),
-}
-
-/// Write-method setting.
-#[derive(Debug, Clone)]
-pub enum WriteMethodMessage {
-    Changed(WriteMethod),
-    Loaded(WriteMethod),
-    /// Ask the daemon to type the test string. The Input Simulation test field
-    /// is focused first so the keystrokes have somewhere to land.
-    Test,
-    /// Start the countdown before an unfocused test, giving the user time to
-    /// switch to the window they actually dictate into.
-    TestDelayed,
-    /// One second of that countdown elapsed.
-    TestTick,
-    /// Abandon a running countdown before it types.
-    TestCancel,
-    /// The daemon typed the test string; carries the backend it resolved to,
-    /// which is the only way to see which rung `Auto` picked. `None` when the
-    /// daemon named no backend this build understands — the typing still
-    /// happened, so that is a pass with an empty readout, not a failure.
-    Tested(Option<WriteMethod>),
-    /// Contents of the test field — whatever the daemon (or the user) typed.
-    TestInput(String),
-    Error(String),
 }
 
 /// Notification-method setting.
@@ -783,6 +736,15 @@ pub enum LanguageMessage {
     LanguageError(String),
 }
 
+/// Speech to text's Behavior tab: its settings and the typing test.
+#[derive(Debug, Clone)]
+pub enum BehaviorMessage {
+    /// Something the tab's logic handles: a press, a value the daemon
+    /// reported, or the answer to work it started. See
+    /// `super_voice_app_core::pages::behavior`.
+    Page(super_voice_app_core::pages::behavior::Input),
+}
+
 /// Recording / audio / widget (SSE-driven meter + coarse recording state).
 #[derive(Debug, Clone)]
 pub enum RecordingMessage {
@@ -795,28 +757,6 @@ pub enum RecordingMessage {
         source: Option<PreviewSource>,
     },
     TranscriptionReceived(String),
-    AudioFeedbackToggled(bool),
-    AudioThemeSelected(AudioTheme),
-    AudioThemesLoaded(Vec<AudioTheme>),
-    /// A theme/feedback save failed: restore the optimistically-set theme
-    /// fields to the captured pre-save values and raise a scoped banner
-    /// (audit Tier 3 #37).
-    AudioThemeSaveFailed {
-        prev_selected: AudioTheme,
-        prev_non_silent: AudioTheme,
-        message: String,
-    },
-    /// A drag tick: updates the local slider value only (no daemon POST).
-    VolumeChanged(u8),
-    /// The slider was released: commit the current value to the daemon once,
-    /// rather than one POST per drag tick (Tier 1 #19).
-    VolumeCommit,
-    /// A volume commit failed: restore the slider to the last committed value
-    /// and raise a scoped banner (audit Tier 3 #37).
-    VolumeSaveFailed {
-        prev_volume: u8,
-        message: String,
-    },
     /// `frequency_bands` event from the daemon's `/events` SSE stream
     /// — already converted to (`display_level_percent`, `is_speech`) so
     /// the settings UI can drive its meter unchanged.
@@ -959,9 +899,7 @@ message_from! {
     ModelsPage => ModelsPageMessage,
     Device => DeviceMessage,
     Download => DownloadMessage,
-    PreviewTyping => PreviewTypingMessage,
-    RecordingStopMode => RecordingStopModeMessage,
-    WriteMethod => WriteMethodMessage,
+    Behavior => BehaviorMessage,
     ReadMethod => ReadMethodMessage,
     Shortcuts => ShortcutsMessage,
     Assistants => AssistantsMessage,

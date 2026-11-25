@@ -15,7 +15,7 @@ use subscription::{UdpSubscriptionId, audio_events_subscription};
 pub(crate) mod macos;
 
 use crate::daemon::backends::BackendInfo;
-use crate::state::{AudioTheme, ContextPage, DaemonStatus, MenuAction, RecordingStatus};
+use crate::state::{ContextPage, DaemonStatus, MenuAction, RecordingStatus};
 use crate::ui::messages::{DaemonMessage, Message, ModelsPageMessage, ShellMessage};
 use cosmic::app::context_drawer;
 use cosmic::iced::Subscription;
@@ -77,12 +77,9 @@ pub struct AppModel {
     pub audio_level: f32,
     /// Whether speech is currently detected
     pub is_speech_detected: bool,
-    /// Available audio themes
-    pub audio_themes: Vec<AudioTheme>,
-    /// Currently selected audio theme
-    pub selected_audio_theme: AudioTheme,
-    /// Last non-silent theme (to restore when toggling audio feedback back on)
-    pub last_non_silent_theme: AudioTheme,
+    /// Speech to text's Behavior tab: what stops a recording and how it is
+    /// typed, the sounds around it, and the typing test.
+    pub behavior: crate::state::behavior::BehaviorState,
     /// UDP restart counter for subscriptions
     pub udp_restart_counter: u64,
     /// Last UDP data timestamp
@@ -122,10 +119,6 @@ pub struct AppModel {
     /// Last event timestamp for polling daemon events
     pub last_event_timestamp: Option<String>,
 
-    // Preview typing state
-    /// Whether preview typing is enabled (beta feature)
-    pub preview_typing_enabled: bool,
-
     /// The transcript post-processor: whether it runs, which model is
     /// selected, and whether that model is actually loaded. Mirrors the
     /// daemon's `/post_processor` block; the daemon stays authoritative, so
@@ -161,9 +154,6 @@ pub struct AppModel {
     /// the catalog, so a picker cannot offer what the daemon would refuse.
     pub stage_catalog: crate::state::stage_catalog::StageCatalog,
 
-    // Recording stop mode
-    pub recording_stop_mode: super_voice_shared::models::recording_stop_mode::RecordingStopMode,
-
     /// The Shortcuts page: where each shortcut stands.
     pub shortcuts: crate::state::shortcuts::ShortcutsState,
     /// The Assistants page: where each assistant stands, and its dialogs.
@@ -172,30 +162,11 @@ pub struct AppModel {
     /// clipboard.
     pub read_method: super_voice_shared::models::read_method::ReadMethod,
 
-    // Write method
-    pub write_method: super_voice_shared::models::write_method::WriteMethod,
-    /// Text in the Input Simulation test field — where `POST /write_method/test`
-    /// lands, since the daemon types into whatever window has focus.
-    pub write_method_test_text: String,
-    /// Backend the last test actually typed through. `None` until a test runs;
-    /// with `write_method == Auto` this is the only readout of the real backend.
-    pub resolved_write_method: Option<super_voice_shared::models::write_method::WriteMethod>,
-    /// Seconds left before a delayed write-method test types. `None` when no
-    /// countdown is running, which is also how a cancel is recorded.
-    pub write_method_test_countdown: Option<u8>,
-
     // Notification method
     pub notification_method: super_voice_shared::models::notification_method::NotificationMethod,
 
     /// Seconds an unused model stays loaded; `0` keeps models loaded.
     pub idle_unload_secs: u64,
-
-    // Master volume (0-100)
-    pub volume: u8,
-    /// Last value successfully committed to (or loaded from) the daemon. The
-    /// rollback target when a `VolumeCommit` save fails, since the live drag has
-    /// already overwritten `volume` (audit Tier 3 #37).
-    pub last_committed_volume: u8,
 
     // Models page UI state (tabs, active-backend card selection/staging, menus).
     pub models_page: crate::state::models_page::ModelsPageState,

@@ -11,9 +11,9 @@ use super_voice_shared::models::recording_stop_mode::RecordingStopMode;
 use super_voice_shared::theme::AudioTheme;
 
 use crate::state::RecordingStatus;
-use crate::ui::messages::{
-    Message, PreviewTypingMessage, RecordingMessage, RecordingStopModeMessage,
-};
+use super_voice_app_core::pages::behavior::Input;
+
+use crate::ui::messages::{BehaviorMessage, Message, RecordingMessage};
 use crate::ui::press_guard::press_guard;
 
 /// Recording section: stop mode + preview typing.
@@ -38,7 +38,7 @@ pub(super) fn settings_section(
             settings::item::builder(crate::fl!("stop-mode"))
                 .description(crate::fl!("controls-how-to-stop-transcribing"))
                 .control(widget::dropdown(mode_names, selected_index, move |index| {
-                    Message::RecordingStopMode(RecordingStopModeMessage::Changed(modes[index]))
+                    Message::Behavior(BehaviorMessage::Page(Input::StopModeChanged(modes[index])))
                 })),
         )
         .add(
@@ -47,8 +47,9 @@ pub(super) fn settings_section(
                     "shows-transcription-as-you-speak-experimental-may"
                 ))
                 .control(press_guard(
-                    cosmic::widget::toggler(preview_typing_enabled)
-                        .on_toggle(|b| Message::PreviewTyping(PreviewTypingMessage::Toggled(b))),
+                    cosmic::widget::toggler(preview_typing_enabled).on_toggle(|b| {
+                        Message::Behavior(BehaviorMessage::Page(Input::PreviewTypingToggled(b)))
+                    }),
                 )),
         )
         .into()
@@ -80,8 +81,9 @@ pub(super) fn sounds_section<'a>(
         settings::item::builder(crate::fl!("audio-feedback"))
             .description(crate::fl!("play-a-sound-when-a-recording-starts-and-stops"))
             .control(press_guard(
-                cosmic::widget::toggler(audio_enabled)
-                    .on_toggle(|b| Message::Recording(RecordingMessage::AudioFeedbackToggled(b))),
+                cosmic::widget::toggler(audio_enabled).on_toggle(|b| {
+                    Message::Behavior(BehaviorMessage::Page(Input::SoundsToggled(b)))
+                }),
             )),
     );
 
@@ -93,9 +95,11 @@ pub(super) fn sounds_section<'a>(
         } else {
             widget::dropdown(theme_names, selected_index, move |index| {
                 if let Some(&theme) = non_silent_clone.get(index) {
-                    Message::Recording(RecordingMessage::AudioThemeSelected(theme))
+                    Message::Behavior(BehaviorMessage::Page(Input::ThemePicked(theme)))
                 } else {
-                    Message::Recording(RecordingMessage::AudioThemeSelected(AudioTheme::Classic))
+                    Message::Behavior(BehaviorMessage::Page(Input::ThemePicked(
+                        AudioTheme::Classic,
+                    )))
                 }
             })
             .into()
@@ -105,9 +109,11 @@ pub(super) fn sounds_section<'a>(
         // release (Tier 1 #19), so a single drag isn't hundreds of set_volume
         // requests.
         let slider = widget::slider(0..=100, volume, |v| {
-            Message::Recording(RecordingMessage::VolumeChanged(v))
+            Message::Behavior(BehaviorMessage::Page(Input::VolumeChanged(v)))
         })
-        .on_release(Message::Recording(RecordingMessage::VolumeCommit))
+        .on_release(Message::Behavior(BehaviorMessage::Page(
+            Input::VolumeCommitted,
+        )))
         .width(Length::Fill)
         .apply(widget::container)
         .max_width(super::common::LEVEL_METER_WIDTH);

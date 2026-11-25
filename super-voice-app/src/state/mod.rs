@@ -13,7 +13,7 @@ pub mod models_page;
 pub mod update;
 
 pub use super_voice_app_core::state::{
-    assistants, device_offers, language, model_operations, registry, scripts, shortcuts,
+    assistants, behavior, device_offers, language, model_operations, registry, scripts, shortcuts,
     stage_catalog, staged_picks, voices,
 };
 

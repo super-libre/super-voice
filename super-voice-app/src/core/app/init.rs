@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use crate::daemon::client::load_audio_themes;
-use crate::state::{AudioTheme, ContextPage, DaemonStatus, RecordingStatus};
+use crate::state::{ContextPage, DaemonStatus, RecordingStatus};
 use crate::ui::icons;
-use crate::ui::messages::{Message, ModelMessage, RecordingMessage};
+use crate::ui::messages::{Message, ModelMessage};
 use cosmic::prelude::*;
 use cosmic::widget::nav_bar;
 use std::collections::HashMap;
@@ -76,11 +75,14 @@ fn initial_load_tasks(
     title_command: Task<cosmic::Action<Message>>,
 ) -> Task<cosmic::Action<Message>> {
     // Load audio themes on startup (always available)
-    let load_themes = Task::perform(load_audio_themes(), |themes| {
-        cosmic::Action::App(Message::Recording(RecordingMessage::AudioThemesLoaded(
-            themes,
-        )))
-    });
+    let load_themes = Task::perform(
+        super_voice_app_core::pages::behavior::run_load_themes(),
+        |input| {
+            cosmic::Action::App(Message::Behavior(
+                crate::ui::messages::BehaviorMessage::Page(input),
+            ))
+        },
+    );
 
     // Try to ping the daemon on startup
     let initial_ping = crate::core::app::handlers::tasks::ping_task();
@@ -124,9 +126,7 @@ impl AppModel {
             preview_source: None,
             audio_level: 0.0,
             is_speech_detected: false,
-            audio_themes: Vec::new(),
-            selected_audio_theme: AudioTheme::default(),
-            last_non_silent_theme: AudioTheme::default(),
+            behavior: crate::state::behavior::BehaviorState::default(),
             udp_restart_counter: 0,
             last_udp_data: std::time::Instant::now(),
 
@@ -146,7 +146,6 @@ impl AppModel {
             last_event_timestamp: None,
 
             // Initialize preview typing state (disabled by default as beta feature)
-            preview_typing_enabled: false,
             // Replaced by the daemon's own state as soon as the settings load
             // completes; the default is the daemon's default too (off).
             post_processor: crate::daemon::client::StageState::default(),
@@ -160,20 +159,12 @@ impl AppModel {
             staged_picks: crate::state::staged_picks::StagedPicks::default(),
             device_offers: crate::state::device_offers::DeviceOffers::default(),
             stage_catalog: crate::state::stage_catalog::StageCatalog::default(),
-            recording_stop_mode:
-                super_voice_shared::models::recording_stop_mode::RecordingStopMode::default(),
             shortcuts: crate::state::shortcuts::ShortcutsState::default(),
             assistants: crate::state::assistants::AssistantsState::default(),
             read_method: super_voice_shared::models::read_method::ReadMethod::default(),
-            write_method: super_voice_shared::models::write_method::WriteMethod::default(),
-            write_method_test_text: String::new(),
-            resolved_write_method: None,
-            write_method_test_countdown: None,
             notification_method:
                 super_voice_shared::models::notification_method::NotificationMethod::default(),
             idle_unload_secs: 0,
-            volume: 100,
-            last_committed_volume: 100,
 
             // Models page UI state
             models_page: crate::state::models_page::ModelsPageState::default(),
