@@ -40,17 +40,6 @@ pub enum SampleOrigin {
     Imported(String),
 }
 
-impl SampleOrigin {
-    /// A short label for the pending-sample card.
-    #[must_use]
-    pub fn describe(&self) -> String {
-        match self {
-            Self::Recorded => "Recorded just now".to_string(),
-            Self::Imported(name) => format!("Imported from {name}"),
-        }
-    }
-}
-
 /// Which reading script the user is recording against.
 ///
 /// Three states rather than an `Option`, because "not chosen yet" and "chose to

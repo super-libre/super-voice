@@ -204,7 +204,11 @@ impl AppModel {
 
             VoicesMessage::ImportFile => {
                 self.clear_action_error(ErrorScope::Voices);
-                Task::perform(pick_wav(), |picked| {
+                let labels = (
+                    crate::fl!("choose-a-voice-recording"),
+                    crate::fl!("wav-audio"),
+                );
+                Task::perform(pick_wav(labels), |picked| {
                     cosmic::Action::App(Message::Voices(match picked {
                         Ok(picked) => VoicesMessage::FileImported(picked),
                         Err(e) => VoicesMessage::ImportFailed(e),
@@ -530,14 +534,16 @@ fn refresh_library() -> Task<cosmic::Action<Message>> {
     })
 }
 
-/// Pick a WAV file and read it.
+/// Pick a WAV file and read it. `labels` are the dialog's title and its file
+/// type.
 ///
 /// The filter names WAV alone because that is what the daemon stores: offering
 /// an mp3 the upload would refuse is worse than not offering it.
-async fn pick_wav() -> Result<Option<(String, Vec<u8>)>, String> {
+async fn pick_wav(labels: (String, String)) -> Result<Option<(String, Vec<u8>)>, String> {
+    let (title, kind) = labels;
     let Some(handle) = rfd::AsyncFileDialog::new()
-        .set_title("Choose a voice recording")
-        .add_filter("WAV audio", &["wav"])
+        .set_title(title)
+        .add_filter(kind, &["wav"])
         .pick_file()
         .await
     else {
