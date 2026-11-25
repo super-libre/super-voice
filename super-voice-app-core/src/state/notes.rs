@@ -31,6 +31,10 @@ pub struct NotesState<B = String> {
     pub open: Option<OpenNote<B>>,
     /// A take recording a note, or more of one.
     pub take: Option<NoteTake>,
+    /// The words of a new note's take, while its file is made: the note that
+    /// says them opens once it is, unless the user opened or closed one in
+    /// the meantime.
+    pub opening: Option<String>,
     /// The open note's Delete was pressed once and waits for the second.
     pub confirming_delete: bool,
     /// Where the open note was last exported to, until it is closed.

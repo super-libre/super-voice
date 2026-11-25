@@ -178,21 +178,24 @@ pub fn update<B: TextBuffer>(state: &mut NotesState<B>, input: Input) -> Outcome
             }
         }
         Input::Transcribed(result) => take_finished(state, result, &mut out),
-        Input::Created(result) => match result {
-            Ok(note) => state.put(note),
-            Err(e) => out.notice = Some(Notice::CouldNotSave(e)),
-        },
-
-        Input::Open(id) => {
-            save_open(state, &mut out);
-            if let Some(open) = state.note(&id).map(OpenNote::new) {
-                state.open = Some(open);
-                state.confirming_delete = false;
-                state.exported = None;
-                out.clear_notice = true;
+        Input::Created(result) => {
+            let opening = state.opening.take();
+            match result {
+                Ok(note) => {
+                    let (id, open) = (note.id.clone(), opening.as_ref() == Some(&note.text));
+                    state.put(note);
+                    // The take that made it was shown where the note goes.
+                    if open {
+                        open_note(state, &id, &mut out);
+                    }
+                }
+                Err(e) => out.notice = Some(Notice::CouldNotSave(e)),
             }
         }
+
+        Input::Open(id) => open_note(state, &id, &mut out),
         Input::Close => {
+            state.opening = None;
             save_open(state, &mut out);
             state.open = None;
             state.confirming_delete = false;
@@ -340,6 +343,7 @@ fn take_finished<B: TextBuffer>(
             None
         }
     };
+    let for_new_note = take.target == TakeTarget::New;
     let (start, new_note) = match said {
         None => (None, None),
         Some(said) => place_words(state, take.target, said),
@@ -355,7 +359,25 @@ fn take_finished<B: TextBuffer>(
         out.effects.push(Effect::Write(job));
     }
     if let Some(text) = new_note {
+        // A take for a new note is shown where the note goes, so the note
+        // opens once it is made. Words that were for a note deleted meanwhile
+        // become a note of their own, but the user is elsewhere by then.
+        if for_new_note {
+            state.opening = Some(text.clone());
+        }
         out.effects.push(Effect::Create(text));
+    }
+}
+
+/// Open the note `id` in place of the list, saving the one open first.
+fn open_note<B: TextBuffer>(state: &mut NotesState<B>, id: &str, out: &mut Outcome) {
+    state.opening = None;
+    save_open(state, out);
+    if let Some(open) = state.note(id).map(OpenNote::new) {
+        state.open = Some(open);
+        state.confirming_delete = false;
+        state.exported = None;
+        out.clear_notice = true;
     }
 }
 
@@ -750,6 +772,41 @@ mod tests {
             update(&mut state, Input::Transcribed(Ok("hello".into()))).effects,
             [Effect::Create("hello".into())]
         );
+    }
+
+    #[test]
+    fn a_new_note_opens_once_its_take_is_kept() {
+        let mut state = State::default();
+        update(&mut state, Input::Record);
+        update(&mut state, Input::Transcribed(Ok("hello".into())));
+        update(&mut state, Input::Created(Ok(note("new", "hello"))));
+        assert_eq!(state.open.as_ref().map(|o| o.id.as_str()), Some("new"));
+        assert_eq!(
+            state.open.as_ref().map(|o| o.content.as_str()),
+            Some("hello")
+        );
+    }
+
+    #[test]
+    fn a_note_made_any_other_way_stays_closed() {
+        // Opened another note while the file was made: that one stays.
+        let mut state = State::default();
+        state.put(note("a", "older"));
+        update(&mut state, Input::Record);
+        update(&mut state, Input::Transcribed(Ok("hello".into())));
+        update(&mut state, Input::Open("a".into()));
+        update(&mut state, Input::Created(Ok(note("new", "hello"))));
+        assert_eq!(state.open.as_ref().map(|o| o.id.as_str()), Some("a"));
+
+        // More dictated into a note deleted meanwhile becomes a note of its
+        // own, which doesn't open: the user is elsewhere by then.
+        let mut state = open("doomed");
+        update(&mut state, Input::DictateMore);
+        update(&mut state, Input::DeleteConfirmed);
+        let out = update(&mut state, Input::Transcribed(Ok("more".into())));
+        assert_eq!(out.effects, [Effect::Create("more".into())]);
+        update(&mut state, Input::Created(Ok(note("more", "more"))));
+        assert!(state.open.is_none());
     }
 
     #[test]
