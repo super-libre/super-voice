@@ -100,7 +100,7 @@ Models come from a **library** of backends you install on demand. Open the app, 
 
 ### Free a model's memory when idle
 
-By default a selected model stays loaded, so every request is answered at once. To keep it in memory only while you use it, turn on **Settings → Memory → Sleep When Idle** in the app and pick how long a model may sit unused.
+By default a selected model stays loaded, so every request is answered at once. To keep it in memory only while you use it, turn on **Settings → Memory → Sleep when idle** in the app and pick how long a model may sit unused.
 
 The speech-to-text and text-to-speech models are then unloaded after that long without use, and loaded again by the next recording or `voice speak`, which waits for the load. Unloading a model yourself still switches it off until you load it again.
 

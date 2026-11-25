@@ -67,6 +67,24 @@ impl Player {
         }
     }
 
+    /// A player that plays nothing and opens no device, held `position` into
+    /// a clip `length` long: what an app's screenshot draws as a clip playing,
+    /// with no sound on the desktop it is taken on.
+    #[must_use]
+    pub fn held_at(length: Duration, position: Duration) -> Self {
+        const RATE: u32 = 1_000;
+        let shared = Arc::new(Shared::default());
+        shared.rate.store(RATE as usize, Ordering::Relaxed);
+        #[allow(clippy::cast_possible_truncation)]
+        let played = position.min(length).as_millis() as usize;
+        shared.played.store(played, Ordering::Relaxed);
+        Self {
+            shared,
+            length,
+            thread: None,
+        }
+    }
+
     /// How long the clip is.
     #[must_use]
     pub const fn length(&self) -> Duration {
@@ -297,6 +315,14 @@ mod tests {
 
         assert_eq!(block, [0.0; 4]);
         assert_eq!(shared.played.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn a_held_player_stays_where_it_was_put() {
+        let player = Player::held_at(Duration::from_secs(6), Duration::from_secs(2));
+        assert_eq!(player.position(), Duration::from_secs(2));
+        assert_eq!(player.length(), Duration::from_secs(6));
+        assert!(!player.finished());
     }
 
     #[test]

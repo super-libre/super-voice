@@ -428,6 +428,172 @@ fn next_job<B: TextBuffer>(state: &mut NotesState<B>, out: &mut Outcome) {
     }
 }
 
+// What the page says about a note, for any app that draws it.
+
+/// How much of a note's first line its row shows.
+pub const ROW_PREVIEW_CHARS: usize = 90;
+
+/// How long a take may run. A note's take stops by hand only, so its limit is
+/// that stop mode's.
+#[must_use]
+pub const fn take_limit() -> Duration {
+    super_voice_shared::models::recording_stop_mode::RecordingStopMode::ManualOnly.take_limit()
+}
+
+/// The message `key` with `args`, without the marks Fluent puts around each
+/// value: the words go into labels, where the marks would only ride along.
+fn words(key: &str, args: &[(&str, &str)]) -> String {
+    crate::i18n::text(key, args).replace(['\u{2068}', '\u{2069}'], "")
+}
+
+/// When a note was made: "Today, 09:42", "Yesterday, 18:15", or the date for
+/// anything older. A note's name in the list and over the open note.
+#[must_use]
+pub fn when(created: chrono::NaiveDateTime, today: chrono::NaiveDate) -> String {
+    let time = created.format("%H:%M").to_string();
+    let day = created.date();
+    if day == today {
+        words("today-at", &[("time", &time)])
+    } else if today.pred_opt() == Some(day) {
+        words("yesterday-at", &[("time", &time)])
+    } else {
+        created.format("%Y-%m-%d %H:%M").to_string()
+    }
+}
+
+/// How many words, in words: "1 word", "8 words".
+#[must_use]
+pub fn words_label(count: usize) -> String {
+    if count == 1 {
+        words("count-1-word", &[])
+    } else {
+        words("words-count", &[("n", &count.to_string())])
+    }
+}
+
+/// A row's second line: when the note was made, and how long it is.
+#[must_use]
+pub fn row_about(note: &Note, today: chrono::NaiveDate) -> String {
+    format!(
+        "{} \u{b7} {}",
+        when(note.created, today),
+        words_label(note.words())
+    )
+}
+
+/// `elapsed` as minutes and seconds: "0:42", "10:00".
+#[must_use]
+pub fn clock(elapsed: Duration) -> String {
+    let seconds = elapsed.as_secs();
+    format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
+/// How long a take has run, of how long it may: "0:05 of 10:00".
+#[must_use]
+pub fn take_elapsed(take: &NoteTake) -> String {
+    words(
+        "take-elapsed",
+        &[
+            ("elapsed", &clock(take.started.elapsed())),
+            ("limit", &clock(take_limit())),
+        ],
+    )
+}
+
+/// A note's first line with words on it, cut to `max_chars` with an
+/// ellipsis: at the last whole word, without the punctuation before the cut.
+#[must_use]
+pub fn first_line(text: &str, max_chars: usize) -> String {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or_default();
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() <= max_chars {
+        return line.to_string();
+    }
+    let mut end = max_chars;
+    if !chars[end].is_whitespace()
+        && let Some(space) = chars[..end].iter().rposition(|c| c.is_whitespace())
+    {
+        end = space;
+    }
+    let cut: String = chars[..end].iter().collect();
+    let cut = cut.trim_end_matches(|c: char| c.is_whitespace() || ".,;:!?-".contains(c));
+    format!("{cut}\u{2026}")
+}
+
+/// The notes whose words hold every word of `query`, in any case and order,
+/// newest first. An empty query matches every note.
+#[must_use]
+pub fn matching<'a>(notes: &'a [Note], query: &str) -> Vec<&'a Note> {
+    let terms: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    notes
+        .iter()
+        .filter(|note| {
+            let text = note.text.to_lowercase();
+            terms.iter().all(|term| text.contains(term.as_str()))
+        })
+        .collect()
+}
+
+/// What the open note's header says under its name: how long it is and
+/// whether its file has caught up, or that a take is adding to it.
+#[must_use]
+pub fn open_about<B: TextBuffer>(state: &NotesState<B>, open: &OpenNote<B>) -> String {
+    let adding = state
+        .take
+        .as_ref()
+        .is_some_and(|take| take.target == TakeTarget::Append(open.id.clone()));
+    if adding {
+        return words("adding-to-this-note", &[]);
+    }
+    let saved = if open.unsaved() {
+        words("saving", &[])
+    } else {
+        words("saved", &[])
+    };
+    format!(
+        "{} \u{b7} {saved}",
+        words_label(notes::words(&open.content.text()))
+    )
+}
+
+/// The name a note goes by in a question about it, such as Delete's: its
+/// first line, shorter than a row's.
+#[must_use]
+pub fn short_name(note: &Note) -> String {
+    first_line(&note.text, 48)
+}
+
+/// Today, in local time: what [`when`] and [`row_about`] measure from.
+#[must_use]
+pub fn today() -> chrono::NaiveDate {
+    chrono::Local::now().date_naive()
+}
+
+/// Where the export dialog opens: the Documents folder, or home. Left alone,
+/// a dialog opens wherever the app was started from.
+#[must_use]
+pub fn export_start() -> std::path::PathBuf {
+    let home = std::env::var_os("HOME").map_or_else(std::path::PathBuf::new, Into::into);
+    let documents = home.join("Documents");
+    if documents.is_dir() { documents } else { home }
+}
+
+/// Write the export to `chosen`, the file the user picked in the dialog
+/// ([`notes::export_path`] adds `.md` when they typed no extension).
+pub async fn run_export_to(chosen: std::path::PathBuf, text: String) -> Input {
+    let path = notes::export_path(&chosen);
+    Input::Exported(
+        notes::export(&text, &path)
+            .await
+            .map(|()| Some(path.display().to_string()))
+            .map_err(|e| format!("{}: {e}", path.display())),
+    )
+}
+
 /// Read the folder.
 pub async fn run_list() -> Input {
     Input::Loaded(notes::list(&notes::dir()).await.map_err(|e| e.to_string()))
@@ -667,6 +833,76 @@ mod tests {
         );
         assert_eq!(state.note("b").map(|n| n.text.as_str()), Some("newest"));
         assert!(state.loaded);
+    }
+
+    fn day(date: &str) -> chrono::NaiveDate {
+        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").expect("a date")
+    }
+
+    fn at(time: &str) -> chrono::NaiveDateTime {
+        chrono::NaiveDateTime::parse_from_str(time, "%Y-%m-%d %H:%M").expect("a time")
+    }
+
+    #[test]
+    fn a_note_older_than_yesterday_shows_its_date() {
+        assert_eq!(
+            when(at("2026-11-16 11:03"), day("2026-11-18")),
+            "2026-11-16 11:03"
+        );
+    }
+
+    #[test]
+    fn todays_and_yesterdays_notes_say_so() {
+        let today = when(at("2026-11-18 09:42"), day("2026-11-18"));
+        let yesterday = when(at("2026-11-17 18:15"), day("2026-11-18"));
+        assert!(today.contains("09:42") && today != yesterday, "{today}");
+        assert!(yesterday.contains("18:15"), "{yesterday}");
+        assert!(!today.contains('\u{2068}'), "no isolation marks");
+    }
+
+    #[test]
+    fn the_clock_reads_minutes_and_seconds() {
+        assert_eq!(clock(Duration::from_secs(42)), "0:42");
+        assert_eq!(clock(Duration::from_mins(10)), "10:00");
+        assert_eq!(clock(take_limit()), "10:00");
+    }
+
+    #[test]
+    fn a_long_first_line_is_cut_at_a_whole_word() {
+        assert_eq!(first_line("\n  Short note.  \nMore", 90), "Short note.");
+        assert_eq!(
+            first_line("Call the landlord about the heater, before Friday", 36),
+            "Call the landlord about the heater\u{2026}"
+        );
+    }
+
+    #[test]
+    fn a_search_matches_every_word_in_any_case() {
+        let notes = [
+            note("a", "Groceries: oat milk and lemons"),
+            note("b", "Call the landlord"),
+        ];
+        let ids = |query| {
+            matching(&notes, query)
+                .iter()
+                .map(|n| n.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(""), ["a", "b"]);
+        assert_eq!(ids("LEMONS oat"), ["a"]);
+        assert!(ids("lemons landlord").is_empty());
+    }
+
+    #[test]
+    fn the_open_note_says_whether_it_is_saved_or_being_added_to() {
+        let mut state = open("two words");
+        let about = |state: &State| open_about(state, state.open.as_ref().expect("open"));
+        let saved = about(&state);
+        assert!(saved.starts_with(&words_label(2)), "{saved}");
+        update(&mut state, Input::Edited);
+        assert_ne!(about(&state), saved, "saving, until the file catches up");
+        update(&mut state, Input::DictateMore);
+        assert_eq!(about(&state), words("adding-to-this-note", &[]));
     }
 
     #[test]

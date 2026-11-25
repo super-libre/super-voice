@@ -12,7 +12,18 @@ use super_voice_shared::daemon::http_client::HttpError;
 use super_voice_shared::registry::RegistryListResponse;
 use super_voice_shared::registry::events::{InstallPhase, RegistryEvent};
 
+use std::collections::HashSet;
+
+use super_voice_shared::registry::RegistryBackend;
+
+use crate::daemon::backends::BackendInfo;
 use crate::daemon::registry as client;
+use crate::pages::add_backend::{Facts, RunsAs, facts};
+use crate::pages::readiness::Feature;
+use crate::rules::backends::{
+    Capabilities, ModelGroup, ModelKind, backend_capabilities, backend_is_online,
+    entry_capabilities, entry_needs_key, model_groups, repository_url, update_offer,
+};
 use crate::state::registry::{
     FeatureFilter, InstallStatus, InstalledFilters, RefreshOutcome, RegistryState, RoleFilter,
 };
@@ -22,17 +33,48 @@ use crate::state::registry::{
 pub struct LibraryState {
     /// The backend whose uninstall waits for the user to confirm.
     pub pending_uninstall: Option<String>,
+    /// A stage runs the backend whose uninstall waits, so uninstalling it
+    /// stops it first. Read after the question is asked: false until then.
+    pub pending_in_use: bool,
     /// The Installed tab's filters.
     pub installed_filters: InstalledFilters,
+    /// The backends installed, as the daemon last listed them.
+    pub backends: Vec<BackendInfo>,
+    /// Why the installed backends couldn't be read, when they couldn't.
+    pub backends_error: Option<String>,
+    /// The installed backends that need a key that isn't stored yet, by
+    /// source.
+    pub missing_keys: HashSet<String>,
+    /// The backend the inspector shows, by source: installed or from the
+    /// catalog.
+    pub selected: Option<String>,
 }
 
 /// What happened.
 #[derive(Debug, Clone)]
 pub enum Input {
+    /// The page was reached or shown: read the installed backends and the
+    /// catalog again.
+    Reload,
     /// Read the catalog; with the registry's index refreshed first, for
     /// Refresh.
     Refresh {
         index: bool,
+    },
+    /// The installed backends, or why they couldn't be read.
+    BackendsLoaded(Result<Vec<BackendInfo>, String>),
+    /// Whether an installed backend still needs a key: one it requires is
+    /// not stored.
+    KeysRead {
+        source: String,
+        missing: bool,
+    },
+    /// A backend was picked in the table, or none.
+    Select(Option<String>),
+    /// Whether a stage runs the backend whose uninstall waits.
+    InUse {
+        source: String,
+        in_use: bool,
     },
     /// The catalog, and why a refresh before it failed, when it did; or why
     /// the catalog couldn't be read.
@@ -83,8 +125,17 @@ pub enum Effect {
     Install(String),
     Update(String),
     Uninstall(String),
-    /// Read the installed backends again, and which can fill each stage.
+    /// Read the installed backends again, and which can fill each stage:
+    /// [`run_backends`].
     ReloadBackends,
+    /// Read which of an installed backend's required keys are stored:
+    /// [`run_keys`], with the names of those it requires.
+    ReadKeys {
+        source: String,
+        required: Vec<String>,
+    },
+    /// Read whether a stage runs `source`: [`run_in_use`].
+    ReadInUse(String),
     /// Read the installed backends and the catalog again: they carry the two
     /// halves of what an install changed.
     ReloadCatalogs,
@@ -106,9 +157,21 @@ pub fn update(
     input: Input,
 ) -> Vec<Effect> {
     match input {
+        Input::Reload => vec![
+            Effect::ReloadBackends,
+            Effect::FetchCatalog {
+                refresh_index: false,
+            },
+        ],
         Input::Refresh { index } => vec![Effect::FetchCatalog {
             refresh_index: index,
         }],
+        Input::BackendsLoaded(_)
+        | Input::KeysRead { .. }
+        | Input::Select(_)
+        | Input::InUse { .. }
+        | Input::AskUninstall(_)
+        | Input::CancelUninstall => installed(library, input),
         Input::CatalogLoaded(result) => {
             match result {
                 Ok((list, refresh_error)) => {
@@ -175,17 +238,10 @@ pub fn update(
             vec![Effect::InstallFailed { source, message }]
         }
         Input::Event(event) => install_event(registry, event),
-        Input::AskUninstall(source) => {
-            library.pending_uninstall = Some(source);
-            Vec::new()
-        }
-        Input::CancelUninstall => {
-            library.pending_uninstall = None;
-            Vec::new()
-        }
         // A stale failure goes, so the row reads in progress on a retry.
         Input::Uninstall(source) => {
             library.pending_uninstall = None;
+            library.pending_in_use = false;
             registry.uninstall_errors.remove(&source);
             vec![Effect::Uninstall(source)]
         }
@@ -198,6 +254,74 @@ pub fn update(
             registry.uninstall_errors.insert(source, e);
             Vec::new()
         }
+    }
+}
+
+/// What the page reads of the installed backends: the list, which keys
+/// they lack, which is picked; and the uninstall question.
+fn installed(library: &mut LibraryState, input: Input) -> Vec<Effect> {
+    match input {
+        Input::BackendsLoaded(Ok(backends)) => {
+            library.backends_error = None;
+            library
+                .missing_keys
+                .retain(|source| backends.iter().any(|b| &b.source == source));
+            let reads = backends
+                .iter()
+                .filter_map(|b| {
+                    let required: Vec<String> = b
+                        .secrets
+                        .iter()
+                        .filter(|s| s.required)
+                        .map(|s| s.name.clone())
+                        .collect();
+                    (!required.is_empty()).then(|| Effect::ReadKeys {
+                        source: b.source.clone(),
+                        required,
+                    })
+                })
+                .collect();
+            library.backends = backends;
+            reads
+        }
+        // A failed read keeps the list as it was: the next event or visit
+        // reads it again.
+        Input::BackendsLoaded(Err(e)) => {
+            log::warn!("Couldn't read the installed backends: {e}");
+            library.backends_error = Some(e);
+            Vec::new()
+        }
+        Input::KeysRead { source, missing } => {
+            if missing {
+                library.missing_keys.insert(source);
+            } else {
+                library.missing_keys.remove(&source);
+            }
+            Vec::new()
+        }
+        Input::Select(source) => {
+            library.selected = source;
+            Vec::new()
+        }
+        Input::InUse { source, in_use } => {
+            if library.pending_uninstall.as_deref() == Some(source.as_str()) {
+                library.pending_in_use = in_use;
+            }
+            Vec::new()
+        }
+        // Whether a stage runs it is read after the question is up: not until
+        // the answer comes does the question say so.
+        Input::AskUninstall(source) => {
+            library.pending_uninstall = Some(source.clone());
+            library.pending_in_use = false;
+            vec![Effect::ReadInUse(source)]
+        }
+        Input::CancelUninstall => {
+            library.pending_uninstall = None;
+            library.pending_in_use = false;
+            Vec::new()
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -447,6 +571,449 @@ pub async fn run_uninstall(source: String) -> Input {
     Input::Uninstalled { source, result }
 }
 
+/// Read the installed backends.
+pub async fn run_backends() -> Input {
+    Input::BackendsLoaded(
+        crate::daemon::client::list_backends()
+            .await
+            .map_err(|e| e.to_string()),
+    )
+}
+
+/// Read whether `source` still needs a key: one of `required` is not stored.
+/// A read that fails says nothing is missing, rather than warn on a guess.
+pub async fn run_keys(source: String, required: Vec<String>) -> Input {
+    let missing = match crate::daemon::client::list_backend_secrets(source.clone()).await {
+        Ok(stored) => required.iter().any(|name| {
+            !stored
+                .iter()
+                .any(|(stored_name, set)| stored_name == name && *set)
+        }),
+        Err(e) => {
+            log::warn!("Couldn't read which of {source}'s keys are stored: {e}");
+            false
+        }
+    };
+    Input::KeysRead { source, missing }
+}
+
+/// Read whether a stage runs `source`, for the uninstall question.
+pub async fn run_in_use(source: String) -> Input {
+    let in_use = in_use(&source).await;
+    Input::InUse { source, in_use }
+}
+
+/// Where a backend runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Runs {
+    /// On this computer.
+    Local,
+    /// A service online.
+    Cloud,
+}
+
+/// Where an install of a backend stands: its own, or its update's.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Installing {
+    /// None under way.
+    Idle,
+    /// Under way: its step, and how far, 0 to 1, once the size is known.
+    Running {
+        phase: InstallPhase,
+        fraction: Option<f32>,
+    },
+    /// It failed, or didn't start: why.
+    Failed(String),
+}
+
+/// What the State column says of a row.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RowState {
+    /// From the catalog, ready to install.
+    Available,
+    /// Installed, nothing to say.
+    Installed,
+    /// Installed, and this version is ready to update to.
+    UpdateReady(String),
+    /// Installed, and a key it needs isn't stored.
+    NeedsKey,
+    /// Installing or updating.
+    Installing {
+        phase: InstallPhase,
+        fraction: Option<f32>,
+    },
+    /// The install or update failed: why.
+    Failed(String),
+    /// From the catalog, and it needs a newer Super Voice: this version,
+    /// when the catalog says.
+    NeedsNewerApp(Option<String>),
+    /// From the catalog, and this computer can't run it: why, when the
+    /// daemon says.
+    CannotRun(Option<String>),
+}
+
+/// One framework a backend runs on, or can be installed for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Framework {
+    /// The daemon's id: `cuda`, `vulkan`, `cpu`.
+    pub accel: String,
+    /// What downloading its build takes, when it isn't on this computer.
+    pub download: Option<u64>,
+}
+
+/// A row of the Library's table and what its inspector shows: an installed
+/// backend, or one from the catalog.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Row {
+    pub source: String,
+    pub name: String,
+    /// The version installed, or the catalog's for one not installed.
+    pub version: String,
+    pub description: Option<String>,
+    pub installed: bool,
+    /// The features its models serve, in the sidebar's order.
+    pub features: Vec<Feature>,
+    /// What its models are for, in pipeline order.
+    pub kinds: Vec<ModelKind>,
+    pub runs: Runs,
+    pub capabilities: Capabilities,
+    /// Its models, by kind.
+    pub models: Vec<ModelGroup>,
+    /// What installing it agrees to: how it runs, what it needs and reaches,
+    /// its license. The license and the build are the catalog's, so an
+    /// installed backend the catalog doesn't list has neither.
+    pub facts: Facts,
+    /// The frameworks it runs on here (installed), or that this computer can
+    /// run a build of (catalog), best first.
+    pub frameworks: Vec<Framework>,
+    /// Its repository's web page.
+    pub repository: String,
+    pub state: RowState,
+    /// Its install or update.
+    pub installing: Installing,
+    /// The version an update would bring.
+    pub update_to: Option<String>,
+    /// Why its last uninstall failed.
+    pub uninstall_error: Option<String>,
+    /// From the catalog, and a key is required before it runs.
+    pub needs_key: bool,
+}
+
+impl Row {
+    /// Whether Install can be pressed: from the catalog, this computer can
+    /// run it, and no install of it is under way.
+    #[must_use]
+    pub fn installable(&self) -> bool {
+        !self.installed
+            && matches!(self.state, RowState::Available | RowState::Failed(_))
+            && !matches!(self.installing, Installing::Running { .. })
+    }
+}
+
+/// The table's rows: the installed backends, then the catalog's, each that
+/// passes the toolbar's search and filters. One set of filters for both, so
+/// the two can be compared.
+#[must_use]
+pub fn rows(registry: &RegistryState, library: &LibraryState) -> Vec<Row> {
+    let filters = &registry.filters;
+    let installed_filters = InstalledFilters {
+        online: filters.online,
+        feature: filters.feature,
+        role: filters.role,
+    };
+    let catalog = registry.by_source();
+    let installed = library
+        .backends
+        .iter()
+        .filter(|b| installed_matches(b, &installed_filters))
+        .filter(|b| filters.search.is_empty() || backend_matches(b, &filters.search))
+        .map(|b| {
+            installed_row(
+                registry,
+                library,
+                b,
+                catalog.get(b.source.as_str()).copied(),
+            )
+        });
+    let available = catalog_entries(registry, &library.backends)
+        .into_iter()
+        .map(|entry| catalog_row(registry, entry));
+    installed.chain(available).collect()
+}
+
+/// The row of `source`, whether the filters show it or not: the inspector
+/// keeps showing what was picked.
+#[must_use]
+pub fn row(registry: &RegistryState, library: &LibraryState, source: &str) -> Option<Row> {
+    if let Some(backend) = library.backends.iter().find(|b| b.source == source) {
+        let entry = registry.backends.iter().find(|e| e.source == source);
+        return Some(installed_row(registry, library, backend, entry));
+    }
+    registry
+        .backends
+        .iter()
+        .find(|e| e.source == source)
+        .map(|entry| catalog_row(registry, entry))
+}
+
+/// The row the inspector shows, when one is picked and still exists.
+#[must_use]
+pub fn selected(registry: &RegistryState, library: &LibraryState) -> Option<Row> {
+    row(registry, library, library.selected.as_deref()?)
+}
+
+/// How many installed backends have an update ready: the sidebar's mark.
+#[must_use]
+pub fn updates_ready(registry: &RegistryState, library: &LibraryState) -> usize {
+    let catalog = registry.by_source();
+    library
+        .backends
+        .iter()
+        .filter(|b| {
+            update_offer(
+                catalog.get(b.source.as_str()).copied(),
+                registry.installs.contains_key(&b.source),
+            )
+            .is_some()
+        })
+        .count()
+}
+
+/// Whether the toolbar narrows the table: a search, a filter, or
+/// incompatible backends shown.
+#[must_use]
+pub fn filtered(registry: &RegistryState) -> bool {
+    let filters = &registry.filters;
+    !filters.search.trim().is_empty()
+        || filters.online.is_some()
+        || filters.feature != FeatureFilter::All
+        || filters.role != RoleFilter::All
+}
+
+/// How many filters the Filters menu has set, for its button: feature, kind,
+/// where it runs, and incompatible backends shown.
+#[must_use]
+pub fn filters_set(registry: &RegistryState) -> usize {
+    let filters = &registry.filters;
+    usize::from(filters.feature != FeatureFilter::All)
+        + usize::from(filters.feature.has_kinds() && filters.role != RoleFilter::All)
+        + usize::from(filters.online.is_some())
+        + usize::from(filters.include_incompatible)
+}
+
+/// Clear the search and every filter.
+pub fn clear_filters(registry: &mut RegistryState) {
+    let include_incompatible = registry.filters.include_incompatible;
+    registry.filters = crate::state::registry::Filters {
+        include_incompatible,
+        ..Default::default()
+    };
+}
+
+/// When the catalog was made, as the app says it: local time, to the minute.
+/// What the daemon wrote, when it isn't a time.
+#[must_use]
+pub fn catalog_time(generated_at: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(generated_at).map_or_else(
+        |_| generated_at.to_string(),
+        |time| {
+            time.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        },
+    )
+}
+
+/// Whether an installed backend's name, description, source or a model's
+/// name holds `needle`, in any case.
+#[must_use]
+pub fn backend_matches(backend: &BackendInfo, needle: &str) -> bool {
+    let needle = needle.trim().to_lowercase();
+    [&backend.name, &backend.description, &backend.source]
+        .into_iter()
+        .chain(backend.models.iter().map(|m| &m.name))
+        .any(|text| text.to_lowercase().contains(&needle))
+}
+
+fn installed_row(
+    registry: &RegistryState,
+    library: &LibraryState,
+    backend: &BackendInfo,
+    entry: Option<&RegistryBackend>,
+) -> Row {
+    let installing = installing(registry, &backend.source);
+    let update_to = update_offer(entry, registry.installs.contains_key(&backend.source));
+    let state = match (&installing, &update_to) {
+        (Installing::Running { phase, fraction }, _) => RowState::Installing {
+            phase: *phase,
+            fraction: *fraction,
+        },
+        (Installing::Failed(message), _) => RowState::Failed(message.clone()),
+        (Installing::Idle, Some(version)) => RowState::UpdateReady(version.clone()),
+        (Installing::Idle, None) if library.missing_keys.contains(&backend.source) => {
+            RowState::NeedsKey
+        }
+        (Installing::Idle, None) => RowState::Installed,
+    };
+    let models = model_groups(
+        backend
+            .models
+            .iter()
+            .map(|m| (m.name.as_str(), m.role.as_str())),
+    );
+    Row {
+        source: backend.source.clone(),
+        name: backend.name.clone(),
+        version: backend.version.clone(),
+        description: Some(backend.description.clone())
+            .filter(|d| !d.is_empty())
+            .or_else(|| entry.and_then(|e| e.description.clone()))
+            .filter(|d| !d.is_empty()),
+        installed: true,
+        features: features(&models),
+        kinds: models.iter().map(|g| g.kind).collect(),
+        runs: if backend_is_online(backend) {
+            Runs::Cloud
+        } else {
+            Runs::Local
+        },
+        capabilities: backend_capabilities(backend),
+        models,
+        facts: Facts {
+            runs_as: match backend.kind.as_str() {
+                "wasm" => RunsAs::Wasm,
+                "subprocess" => RunsAs::Subprocess,
+                other => RunsAs::Other(other.to_string()),
+            },
+            needs: backend
+                .secrets
+                .iter()
+                .filter(|s| s.required)
+                .map(|s| s.label.clone().unwrap_or_else(|| s.name.clone()))
+                .collect(),
+            reaches: backend.allowed_hosts.clone(),
+            built_for: None,
+            license: entry.map_or_default(|e| e.license.clone()),
+        },
+        frameworks: backend
+            .installed_accel
+            .iter()
+            .map(|accel| Framework {
+                accel: accel.clone(),
+                download: None,
+            })
+            .collect(),
+        repository: repository_url(&backend.source),
+        state,
+        installing,
+        update_to,
+        uninstall_error: registry.uninstall_errors.get(&backend.source).cloned(),
+        needs_key: false,
+    }
+}
+
+/// A backend the "Install manually" sheet previewed, as a row: what the
+/// inspector would show of it.
+#[must_use]
+pub fn preview_row(registry: &RegistryState, backend: &RegistryBackend) -> Row {
+    catalog_row(registry, backend)
+}
+
+fn catalog_row(registry: &RegistryState, entry: &RegistryBackend) -> Row {
+    let installing = installing(registry, &entry.source);
+    let compatibility = &entry.compatibility;
+    let state = match &installing {
+        Installing::Running { phase, fraction } => RowState::Installing {
+            phase: *phase,
+            fraction: *fraction,
+        },
+        Installing::Failed(message) => RowState::Failed(message.clone()),
+        Installing::Idle if compatibility.needs_client_update => {
+            RowState::NeedsNewerApp(entry.min_client.clone())
+        }
+        Installing::Idle if !compatibility.compatible => {
+            RowState::CannotRun(compatibility.reason.clone().filter(|r| !r.is_empty()))
+        }
+        Installing::Idle => RowState::Available,
+    };
+    let models = model_groups(
+        entry
+            .models
+            .iter()
+            .map(|m| (m.name.as_str(), m.product.role.as_str())),
+    );
+    Row {
+        source: entry.source.clone(),
+        name: entry.name.clone(),
+        version: entry.version.clone(),
+        description: entry.description.clone().filter(|d| !d.is_empty()),
+        installed: false,
+        features: features(&models),
+        kinds: models.iter().map(|g| g.kind).collect(),
+        runs: if entry.online {
+            Runs::Cloud
+        } else {
+            Runs::Local
+        },
+        capabilities: entry_capabilities(entry),
+        models,
+        facts: facts(entry),
+        frameworks: entry
+            .builds
+            .iter()
+            .map(|build| Framework {
+                accel: build.accel.clone(),
+                download: (!build.on_disk).then_some(build.size),
+            })
+            .collect(),
+        repository: repository_url(&entry.source),
+        state,
+        installing,
+        update_to: None,
+        uninstall_error: None,
+        needs_key: entry_needs_key(entry),
+    }
+}
+
+/// The features models of these kinds serve.
+fn features(models: &[ModelGroup]) -> Vec<Feature> {
+    let stt = models
+        .iter()
+        .any(|g| matches!(g.kind, ModelKind::Transcription | ModelKind::PostProcessing));
+    let tts = models.iter().any(|g| g.kind == ModelKind::Synthesis);
+    Feature::ALL
+        .into_iter()
+        .filter(|feature| match feature {
+            Feature::SpeechToText => stt,
+            Feature::TextToSpeech => tts,
+        })
+        .collect()
+}
+
+/// Where the install of `source` stands: a catalog backend's, or the
+/// "Install manually" sheet's under its [`RegistryState::add_key`].
+#[must_use]
+pub fn installing(registry: &RegistryState, source: &str) -> Installing {
+    if let Some(error) = registry.install_errors.get(source) {
+        return Installing::Failed(error.clone());
+    }
+    let Some(status) = registry.installs.get(source) else {
+        return Installing::Idle;
+    };
+    if let Some(message) = status.failure() {
+        return Installing::Failed(message);
+    }
+    Installing::Running {
+        phase: status.phase,
+        // reason: a download's bytes as a bar's fraction; cosmetic.
+        #[allow(clippy::cast_precision_loss)]
+        fraction: status
+            .bytes_total
+            .filter(|total| *total > 0)
+            .map(|total| (status.bytes_done as f32 / total as f32).clamp(0.0, 1.0)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,6 +1087,24 @@ mod tests {
             Input::AskUninstall("kokoro".into()),
         );
         assert_eq!(library.pending_uninstall.as_deref(), Some("kokoro"));
+        update(
+            &mut registry,
+            &mut library,
+            Input::InUse {
+                source: "whisper".into(),
+                in_use: true,
+            },
+        );
+        assert!(!library.pending_in_use, "another backend's answer");
+        update(
+            &mut registry,
+            &mut library,
+            Input::InUse {
+                source: "kokoro".into(),
+                in_use: true,
+            },
+        );
+        assert!(library.pending_in_use);
         assert_eq!(
             update(
                 &mut registry,
@@ -538,5 +1123,225 @@ mod tests {
             },
         );
         assert_eq!(registry.uninstall_errors["kokoro"], "busy");
+    }
+
+    fn installed(source: &str, name: &str, role: &str, online: bool, key: bool) -> BackendInfo {
+        serde_json::from_value(serde_json::json!({
+            "source": source,
+            "name": name,
+            "version": "0.2.1",
+            "kind": if online { "wasm" } else { "subprocess" },
+            "allowed_hosts": if online { vec!["api.openai.com"] } else { vec![] },
+            "installed_accel": if online { vec![] } else { vec!["cuda", "cpu"] },
+            "models": [{ "name": format!("{name}-model"), "role": role }],
+            "secrets": if key {
+                serde_json::json!([{ "name": "api_key", "label": "API key", "required": true }])
+            } else {
+                serde_json::json!([])
+            },
+            "options": [],
+            "supports": if online { vec!["online"] } else { vec!["gpu", "cpu"] }
+        }))
+        .expect("an installed backend")
+    }
+
+    fn entry(source: &str, name: &str, role: &str, version: &str) -> RegistryBackend {
+        serde_json::from_value(serde_json::json!({
+            "id": name.to_lowercase(),
+            "source": source,
+            "version": version,
+            "name": name,
+            "license": "MIT",
+            "kind": "subprocess",
+            "contract": "v4",
+            "online": false,
+            "supports_gpu": true,
+            "supports_cpu": true,
+            "supports": ["gpu", "cpu"],
+            "models": [{
+                "name": format!("{name}-model"),
+                "role": role,
+                "supported_devices": ["cuda", "cpu"]
+            }],
+            "secrets": [],
+            "options": [],
+            "compatibility": { "compatible": true },
+            "builds": [
+                { "accel": "cuda", "size": 57, "on_disk": true },
+                { "accel": "cpu", "size": 20 }
+            ],
+            "installed_version": null,
+            "update_available": false
+        }))
+        .expect("a catalog entry")
+    }
+
+    /// The made-up library: Whisper and OpenAI installed, Whisper with an
+    /// update; Whisper, Voxtral and Kokoro in the catalog.
+    fn library() -> (RegistryState, LibraryState) {
+        let mut whisper = entry("github.com/x/whisper", "Whisper", "transcription", "0.2.2");
+        whisper.installed_version = Some("0.2.1".into());
+        whisper.update_available = true;
+        let registry = RegistryState {
+            backends: vec![
+                whisper,
+                entry("github.com/x/voxtral", "Voxtral", "transcription", "0.4.0"),
+                entry("github.com/x/kokoro", "Kokoro", "synthesis", "1.1.0"),
+            ],
+            ..RegistryState::default()
+        };
+        let library = LibraryState {
+            backends: vec![
+                installed(
+                    "github.com/x/whisper",
+                    "Whisper",
+                    "transcription",
+                    false,
+                    false,
+                ),
+                installed("github.com/x/openai", "OpenAI", "transcription", true, true),
+            ],
+            ..LibraryState::default()
+        };
+        (registry, library)
+    }
+
+    fn names(rows: &[Row]) -> Vec<&str> {
+        rows.iter().map(|r| r.name.as_str()).collect()
+    }
+
+    /// One table: the installed backends first, then the catalog's not
+    /// installed; an update offered reads as ready.
+    #[test]
+    fn the_table_lists_installed_then_available() {
+        let (registry, library) = library();
+        let rows = rows(&registry, &library);
+        assert_eq!(names(&rows), ["Whisper", "OpenAI", "Voxtral", "Kokoro"]);
+        assert_eq!(rows[0].state, RowState::UpdateReady("0.2.2".into()));
+        assert_eq!(rows[0].facts.license, "MIT", "the catalog's");
+        assert_eq!(rows[1].runs, Runs::Cloud);
+        assert_eq!(rows[1].facts.needs, ["API key"]);
+        assert_eq!(rows[2].state, RowState::Available);
+        assert_eq!(
+            rows[2].frameworks,
+            [
+                Framework {
+                    accel: "cuda".into(),
+                    download: None
+                },
+                Framework {
+                    accel: "cpu".into(),
+                    download: Some(20)
+                }
+            ],
+            "a build on disk downloads nothing"
+        );
+        assert_eq!(rows[3].features, [Feature::TextToSpeech]);
+        assert_eq!(updates_ready(&registry, &library), 1);
+    }
+
+    /// The search and the filters narrow both halves of the table.
+    #[test]
+    fn the_filters_narrow_installed_and_available_alike() {
+        let (mut registry, mut library) = library();
+        update(
+            &mut registry,
+            &mut library,
+            Input::Feature(FeatureFilter::TextToSpeech),
+        );
+        assert_eq!(names(&rows(&registry, &library)), ["Kokoro"]);
+        assert!(filtered(&registry));
+        assert_eq!(filters_set(&registry), 1);
+        clear_filters(&mut registry);
+        update(&mut registry, &mut library, Input::Online(Some(true)));
+        assert_eq!(names(&rows(&registry, &library)), ["OpenAI"]);
+        clear_filters(&mut registry);
+        update(&mut registry, &mut library, Input::Search("VOX".into()));
+        assert_eq!(names(&rows(&registry, &library)), ["Voxtral"]);
+        update(
+            &mut registry,
+            &mut library,
+            Input::Search("parakeet".into()),
+        );
+        assert!(rows(&registry, &library).is_empty());
+        clear_filters(&mut registry);
+        assert!(!filtered(&registry));
+    }
+
+    /// The backends read ask which keys are stored, for those that require
+    /// one; one missing reads as needing it.
+    #[test]
+    fn a_backend_without_its_key_says_so() {
+        let (mut registry, mut library) = library();
+        let backends = std::mem::take(&mut library.backends);
+        let effects = update(
+            &mut registry,
+            &mut library,
+            Input::BackendsLoaded(Ok(backends)),
+        );
+        assert_eq!(
+            effects,
+            [Effect::ReadKeys {
+                source: "github.com/x/openai".into(),
+                required: vec!["api_key".into()],
+            }]
+        );
+        update(
+            &mut registry,
+            &mut library,
+            Input::KeysRead {
+                source: "github.com/x/openai".into(),
+                missing: true,
+            },
+        );
+        let openai = row(&registry, &library, "github.com/x/openai").expect("installed");
+        assert_eq!(openai.state, RowState::NeedsKey);
+    }
+
+    /// The inspector keeps what was picked when the filters hide its row,
+    /// and an install's progress reaches its row.
+    #[test]
+    fn the_pick_survives_the_filters_and_shows_progress() {
+        let (mut registry, mut library) = library();
+        update(
+            &mut registry,
+            &mut library,
+            Input::Select(Some("github.com/x/voxtral".into())),
+        );
+        update(&mut registry, &mut library, Input::Search("kokoro".into()));
+        update(
+            &mut registry,
+            &mut library,
+            Input::InstallAccepted {
+                source: "github.com/x/voxtral".into(),
+                install_id: "i1".into(),
+            },
+        );
+        update(
+            &mut registry,
+            &mut library,
+            Input::Event(RegistryEvent::Progress {
+                install_id: "i1".into(),
+                source: "github.com/x/voxtral".into(),
+                phase: InstallPhase::Downloading,
+                bytes_done: Some(38),
+                bytes_total: Some(100),
+            }),
+        );
+        let picked = selected(&registry, &library).expect("still picked");
+        assert_eq!(
+            picked.state,
+            RowState::Installing {
+                phase: InstallPhase::Downloading,
+                fraction: Some(0.38)
+            }
+        );
+        assert!(!picked.installable());
+    }
+
+    #[test]
+    fn the_catalog_time_is_local_to_the_minute() {
+        assert_eq!(catalog_time("not a time"), "not a time");
+        assert_eq!(catalog_time("2026-11-25T09:14:00Z").len(), 16);
     }
 }

@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use gpui_kit::{AsyncApp, Context, Task, WeakEntity};
+use super_voice_app_core::daemon::client::StageState;
 use super_voice_app_core::pages::readiness::{
     self as page, Effect, Feature, GpuMemory, Input, Readiness as FeatureReadiness, ReadinessState,
 };
@@ -42,10 +43,11 @@ impl Readiness {
         page::readiness(&self.state, feature)
     }
 
-    /// The model `feature` would load: set, and not up.
+    /// `feature`'s stage as the daemon last reported it: its backend and
+    /// model. What the Clips page names a clip's voice for.
     #[must_use]
-    pub fn model_to_load(&self, feature: Feature) -> Option<&str> {
-        page::model_to_load(&self.state, feature)
+    pub fn stage(&self, feature: Feature) -> Option<&StageState> {
+        self.state.views.get(&feature.stage())
     }
 
     /// The first GPU's memory, when the daemon reported a GPU.

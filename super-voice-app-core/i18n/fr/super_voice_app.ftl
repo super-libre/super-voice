@@ -870,7 +870,6 @@ daemon-connected = Service connecté
 daemon-connecting = Connexion au service…
 daemon-not-answering = Le service ne répond pas : { $reason }
 daemon-access-refused = L’accès a été refusé : { $reason }
-page-not-built = Cette page n’est pas encore faite.
 
 # The window: each feature's readiness, the command palette, the drawer
 readiness-unknown = Inconnu
@@ -918,3 +917,144 @@ about-read-the-license = Lire la licence
 about-notices = Mentions des logiciels tiers
 about-copied = Les détails de version sont dans le presse-papiers.
 about-copy-details = Copier les détails
+
+# The General pages: Shortcuts, Assistants, Settings and Updates
+shortcuts-description = Les touches qui dictent ou lisent à voix haute, depuis n'importe quelle app.
+shortcut-change-keys = Changer les touches du raccourci
+connect-ellipsis = Connecter…
+disconnect-ellipsis = Déconnecter…
+disconnect-assistant-question = Déconnecter { $name } ?
+create-key-ellipsis = Créer une clé…
+remove-ellipsis = Retirer…
+remove-key-question = Retirer la clé « { $name } » ?
+remove-key-description = L'assistant qui l'utilise ne pourra plus joindre Super Voice.
+update-ready-to-install = Super Voice { $tag } est prêt à être installé.
+open-updates = Ouvrir Mises à jour
+update-no-installer-caption = Aucun installateur n'a été publié pour cet ordinateur. Pour l'installer depuis un terminal, lancez :
+install-command-caption = Pour l'installer hors de l'app, lancez :
+
+# Speech to text's Notes, Contexts and Behavior pages
+take-elapsed = { $elapsed } sur { $limit }
+adding-to-this-note = Ajout à cette note
+search-notes = Rechercher dans les notes
+no-notes-match = Aucune note ne correspond à votre recherche.
+no-note-open = Aucune note ouverte
+open-a-note = Ouvrez une note pour la lire, la modifier, y dicter la suite ou l'exporter.
+listening = Écoute…
+more-actions = Plus d'actions
+delete-ellipsis = Supprimer…
+delete-note-title = Supprimer « { $name } » ?
+delete-note-body = Son fichier est supprimé de cet ordinateur.
+note-exported = Note exportée
+no-context-sends-nothing = Rien n'est envoyé
+context-sends-nothing = Vide. Rien n'est envoyé pour celui-ci.
+context-prompt-only = Des instructions, et aucun mot
+contexts-add-a-word = Ajouter un mot…
+remove-word = Retirer ce mot
+context-prompt-description = Des instructions, pour un modèle qui les suit. La plupart des modèles de parole ne le font pas. Pour eux, ce sont les mots ci-dessus qui aident.
+context-name-placeholder = Développement, E-mail, Noms
+context-pick-one = Choisissez un contexte pour modifier ses mots.
+contexts-add-one = Ajoutez-en un pour ce que vous dictez le plus : du code, des e-mails, un nom que le modèle comprend mal.
+delete-context-title = Supprimer « { $name } » ?
+delete-context-body = Ses mots et ses instructions sont supprimés. Un enregistrement fait avec lui n'envoie plus rien à la place.
+use-context = Utiliser { $name }
+put-in-use = L'utiliser
+behavior-description = Comment un enregistrement s'arrête, comment ses mots sont saisis, et les sons qui l'entourent.
+sounds-could-not-save = Impossible d'enregistrer les sons : { $error }
+hearing-speech = Parole entendue
+hearing-silence = Silence
+microphone-closed = Pas d'enregistrement
+test-transcript-shows-here = Les mots d'un enregistrement de test s'affichent ici.
+typing-countdown = Saisie dans { $secs }…
+
+# Text to speech's pages: Clips, Voices and Behavior
+test-the-speech = Tester la parole
+stop-speaking = Arrêter la lecture
+read-aloud-now = Lire à voix haute maintenant
+speech-speaking = Lecture en cours
+speech-starting = Démarrage
+speech-not-speaking = Silencieux
+speech-output-level = Niveau de sortie
+tts-behavior-description = Choisissez ce que lit « Lire à voix haute », et écoutez la voix.
+tts-behavior-description-test-only = Saisissez un texte pour entendre la voix.
+clip-actions = Plus pour cet extrait
+delete-clip-ellipsis = Supprimer…
+delete-clip-named = Supprimer « { $name } » ?
+delete-clip-description = Son audio est supprimé de cet ordinateur.
+stop-the-clip = Arrêter l’extrait
+position-in-the-clip = Position dans l’extrait
+spoken-in = Lu avec la voix { $voice }.
+change-the-voice = Changer la voix
+voices-description = Des voix clonées à partir d’un enregistrement, pour un modèle qui clone.
+voices-no-script = Pas de texte. Lisez vos propres mots.
+voices-read-the-script = Lisez le texte à votre rythme habituel, dans un endroit calme. L’enregistrement s’arrête de lui-même après deux minutes.
+voices-transcript-optional = Facultatif. Certains modèles clonent à partir des mots autant que du son : une voix avec ses mots fonctionne aussi avec eux.
+voices-script-language = { $blurb } Ce texte est en { $script_language }, et le démon parle { $speak_language }. Une voix se clone mieux dans la langue qu’elle parlera.
+voices-script-too-long = { $pace } Ce modèle n’en entend que { $budget } s. Choisissez un texte plus court, ou arrêtez de lire à { $budget } secondes.
+record-a-voice = Enregistrer une voix
+voices-stop-recording = Arrêter l’enregistrement
+voice-actions = Plus pour cette voix
+delete-voice-ellipsis = Supprimer…
+delete-voice-named = Supprimer la voix « { $name } » ?
+delete-voice-description = Son enregistrement est supprimé de la bibliothèque du démon. Les applications ne peuvent plus parler avec elle.
+
+# The Models pages: each feature's steps, and a backend's Configure sheet
+models-stt-description = Ce que traverse votre voix, du micro à l’app où vous écrivez.
+models-tts-description = Ce que traverse le texte, de l’app qui l’envoie à vos haut-parleurs.
+typed-with-the-write-method = Dans votre app, avec la méthode de saisie choisie dans Comportement.
+text-from-your-app-or-assistant = De votre app, d’un assistant ou de la lecture à voix haute
+configure-backend = Configurer…
+select-a-backend-menu = Choisir un moteur…
+show-in-library = Afficher dans la bibliothèque
+step-more-actions = Plus d’actions pour { $step }
+status-needs-setup = À configurer
+status-no-voice = Aucune voix
+model-uses-memory = Utilise environ { $size } de mémoire.
+model-fits = Il tient : { $free } libres.
+model-may-not-fit = Il risque de ne pas tenir : { $free } libres sur le GPU.
+model-idle-note = Hors de la mémoire jusqu’à sa prochaine utilisation.
+provision-model = { $verb } { $model } ({ $file }/{ $files })
+model-loads-after-download = Le modèle se charge une fois le téléchargement terminé.
+percent-value = { $value } %
+build-moves-the-model = Le modèle passe sur { $framework } une fois le téléchargement terminé.
+palette-unload-model = Décharger { $model }
+palette-reload-model = Recharger { $model }
+models-step-detail = { $feature } · { $step }
+not-set = Non défini
+configure-required = Obligatoire
+configure-options = Options
+chip-gpu = GPU
+chip-cpu = CPU
+
+# The Library page
+library-all-features = Toutes les fonctions
+library-all-kinds = Tous les types
+library-local-or-cloud = Local ou en ligne
+library-more = Plus
+library-configure = Configurer…
+library-uninstall = Désinstaller…
+library-runs = Fonctionne
+library-state = État
+library-available = Disponibles
+library-update-ready = Mise à jour prête
+library-cannot-run-here = Ne fonctionne pas ici
+library-version = Version { $version }
+library-count = { $count ->
+    [one] 1 moteur.
+   *[other] { $count } moteurs.
+}
+library-filters = Filtres
+library-filters-count = Filtres ({ $count })
+library-clear-filters = Effacer les filtres
+library-no-match-title = Aucun moteur ne correspond
+library-empty-title = Aucun moteur pour l'instant
+library-empty-body = Aucun n'est installé, et le catalogue n'en liste aucun. Installez-en un depuis un dépôt ou un dossier.
+library-nothing-picked = Aucun moteur choisi
+library-nothing-picked-body = Choisissez-en un dans le tableau pour voir comment il fonctionne, ce qu'il contacte et ses modèles.
+library-installed = { $backend } est installé.
+library-install-failed = Impossible d'installer { $backend }
+library-update-backend = Mettre à jour { $backend } vers { $version }
+library-configure-backend = Configurer { $backend }…
+library-folder-path = Un dossier qui contient un backend.toml
+library-install-manually-body = Installez un moteur absent du catalogue, depuis la dernière version d'un dépôt git ou depuis un dossier de cet ordinateur.
+library-check-failed = Impossible de le lire

@@ -10427,6 +10427,7 @@ version = "0.3.0-beta.7"
 dependencies = [
  "anyhow",
  "block2 0.6.2",
+ "chrono",
  "dioxus-devtools",
  "futures-util",
  "gpui-kit",

@@ -31,7 +31,7 @@ use super::{Shell, version};
 use crate::assets::APP_ICON;
 use crate::pages::{Page, Section, SidebarMark};
 use crate::t;
-use crate::ui::status::{Dot, StatusDot, StatusPill, dot_color};
+use crate::ui::status::{Dot, StatusPill, dot_color};
 use crate::ui::width::WindowSize;
 
 /// What the pages' list shows, read from the shell.
@@ -246,13 +246,18 @@ impl NavItem {
         let page = self.page;
         let name = page.full_name();
         let icon: Icon = page.icon();
-        let icon = match (self.dot, self.mark) {
-            (Some(dot), _) | (None, Some(SidebarMark::Dot(dot))) => Badge::new()
+        let badge = match (self.dot, self.mark) {
+            (Some(dot), _) => Some(dot_color(dot, cx)),
+            (None, Some(SidebarMark::Update)) => Some(theme.info),
+            _ => None,
+        };
+        let icon = match badge {
+            Some(color) => Badge::new()
                 .dot()
-                .color(dot_color(dot, cx))
+                .color(color)
                 .child(icon)
                 .into_any_element(),
-            _ => icon.into_any_element(),
+            None => icon.into_any_element(),
         };
         let accent = theme.tokens.sidebar_accent;
         let accent_text = theme.sidebar_accent_foreground;
@@ -292,7 +297,12 @@ fn mark_element(mark: SidebarMark, cx: &App) -> AnyElement {
             .text_color(cx.theme().muted_foreground)
             .child(count.to_string())
             .into_any_element(),
-        SidebarMark::Dot(dot) => StatusDot::new(dot).into_any_element(),
+        SidebarMark::Update => div()
+            .flex_shrink_0()
+            .size(px(7.))
+            .rounded_full()
+            .bg(cx.theme().info)
+            .into_any_element(),
     }
 }
 

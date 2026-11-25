@@ -18,7 +18,19 @@
 //! anything.
 
 mod about;
-mod placeholder;
+mod assistants;
+mod clips;
+mod contexts;
+mod library;
+mod models;
+mod notes;
+mod settings;
+mod shortcuts;
+mod stt_behavior;
+mod take;
+mod tts_behavior;
+mod updates;
+mod voices;
 
 use std::rc::Rc;
 
@@ -32,14 +44,30 @@ use super_voice_app_core::pages::readiness::Feature;
 
 use crate::shared::Shared;
 use crate::shell::Shell;
-use crate::ui::status::Dot;
 
 /// Build `page`'s view. One line per page; a page not built yet is a
 /// placeholder.
 pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> PageHandle {
     match page {
         Page::About => PageHandle::new::<about::AboutPage>(page, shared, window, cx),
-        _ => PageHandle::new::<placeholder::Placeholder>(page, shared, window, cx),
+        Page::Shortcuts => PageHandle::new::<shortcuts::ShortcutsPage>(page, shared, window, cx),
+        Page::Assistants => PageHandle::new::<assistants::AssistantsPage>(page, shared, window, cx),
+        Page::Settings => PageHandle::new::<settings::SettingsPage>(page, shared, window, cx),
+        Page::Updates => PageHandle::new::<updates::UpdatesPage>(page, shared, window, cx),
+        Page::Notes => PageHandle::new::<notes::NotesPage>(page, shared, window, cx),
+        Page::Contexts => PageHandle::new::<contexts::ContextsPage>(page, shared, window, cx),
+        Page::SttBehavior => {
+            PageHandle::new::<stt_behavior::BehaviorPage>(page, shared, window, cx)
+        }
+        Page::Clips => PageHandle::new::<clips::ClipsPage>(page, shared, window, cx),
+        Page::Voices => PageHandle::new::<voices::VoicesPage>(page, shared, window, cx),
+        Page::TtsBehavior => {
+            PageHandle::new::<tts_behavior::TtsBehaviorPage>(page, shared, window, cx)
+        }
+        Page::SttModels | Page::TtsModels => {
+            PageHandle::new::<models::ModelsPage>(page, shared, window, cx)
+        }
+        Page::Library => PageHandle::new::<library::LibraryPage>(page, shared, window, cx),
     }
 }
 
@@ -157,8 +185,9 @@ impl PaletteCommand {
 pub enum SidebarMark {
     /// How many it holds: notes, clips, voices. Hidden at 0.
     Count(usize),
-    /// A bare dot: an update is ready.
-    Dot(Dot),
+    /// A bare dot in the theme's info colour: an update is ready. Not a
+    /// status dot, so not one of their colours.
+    Update,
 }
 
 /// A built page, as the window holds it: its view, and its [`PageView`]

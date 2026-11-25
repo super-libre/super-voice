@@ -231,7 +231,7 @@ pub enum ModelStatus {
     /// No backend is selected. Gray.
     None,
     /// A backend is selected but at least one required secret/option is unset.
-    /// Red.
+    /// Yellow: it needs setting up, nothing failed.
     Blocked,
     /// Backend selected and fully configured, but no model is up yet: none
     /// loaded, or one still downloading or loading. Yellow.
@@ -245,8 +245,8 @@ pub enum ModelStatus {
     /// come up, or the last load failed. Red.
     Failed,
     /// The synthesis model is loaded, or loads on its next use, but has no
-    /// voice to speak in: a cloning model before a voice is chosen. Red, as
-    /// [`Self::Blocked`] is: the next use would fail.
+    /// voice to speak in: a cloning model before a voice is chosen. Red: the
+    /// next use would fail.
     NoVoice,
 }
 
@@ -256,9 +256,9 @@ impl ModelStatus {
     pub const fn dot(self) -> Dot {
         match self {
             Self::None => Dot::Grey,
-            Self::NotLoaded => Dot::Yellow,
+            Self::NotLoaded | Self::Blocked => Dot::Yellow,
             Self::Ready | Self::Idle => Dot::Green,
-            Self::Blocked | Self::Failed | Self::NoVoice => Dot::Red,
+            Self::Failed | Self::NoVoice => Dot::Red,
         }
     }
 }
