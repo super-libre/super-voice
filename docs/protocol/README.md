@@ -162,7 +162,7 @@ knowing them means most paths can be guessed rather than looked up:
 ### AI assistants
 
 Super Voice's MCP server, and the assistants the daemon connects to it. "Own
-clients only" is Super Voice's own settings app, applet and CLI, installed
+clients only" is Super Voice's own app, applet and CLI, installed
 beside the daemon: those routes make a key or show one.
 
 | Path | Methods | Scope | Reference |

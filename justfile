@@ -14,7 +14,7 @@ wrapper_name := 'voice'
 shared_applet := 'super-cosmic-applet'
 shared_applet_dir := env('SHARED_APPLET_DIR', '..' / 'super-cosmic-applet')
 old_applets := 'super-stt-cosmic-applet super-tts-cosmic-applet'
-# The settings apps Super Voice's replaced.
+# The apps Super Voice's replaced.
 old_apps := 'super-stt-app super-tts-app'
 
 # Installation paths — root-owned under /usr/local, matching the
@@ -71,7 +71,7 @@ service_dst := systemd_unit_dir / service_file
 # deliberately rather than silently skipped.
 macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app-core -p super-voice-gpui'
 
-# macOS ships as one app bundle, `Super Voice.app`: the settings app is its
+# macOS ships as one app bundle, `Super Voice.app`: the app is its
 # executable, and the daemon and the CLI sit beside it in Contents/MacOS. The
 # daemon and the global shortcut run as the bundle's two LaunchAgents. See
 # `bundle-macos`.
@@ -1268,7 +1268,7 @@ install-daemon:
     fi
     systemctl --user enable {{ service_name }}
 
-# Install daemon, settings app, and CLI
+# Install the daemon, the app and the CLI
 #
 # On macOS all three are one app bundle; see `install-macos`.
 #

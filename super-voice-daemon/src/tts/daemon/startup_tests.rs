@@ -8,7 +8,7 @@
 //! carries no `active_backend` at all. When
 //! the startup path forgets to record it the daemon still speaks, so
 //! nothing fails and no log line complains; the only symptom is that the
-//! settings app renders its "no backend loaded" empty state and the model
+//! app renders its "no backend loaded" empty state and the model
 //! picker comes back empty.
 
 use crate::tts::daemon::types::test_daemon;

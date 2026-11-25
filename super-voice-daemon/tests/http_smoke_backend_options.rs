@@ -291,7 +291,7 @@ async fn option_list_returns_declared_options() {
 }
 
 /// An option that declares `choices` accepts those and nothing else. The
-/// settings app renders a dropdown that cannot offer anything else, so this is
+/// app renders a dropdown that cannot offer anything else, so this is
 /// the guard for every other client — and for the stored value staying one the
 /// backend understands, since it is injected into the load headers verbatim.
 #[tokio::test]

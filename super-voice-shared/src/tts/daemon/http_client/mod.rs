@@ -30,7 +30,7 @@ pub async fn status(socket_path: PathBuf, token: &str) -> HttpResult<VoiceStatus
 }
 
 /// Public transport surface for downstream clients that compose their own
-/// per-scope endpoint wrappers (e.g. the settings app): the engine's, plus
+/// per-scope endpoint wrappers (e.g. the app): the engine's, plus
 /// the `settings_*` calls that read text to speech's [`DaemonResponse`]. Returns
 /// [`HttpError`] on transport/auth failure; `401` becomes
 /// [`HttpError::InvalidSession`].

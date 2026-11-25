@@ -11,7 +11,7 @@
 #
 # What gets removed:
 #   - Super Voice's binaries in /usr/local/bin: the daemon, the `voice` CLI
-#     and wrapper, the consent helper, the installer, both settings apps and
+#     and wrapper, the consent helper, the installer, both earlier apps and
 #     the COSMIC applet
 #   - What Super STT and Super TTS installed: their daemons, CLIs, wrappers
 #     (`stt`, `tts`), consent helpers, installers and applets, in

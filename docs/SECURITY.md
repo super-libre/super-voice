@@ -103,10 +103,10 @@ ls -la "${XDG_RUNTIME_DIR:-$(getconf DARWIN_USER_TEMP_DIR)}/voice/super-voice-ht
 - See [`protocol/auth.md`](protocol/auth.md) for the full token, scope, and consent contract
 
 ### 6. AI Assistants
-- **A key per assistant, made when the user connects it**: an AI assistant such as Claude Code or Codex reaches Super Voice's MCP server (`/v1/mcp`) on the TCP listener with an assistant key, which the daemon makes when the user connects the assistant in the settings app. Connecting it is the consent; there is no dialog. Each assistant has a key of its own, so disconnecting one leaves the others working. See [`protocol/auth.md` — Assistant keys](protocol/auth.md#assistant-keys)
+- **A key per assistant, made when the user connects it**: an AI assistant such as Claude Code or Codex reaches Super Voice's MCP server (`/v1/mcp`) on the TCP listener with an assistant key, which the daemon makes when the user connects the assistant in the app. Connecting it is the consent; there is no dialog. Each assistant has a key of its own, so disconnecting one leaves the others working. See [`protocol/auth.md` — Assistant keys](protocol/auth.md#assistant-keys)
 - **Speak and hear, nothing else**: a key carries the `speak` and `transcribe` scopes, for the tools `speak` and `listen`, and no other. `listen` never types and never toggles a recording someone else started
 - **Only where it is meant to work**: a key works on `/v1/mcp` alone, over TCP, with no `Origin` header (any `Origin` is a browser page, refused whatever key it holds) and a loopback `Host` (a guard against DNS rebinding). A key presented anywhere else is refused
-- **Only Super Voice's own clients make or see a key**: the routes that make a key or show one are refused to every caller but the settings app, the applet and the CLI installed beside the daemon, whatever scopes it holds, so an assistant cannot make itself another key
+- **Only Super Voice's own clients make or see a key**: the routes that make a key or show one are refused to every caller but the app, the applet and the CLI installed beside the daemon, whatever scopes it holds, so an assistant cannot make itself another key
 - **Where a key is kept**: in the secrets file, and with the assistant. Claude Code keeps its plugin's key as a secret plugin option, with its own credentials; the daemon hands it over on the command's stdin, never on a command line. Codex, OpenCode and the Antigravity CLI have theirs written into their configs, which the daemon makes readable by their owner alone (mode `0600`)
 - **Revoked at once**: disconnecting an assistant, or revoking a key made by hand, stops the key's next request and cancels its calls in flight, a `listen` waiting for the user included
 
@@ -231,7 +231,7 @@ default), so stopping or restarting the daemon does not end them. To end every
 session at once, stop the daemon and move that file aside; it also holds the
 backends' API keys and the assistant keys, which go with it.
 
-Disconnect an AI assistant on the Assistants page of the settings app, or
+Disconnect an AI assistant on the Assistants page of the app, or
 revoke a key made by hand there, to stop it at once.
 
 ### Emergency Shutdown

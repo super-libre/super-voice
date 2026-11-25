@@ -299,7 +299,7 @@ impl SuperSTTDaemon {
     /// `preferred_model`/`preferred_source` config, which
     /// carries no `active_backend` — a config written before that field
     /// existed loads it as `None`. Without this the daemon transcribes
-    /// happily while `GET /active_backend` stays null, so the settings app
+    /// happily while `GET /active_backend` stays null, so the app
     /// shows its "no backend selected" empty state and `GET /models` (scoped to
     /// the active backend) returns nothing.
     ///

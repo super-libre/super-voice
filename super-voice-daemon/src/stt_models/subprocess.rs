@@ -78,7 +78,7 @@ impl SubprocessBackend {
 
         // Provision ONLY the selected model's files (lazy per model). The
         // tracker (when present) reports per-file and per-byte progress through
-        // `DownloadStateManager` so the settings app's progress bar updates in
+        // `DownloadStateManager` so the app's progress bar updates in
         // real time. Each file carries its own URL and destination; `parse`
         // already validated every `destination` as a safe relative path, so the
         // join below cannot escape the backend dir. The files a prepare reads
@@ -103,7 +103,7 @@ impl SubprocessBackend {
         // Once every file is on disk, spawning the sandboxed unit and loading
         // weights onto the device is the slow tail (tens of seconds for a
         // multi-GB model on GPU) but isn't byte-tracked — flip the tracker
-        // to "loading_model" so the settings app swaps the full download
+        // to "loading_model" so the app swaps the full download
         // bar for a "Loading model into memory…" indicator instead of
         // freezing on a full bar.
         let mark_loading = || {

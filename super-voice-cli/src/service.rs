@@ -2,7 +2,7 @@
 //! `voice service`: register, unregister, or report on the app bundle's two
 //! `LaunchAgent`s, the daemon and the shortcut listener.
 //!
-//! The settings app registers them the first time it is opened, which is all
+//! The app registers them the first time it is opened, which is all
 //! someone who drags Super STT into Applications needs. This is for the rest:
 //! the justfile's install and uninstall, and anyone stopping the daemon from
 //! a terminal. It works only as the CLI inside the bundle — through `stt`, or

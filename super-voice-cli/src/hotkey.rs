@@ -46,7 +46,7 @@ use crate::{HOTKEY_SCOPES, HOTKEY_TOPICS};
 ///
 /// In the macOS app bundle the two are copies of one binary at different
 /// paths: `stt` in `Contents/MacOS`, and the listener in `Contents/Helpers`,
-/// since beside the settings app its event loop would register with macOS
+/// since beside the app its event loop would register with macOS
 /// as the app itself. The daemon binds each session to the path that
 /// obtained it, so sharing `stt`'s keychain entry would have each revoke the
 /// other's session every time it was used.

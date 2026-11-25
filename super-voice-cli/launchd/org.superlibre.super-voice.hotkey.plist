@@ -36,7 +36,7 @@
       The listener runs an AppKit event loop, and any process that does so
       from Contents/MacOS registers with macOS as the app itself: opening
       Super STT then activates this invisible listener instead of launching
-      the settings app. From Contents/Helpers it is a process of its own.
+      the app. From Contents/Helpers it is a process of its own.
       The daemon trusts first-party binaries there as it does beside itself;
       see `bundle_helpers_dir` in super-voice-daemon's auth/consent.rs.
     -->

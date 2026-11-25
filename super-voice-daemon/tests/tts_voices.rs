@@ -336,7 +336,7 @@ async fn a_refused_upload_is_answered_rather_than_reset() {
 
 /// Adding, renaming and deleting a voice each announce `settings_changed` for
 /// `voices`, so another client showing the library — or a model's choice of
-/// voices, which is drawn from it — reads it again. The settings app's
+/// voices, which is drawn from it — reads it again. The app's
 /// Synthesis card kept saying the model had no voices after another client
 /// added one.
 #[tokio::test]

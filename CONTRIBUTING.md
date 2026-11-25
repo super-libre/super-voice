@@ -239,7 +239,7 @@ re-add, not on toggling the switch.
 
 ```bash
 just run-daemon         # run the daemon in the foreground
-just run-app            # run the settings app
+just run-app            # run the app
 just run-applet         # run the COSMIC applet
 just audit              # security audit (cargo audit)
 ```

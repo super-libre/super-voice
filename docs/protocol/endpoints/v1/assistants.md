@@ -75,7 +75,7 @@ than at its next request.
 - Tokens without the `settings` scope get `403 scope_denied`.
 - The routes that make a key or show one, `POST /assistants/{id}/connect`,
   `POST /assistants/keys` and `GET /assistants/{id}/key`, are for Super Voice's
-  own clients alone: the settings app, the applet and the CLI, installed beside
+  own clients alone: the app, the applet and the CLI, installed beside
   the daemon. Any other caller gets `403 auth_denied` with reason
   `not_official_client`, whatever scopes it holds. An assistant must not be
   able to make itself another key, and neither must any other program the user

@@ -160,7 +160,7 @@ fn every_path_the_client_calls_is_one_the_daemon_serves() {
 /// The scan actually sees the paths, rather than passing because it found none.
 ///
 /// A test whose corpus silently empties is worse than no test: it goes green
-/// forever. These are the paths the settings app cannot work without.
+/// forever. These are the paths the app cannot work without.
 #[test]
 fn the_scan_finds_the_paths_the_app_depends_on() {
     let found: BTreeSet<String> = literals_in_client_sources()

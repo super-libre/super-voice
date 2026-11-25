@@ -44,7 +44,7 @@ pub async fn hotkey(socket_path: PathBuf, token: &str) -> HttpResult<String> {
 }
 
 /// Public transport surface for downstream clients that compose their own
-/// per-scope endpoint wrappers (e.g. the settings app): the engine's, plus
+/// per-scope endpoint wrappers (e.g. the app): the engine's, plus
 /// the `settings_*` calls that read Super STT's [`DaemonResponse`]. Returns
 /// [`HttpError`] on transport/auth failure; `401` becomes
 /// [`HttpError::InvalidSession`].

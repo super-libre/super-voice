@@ -33,7 +33,7 @@ static INSTALLER: Installer = Installer {
 /// What Super STT and Super TTS installed that Super Voice replaces: their
 /// daemons, CLIs, consent helpers, wrappers, installers and units, Super
 /// STT's oldest layout (one `super-stt` binary), their applets, and the two
-/// settings apps, which Super Voice's replaced.
+/// earlier apps, which Super Voice's replaced.
 const RETIRED: Retired = Retired {
     binaries: &[
         "super-stt",

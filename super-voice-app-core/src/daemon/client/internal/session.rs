@@ -2,7 +2,7 @@
 //! Session-token machinery for every app→daemon call.
 //!
 //! One cached token (minted via the daemon consent popup) authorizes
-//! everything the settings app does. [`with_settings_token`] runs an
+//! everything the app does. [`with_settings_token`] runs an
 //! operation with that token and, on `invalid_session`, drops the cache
 //! and retries once with fresh consent.
 
@@ -10,7 +10,7 @@ use super_voice_shared::daemon::http_client::HttpResult;
 use super_voice_shared::daemon::session::{self, AppId};
 use super_voice_shared::validation::get_http_socket_path;
 
-/// Scope set the settings app requests. One cached token covers
+/// Scope set the app requests. One cached token covers
 /// everything the app does: config + registry (`settings`), the
 /// test-recording panel (`transcribe`), the test utterance (`speak`), the
 /// cloned-voice library (`voices`), and the `/events` subscription
@@ -29,19 +29,19 @@ pub const SETTINGS_SCOPES: &[&str] = &[
     "audio_visualization",
     "daemon_status",
 ];
-/// The settings app's token entry, and every app's unless it says otherwise
+/// The Super Voice app's token entry, and every app's unless it says otherwise
 /// with [`set_identity`].
 pub(crate) const APP_ID_NAME: AppId = session::app_id("super-voice-app");
-/// The name the consent dialog shows for the settings app.
-const APP_NAME: &str = "Super Voice Settings App";
+/// The name the consent dialog shows for the app.
+const APP_NAME: &str = "Super Voice App";
 
-/// Who this app is to the daemon, when it is not the settings app: the entry
+/// Who this app is to the daemon, when it is not the Super Voice app: the entry
 /// its token is kept under, and the name the consent dialog shows. Set once,
 /// before the first daemon call.
 static IDENTITY: std::sync::OnceLock<(AppId, &'static str)> = std::sync::OnceLock::new();
 
 /// Make this app a client of its own: its token kept under `app_id`, and the
-/// consent dialog naming it `name`. For an app other than the settings app,
+/// consent dialog naming it `name`. For an app other than the Super Voice app,
 /// called before its first daemon call: the daemon binds a token to the binary
 /// it was granted to, so two apps sharing an entry would replace each other's
 /// token. Returns `false` when an identity was already set.

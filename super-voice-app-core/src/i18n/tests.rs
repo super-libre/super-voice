@@ -85,7 +85,7 @@ fn a_key_with_no_arguments_reads_as_is() {
     assert_eq!(text("all-notes", &[]), LANGUAGE_LOADER.get("all-notes"));
 }
 
-/// A figure with a decimal keeps it, as the settings app shows it.
+/// A figure with a decimal keeps it, as the app shows it.
 #[test]
 fn a_decimal_figure_keeps_its_decimal() {
     let pair = text("memory-pair", &[("value0", "4.9"), ("value1", "8.0")]);

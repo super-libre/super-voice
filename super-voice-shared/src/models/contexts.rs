@@ -22,7 +22,7 @@
 //!
 //! One context is active at a time, and a backend may be pointed at a different
 //! one; see the daemon's config. The wire shape lives here so the daemon that
-//! serves it and the settings app that renders it cannot drift.
+//! serves it and the app that renders it cannot drift.
 
 use serde::{Deserialize, Serialize};
 

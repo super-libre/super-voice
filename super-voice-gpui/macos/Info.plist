@@ -5,7 +5,7 @@
   the app (the bundle's executable), the daemon and the CLI, and the
   LaunchAgents that run the latter two.
 
-  The executable is `super-voice-app`, the settings app's name: the daemon
+  The executable is `super-voice-app`, the app's name: the daemon
   trusts a client by that name beside it, and runs it to post its banners
   (`super-voice-app --notify`).
 

@@ -288,7 +288,7 @@ main() {
             *-apple-darwin)
                 print_error "Pre-built macOS binaries are not published yet. Build from source instead:"
                 print_error "  git clone https://github.com/$GITHUB_REPO.git && cd super-voice && just install"
-                print_error "That installs Super Voice.app — the settings app, the daemon and the voice CLI — in"
+                print_error "That installs Super Voice.app (the app, the daemon and the voice CLI) in"
                 print_error "/Applications. The COSMIC applet is Linux-only."
                 ;;
             *)

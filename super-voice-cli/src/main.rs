@@ -8,7 +8,7 @@
 //! an AI assistant's hooks that can only run a command.
 //!
 //! Auth flow is delegated to `super_voice_shared::daemon::session`, the
-//! shared client-side session helper. Each client (CLI, settings app,
+//! shared client-side session helper. Each client (CLI, app,
 //! applet) keeps its token in a file of its own, named by its `AppId`; the
 //! CLI's is `$XDG_STATE_HOME/super-voice/clients/super-voice-cli.json`. One
 //! token serves both features.
@@ -246,7 +246,7 @@ fn build_cli() -> Command {
                         .trailing_var_arg(true),
                 ), // No --voice/--language/--speed/--instructions: how the
                    // machine speaks is the user's configuration, not a flag on the
-                   // thing that makes it talk. Set a voice with the settings app
+                   // thing that makes it talk. Set a voice with the app
                    // or `POST /tts/pipeline/{stage}/model/{model}/voice`.
         ))
         .subcommand(

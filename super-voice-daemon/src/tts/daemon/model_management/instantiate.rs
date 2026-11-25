@@ -178,7 +178,7 @@ impl SuperTTSDaemon {
                 .with_event_bus(std::sync::Arc::clone(&self.events)),
             );
             // Register so `GET /download_status` returns this tracker and the
-            // settings app's progress card lights up. A previous tracker (from
+            // app's progress card lights up. A previous tracker (from
             // a failed load) is cleared first — the manager rejects parallel
             // downloads, but a leftover entry would block this one.
             self.download_manager.clear_download(());
@@ -272,7 +272,7 @@ impl SuperTTSDaemon {
     /// handed on every `/v1` request, whichever transport carries it.
     ///
     /// Secrets come solely from the daemon's secrets file, by backend source
-    /// and secret name, as the settings app wrote them — there is no
+    /// and secret name, as the app wrote them — there is no
     /// legacy `<provider>-api-key` fallback, so the key must be set for this
     /// specific backend. Options use the config override if set, else the
     /// manifest default. A required secret that resolves to nothing is an error.

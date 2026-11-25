@@ -21,8 +21,8 @@ voice the user already cloned has no reason to hold the recordings.
 Every other stored preference is a value the user typed. A voice sample is a
 **recording of a person**, usually the user, and it is the one asset in the
 daemon that identifies someone. The [`settings`](./settings.md) scope is broad
-by design — a settings app holds it to manage models, devices, and backends —
-and folding voice recordings into it would hand every such app the ability to
+by design (the app holds it to manage models, devices, and backends), and
+folding voice recordings into it would hand every app that holds it the ability to
 read them back as audio.
 
 So the library gets its own scope, the consent prompt names it in those terms

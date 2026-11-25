@@ -23,7 +23,7 @@ use super_voice_shared::daemon::http_client::{HttpError, HttpResult};
 
 /// The backend filling one stage, and whether the stage is switched on.
 ///
-/// Only the fields the settings app consumes are modeled; serde ignores the
+/// Only the fields the app consumes are modeled; serde ignores the
 /// rest.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct StageBackend {

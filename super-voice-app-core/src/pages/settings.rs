@@ -4,7 +4,7 @@
 //!
 //! The failure notices and Sleep When Idle change once the daemon has stored
 //! them, so a failed save leaves the page on the value in force. The primary
-//! language shows the pick at once, as the settings app always has.
+//! language shows the pick at once, as the app always has.
 
 use super_voice_shared::models::notification_method::NotificationMethod;
 
@@ -151,7 +151,7 @@ pub fn update(state: &mut SettingsState, language: &mut LanguageState, input: In
             clear_notice: true,
             notice: None,
         },
-        // A failed read is told as the language failing, as the settings app
+        // A failed read is told as the language failing, as the app
         // always has: either way the picker can't be trusted.
         Input::PrimaryLanguageSaved(Err(e)) | Input::PrimaryLanguageUnread(e) => {
             Outcome::notice(Notice::CouldNotSaveLanguage(e))
