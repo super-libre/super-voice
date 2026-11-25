@@ -5,6 +5,7 @@ use cosmic::prelude::*;
 
 use super::{AppModel, DeviceState, ModelOperationState};
 use crate::state::Stage;
+use super_voice_app_core::state::model_operations::Progressed;
 
 /// Stall threshold for the model-switch watchdog. If a switch makes no
 /// progress for this long, the UI flips to an error instead of spinning
@@ -32,26 +33,6 @@ impl AppModel {
         self.current_source.clear();
     }
 
-    /// Set model to the provisioning state — its files are being verified or
-    /// downloaded, and which of the two is in `progress.status`. `stage` is the
-    /// pipeline position being provisioned for, straight off the daemon's
-    /// report.
-    pub(in crate::core::app) fn set_model_provisioning(
-        &mut self,
-        target_model: String,
-        progress: super_voice_shared::models::protocol::DownloadProgress,
-        stage: Stage,
-    ) {
-        // A tick is progress, so it restarts that stage's stall clock.
-        self.model_operations.start(
-            stage,
-            ModelOperationState::Provisioning {
-                target_model,
-                progress: Box::new(progress),
-            },
-        );
-    }
-
     /// Set model to loading state, for the stage running the model.
     pub(in crate::core::app) fn set_model_loading(
         &mut self,
@@ -59,24 +40,13 @@ impl AppModel {
         status_message: String,
         stage: Stage,
     ) {
-        self.set_model_loading_with(target_model, status_message, stage, None);
-    }
-
-    /// [`Self::set_model_loading`], with what the backend reports of its load.
-    fn set_model_loading_with(
-        &mut self,
-        target_model: String,
-        status_message: String,
-        stage: Stage,
-        load: Option<super_voice_shared::models::protocol::LoadProgress>,
-    ) {
         // Entering a switch starts that stage's stall clock (see PingTimeout).
         self.model_operations.start(
             stage,
             ModelOperationState::Loading {
                 target_model,
                 status_message,
-                load,
+                load: None,
             },
         );
     }
@@ -114,45 +84,22 @@ impl AppModel {
         stage: Stage,
         progress: &super_voice_shared::models::protocol::DownloadProgress,
     ) {
-        let target_model = progress.model_name.clone();
-        match progress.status.as_str() {
-            "loading_model" => {
-                self.set_model_loading_with(
-                    target_model,
-                    "Loading model into memory...".to_string(),
-                    stage,
-                    progress.load.clone(),
-                );
-            }
-            "error" => {
-                // The daemon broadcasts a terminal `error` for any switch
-                // failure (download, spawn, or load) carrying the failure
-                // detail. Surface it as the model-switch error banner — this is
-                // the authoritative event-driven path; the now-untimed
-                // `set_model` POST's `ModelError` lands consistently after.
-                let message = progress
-                    .error
-                    .clone()
-                    .unwrap_or_else(|| crate::fl!("model-switch-failed"));
-                self.model_operations
-                    .set(stage, ModelOperationState::Error { message });
-                // A failed switch leaves that stage idle — clear the selection
-                // so the UI doesn't show a model that isn't loaded (mirrors the
-                // `ModelError` handler). Only stage 1's identity is kept here,
-                // so a post-processor's failure must not clear it.
-                if stage == Stage::Transcription {
-                    self.clear_loaded_model();
-                }
-            }
-            "completed" | "cancelled" => {
-                // State will be updated by subsequent daemon events
+        let outcome = self.model_operations.apply_progress(
+            stage,
+            progress,
+            || "Loading model into memory...".to_string(),
+            || crate::fl!("model-switch-failed"),
+        );
+        match outcome {
+            // A failed switch leaves that stage idle: clear the selection so
+            // the UI doesn't show a model that isn't loaded. Only stage 1's
+            // identity is kept here, so a post-processor's failure must not
+            // clear it.
+            Progressed::Failed if stage == Stage::Transcription => self.clear_loaded_model(),
+            Progressed::Finished => {
                 log::info!("Download finished with status: {}", progress.status);
             }
-            _ => {
-                // "verifying", "downloading", and anything the daemon adds
-                // later: files are being provisioned.
-                self.set_model_provisioning(target_model, progress.clone(), stage);
-            }
+            Progressed::Failed | Progressed::Moved => {}
         }
     }
 

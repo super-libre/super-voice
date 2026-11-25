@@ -7,8 +7,8 @@ use super_voice_registry_types::index::supports;
 
 use crate::core::app::AppModel;
 use crate::daemon::backends::{BackendInfo, BackendOption, BackendSecret};
-use crate::daemon::client::ContextMode;
-use crate::ui::messages::{BackendMessage, ContextsMessage, Message};
+use crate::ui::messages::{BackendMessage, Message};
+use super_voice_app_core::pages::configure::{ContextPick, Input, pick_of};
 use super_voice_shared::models::contexts::DictationContext;
 
 use super::surface::muted_text_color;
@@ -49,16 +49,10 @@ pub fn configure_sheet<'a>(backend: &'a BackendInfo, app: &'a AppModel) -> Eleme
     } else {
         let mut section = settings::section();
         for secret in &backend.secrets {
-            let key = (backend.source.clone(), secret.name.clone());
             let configured = app
-                .backend_secret_configured
-                .get(&key)
-                .copied()
-                .unwrap_or(false);
-            let input = app
-                .backend_secret_inputs
-                .get(&key)
-                .map_or("", String::as_str);
+                .configure
+                .secret_configured(&backend.source, &secret.name);
+            let input = app.configure.secret_input(&backend.source, &secret.name);
             section = section.add(secret_row(&backend.source, secret, configured, input));
         }
         for option in &backend.options {
@@ -77,11 +71,7 @@ pub fn configure_sheet<'a>(backend: &'a BackendInfo, app: &'a AppModel) -> Eleme
                 section = section.add(choice_option_row(&backend.source, option));
                 continue;
             }
-            let key = (backend.source.clone(), option.name.clone());
-            let input = app
-                .backend_option_inputs
-                .get(&key)
-                .map_or("", String::as_str);
+            let input = app.configure.option_input(&backend.source, &option.name);
             section = section.add(option_row(&backend.source, option, input));
         }
         body.push(section.into());
@@ -104,7 +94,7 @@ pub fn configure_sheet<'a>(backend: &'a BackendInfo, app: &'a AppModel) -> Eleme
 fn context_row<'a>(backend: &'a BackendInfo, app: &'a AppModel) -> Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
     let source = backend.source.clone();
-    let state = app.contexts.backend_contexts.get(&backend.source);
+    let state = app.configure.backend_contexts.get(&backend.source);
 
     // Index 0 is "follow", index 1 is "none", and the rest are the contexts in
     // the order the page lists them — so an index maps back to a choice without
@@ -125,30 +115,26 @@ fn context_row<'a>(backend: &'a BackendInfo, app: &'a AppModel) -> Element<'a, M
     labels.push(crate::fl!("no-context"));
     labels.extend(contexts.iter().map(|(_, name)| name.clone()));
 
-    let selected = match state.map(|s| s.mode) {
-        None | Some(ContextMode::Active) => Some(0),
-        Some(ContextMode::Nothing) => Some(1),
-        Some(ContextMode::Pinned) => state
-            .and_then(|s| s.id.as_deref())
-            .and_then(|id| contexts.iter().position(|(cid, _)| cid == id))
-            .map(|i| i + 2)
-            // Pinned to a context that has since been deleted. The daemon keeps
-            // the pin, so this reads back as pinned with an id nothing matches;
-            // showing "follow" would be a lie about what the backend receives.
-            .or(Some(1)),
+    let ids: Vec<String> = contexts.into_iter().map(|(id, _)| id).collect();
+    let selected = match pick_of(state, &ids) {
+        ContextPick::FollowActive => 0,
+        ContextPick::Nothing => 1,
+        ContextPick::Pinned(id) => ids.iter().position(|cid| *cid == id).map_or(1, |i| i + 2),
     };
 
-    let ids: Vec<String> = contexts.into_iter().map(|(id, _)| id).collect();
-    let dropdown = widget::dropdown(labels, selected, move |index| match index {
-        0 => Message::Contexts(ContextsMessage::BackendFollowsActive(source.clone())),
-        1 => Message::Contexts(ContextsMessage::BackendPinned {
+    let dropdown = widget::dropdown(labels, Some(selected), move |index| {
+        let pick = match index {
+            0 => ContextPick::FollowActive,
+            1 => ContextPick::Nothing,
+            n => ids
+                .get(n - 2)
+                .cloned()
+                .map_or(ContextPick::Nothing, ContextPick::Pinned),
+        };
+        configure(Input::PickContext {
             source: source.clone(),
-            id: None,
-        }),
-        n => Message::Contexts(ContextsMessage::BackendPinned {
-            source: source.clone(),
-            id: ids.get(n - 2).cloned(),
-        }),
+            pick,
+        })
     });
 
     let hint = state.and_then(|s| s.context.as_ref()).map_or_else(
@@ -219,8 +205,8 @@ pub(super) fn secret_row<'a>(
         let remove_name = name_owned.clone();
         row![
             text::body(crate::fl!("configured")).width(Length::Fill),
-            widget::button::destructive(crate::fl!("remove")).on_press(Message::Backend(
-                BackendMessage::BackendSecretRemoved {
+            widget::button::destructive(crate::fl!("remove")).on_press(configure(
+                Input::RemoveSecret {
                     source: remove_source,
                     name: remove_name,
                 },
@@ -234,7 +220,7 @@ pub(super) fn secret_row<'a>(
         let input_name = name_owned.clone();
         let field = widget::text_input(crate::fl!("enter-api-key"), input)
             .on_input(move |value| {
-                Message::Backend(BackendMessage::BackendSecretInputChanged {
+                configure(Input::SecretTyped {
                     source: input_source.clone(),
                     name: input_name.clone(),
                     value,
@@ -242,12 +228,11 @@ pub(super) fn secret_row<'a>(
             })
             .password()
             .width(Length::Fill);
-        let save = widget::button::standard(crate::fl!("save")).on_press(Message::Backend(
-            BackendMessage::BackendSecretSaved {
+        let save =
+            widget::button::standard(crate::fl!("save")).on_press(configure(Input::SaveSecret {
                 source: source_owned,
                 name: name_owned,
-            },
-        ));
+            }));
         row![field, save]
             .spacing(spacing.space_xs)
             .align_y(Alignment::Center)
@@ -280,7 +265,7 @@ pub(super) fn bool_option_row<'a>(
 
     let toggle = crate::ui::press_guard::press_guard(
         widget::toggler(option.bool_value()).on_toggle(move |value| {
-            Message::Backend(BackendMessage::BackendOptionToggled {
+            configure(Input::ToggleOption {
                 source: source.clone(),
                 name: name.clone(),
                 value,
@@ -318,7 +303,7 @@ pub(super) fn choice_option_row<'a>(
         option.choices.as_slice(),
         option.choice_index(),
         move |index| {
-            Message::Backend(BackendMessage::BackendOptionChosen {
+            configure(Input::ChooseOption {
                 source: source.clone(),
                 name: name.clone(),
                 value: choices[index].clone(),
@@ -371,31 +356,29 @@ pub(super) fn option_row<'a>(
 
     let field = widget::text_input("", input)
         .on_input(move |value| {
-            Message::Backend(BackendMessage::BackendOptionInputChanged {
+            configure(Input::OptionTyped {
                 source: input_source.clone(),
                 name: input_name.clone(),
                 value,
             })
         })
         .width(Length::Fill);
-    let save = widget::button::standard(crate::fl!("save")).on_press(Message::Backend(
-        BackendMessage::BackendOptionSaved {
+    let save =
+        widget::button::standard(crate::fl!("save")).on_press(configure(Input::SaveOption {
             source: save_source,
             name: save_name,
-        },
-    ));
+        }));
 
     // Show Reset only when an override is stored (value differs from default).
     let has_override = option.value.as_deref() != option.default.as_deref();
     let control: Element<'a, Message> = if has_override {
         let reset_source = source.to_string();
         let reset_name = option.name.clone();
-        let reset = widget::button::standard(crate::fl!("reset")).on_press(Message::Backend(
-            BackendMessage::BackendOptionReset {
+        let reset =
+            widget::button::standard(crate::fl!("reset")).on_press(configure(Input::ResetOption {
                 source: reset_source,
                 name: reset_name,
-            },
-        ));
+            }));
         row![field, save, reset]
             .spacing(spacing.space_xs)
             .align_y(Alignment::Center)
@@ -414,4 +397,9 @@ pub(super) fn option_row<'a>(
             .into(),
     ])
     .into()
+}
+
+/// A press on the sheet, for its logic in the core.
+fn configure(input: Input) -> Message {
+    Message::Backend(BackendMessage::Configure(input))
 }

@@ -115,7 +115,6 @@ pub struct ShortcutsStore {
 impl ShortcutsStore {
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn ShortcutsObserver>) -> Arc<Self> {
-        crate::identify();
         Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

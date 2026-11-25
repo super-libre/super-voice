@@ -66,6 +66,7 @@ struct ModelsView: View {
         if let notice = models.page.notice {
             NoticeBanner(text: notice)
         }
+        ModelDetailsNotices()
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 FeatureRow(
@@ -107,7 +108,11 @@ struct ModelsView: View {
         }
         }
         .navigationTitle(t("models"))
-        .onAppear { models.send(.reload) }
+        .onAppear {
+            models.send(.reload)
+            // The cards' update chips are the Library's offers.
+            LibraryModel.shared.send(.reload)
+        }
         #if DEBUG
         .onAppear { Snapshot.modelsShown(header.header) }
         .onChange(of: steps.count) { _, _ in Snapshot.modelsShown(header.header) }
@@ -218,9 +223,11 @@ struct StepButton: View {
     }
 }
 
-/// The open step's card: which backend fills the stage, which of its models
-/// runs and on what, how it stands, and Load or Unload. It waits while a
-/// change runs.
+/// The open step's card, as in the settings app: the backend filling the
+/// stage, with its chips, repository, Configure and ✕; then the model staged
+/// and where it runs, with Load; or the model running, with Unload. Under them
+/// the download or the load as it goes, or why it failed. While a change runs,
+/// the card waits.
 struct StageCardView: View {
     @ObservedObject var models: ModelsModel
     let stage: PipelineStage
@@ -228,96 +235,401 @@ struct StageCardView: View {
     let card: StageCard?
 
     var body: some View {
-        let busy = card?.busy ?? true
-        VStack(spacing: 10) {
-            PickerRow(label: t("backend")) {
-                Picker(t("backend"), selection: Binding(
-                    get: { card?.source },
-                    set: { models.send(.pickBackend(stage: stage, source: $0)) }
-                )) {
-                    Text(stage.emptyTitle).tag(String?.none)
-                    ForEach(card?.backends ?? [], id: \.id) { backend in
-                        Text(backend.name).tag(String?.some(backend.id))
+        VStack(alignment: .leading, spacing: 12) {
+            if let card, let backend = card.backend {
+                CardHeader(models: models, stage: stage, backend: backend, busy: card.busy)
+                Divider()
+                if card.notes.unmet.isEmpty {
+                    CardModelRows(models: models, stage: stage, card: card)
+                } else {
+                    ForEach(card.notes.unmet, id: \.self) { line in
+                        WarningLine(text: line)
                     }
                 }
-                .disabled(busy)
+                CardProgressView(models: models, stage: stage, progress: card.progress)
+                if case .running(_, true) = card.model {
+                    Text(t("idle"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                EmptyStageView(models: models, stage: stage, card: card)
             }
-            if let card, card.source != nil {
-                Divider()
-                PickerRow(label: t("model")) {
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// The backend's name and version, its chips and description, and its
+/// repository, Configure and ✕ on the right.
+struct CardHeader: View {
+    @ObservedObject var models: ModelsModel
+    let stage: PipelineStage
+    let backend: CardBackend
+    let busy: Bool
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(backend.name).font(.headline)
+                    if !backend.version.isEmpty {
+                        Text(backend.version)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                HStack(spacing: 4) {
+                    BackendChipsView(backend: backend)
+                    UpdateChip(source: backend.source)
+                }
+                if !backend.description.isEmpty {
+                    Text(backend.description)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            if let url = URL(string: backend.repository) {
+                Link(destination: url) {
+                    IconView(icon: .gitBranch)
+                }
+                .help(t("open-repository"))
+            }
+            ConfigureButton(source: backend.source)
+            Button {
+                models.send(.pickBackend(stage: stage, source: nil))
+            } label: {
+                IconView(icon: .x)
+            }
+            .buttonStyle(.borderless)
+            .help(t("deselect-this-backend"))
+            .disabled(busy)
+        }
+    }
+}
+
+/// The update waiting for a card's backend, as the Library offers it: the
+/// action as well as the sign, so a version waiting shows on the page the user
+/// sits on. While it installs, a spinner.
+struct UpdateChip: View {
+    @ObservedObject var library = LibraryModel.shared
+    let source: String
+
+    var body: some View {
+        if let backend = library.page.installed.first(where: { $0.source == source }) {
+            if case .running = backend.update {
+                ProgressView().controlSize(.mini)
+            } else if let version = backend.updateTo {
+                Button(t("update-to-version", ["version": version])) {
+                    library.send(.update(source: source))
+                }
+                .controlSize(.small)
+            }
+        }
+    }
+}
+
+/// What a backend runs its models on, and how many it offers the stage.
+struct BackendChipsView: View {
+    let backend: CardBackend
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if backend.chips.gpu {
+                Chip(icon: .graphicsCard, word: "GPU").help(t("accelerated-on-gpu"))
+            }
+            if backend.chips.cpu {
+                Chip(icon: .cpu, word: "CPU").help(t("runs-on-the-cpu"))
+            }
+            if backend.chips.online {
+                Chip(icon: .cloud, word: t("cloud")).help(t("runs-in-the-cloud"))
+            }
+            Chip(icon: nil, word: t("models-count", ["model_count": String(backend.models)]))
+        }
+    }
+}
+
+/// A small capsule: an icon and a word.
+struct Chip: View {
+    let icon: Icon?
+    let word: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let icon {
+                IconView(icon: icon, size: 12, color: .secondaryLabelColor)
+            }
+            Text(word)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 7)
+        .background(Capsule().fill(Color(nsColor: .quaternarySystemFill)))
+    }
+}
+
+/// The model rows: the model, where it runs, and the buttons. A running model
+/// shows its name with Unload (and Reload on the later stages); a staged one
+/// a menu of the backend's models with Load.
+struct CardModelRows: View {
+    @ObservedObject var models: ModelsModel
+    let stage: PipelineStage
+    let card: StageCard
+
+    var body: some View {
+        let busy = card.busy
+        VStack(alignment: .leading, spacing: 10) {
+            switch card.model {
+            case let .running(model, _):
+                LabeledRow(label: t("model")) {
+                    Text(model).foregroundStyle(Color.accentColor)
+                }
+            case let .staging(model):
+                LabeledRow(label: t("model"), note: card.notes.memory) {
                     Picker(t("model"), selection: Binding(
-                        get: { card.model },
-                        set: { model in if let model { models.send(.pickModel(stage: stage, model: model)) } }
+                        get: { model },
+                        set: { picked in if let picked { models.send(.pickModel(stage: stage, model: picked)) } }
                     )) {
-                        if card.model == nil {
-                            Text("\u{2014}").tag(String?.none)
+                        if model == nil {
+                            Text(t("select-model")).tag(String?.none)
                         }
                         ForEach(card.models, id: \.self) { Text($0).tag(String?.some($0)) }
                     }
                     .disabled(busy || card.models.isEmpty)
                 }
-                if !card.devices.isEmpty {
-                    Divider()
-                    PickerRow(label: t("runs-on")) {
-                        Picker(t("runs-on"), selection: Binding(
-                            get: { card.device ?? "" },
-                            set: { models.send(.pickDevice(stage: stage, device: $0)) }
-                        )) {
-                            ForEach(card.devices, id: \.id) { Text($0.name).tag($0.id) }
+            case .empty:
+                EmptyView()
+            }
+            if !card.devices.isEmpty {
+                LabeledRow(label: t("runs-on"), note: card.notes.fallback) {
+                    Picker(t("runs-on"), selection: Binding(
+                        get: { card.device ?? "" },
+                        set: { models.send(.pickDevice(stage: stage, device: $0)) }
+                    )) {
+                        if card.device == nil {
+                            Text(t("select")).tag("")
                         }
-                        .disabled(busy)
+                        ForEach(card.devices, id: \.id) { Text($0.name).tag($0.id) }
                     }
+                    .disabled(busy)
                 }
             }
-            Divider()
+            ModelDetailsSlot(stage: stage, card: card)
+            if let warning = card.notes.warning {
+                WarningLine(text: warning)
+            }
             HStack {
-                Text(t("status"))
                 Spacer()
-                if busy, card != nil {
-                    ProgressView().controlSize(.small)
-                    Text(t("loading-progress"))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Circle()
-                        .fill((step?.readiness ?? .none).color)
-                        .frame(width: 8, height: 8)
-                    Text((step?.readiness ?? .none).words)
-                        .foregroundStyle(.secondary)
-                }
-                if let card, card.model != nil {
-                    if card.loaded {
-                        Button(t("unload")) { models.send(.unload(stage: stage)) }
-                            .disabled(busy)
-                    } else {
-                        Button(t("load-model")) { models.send(.load(stage: stage)) }
-                            .buttonStyle(.borderedProminent)
+                switch card.model {
+                case .running:
+                    if card.reloadable {
+                        Button(t("reload-this-model")) { models.send(.reloadModel(stage: stage)) }
                             .disabled(busy)
                     }
+                    Button {
+                        models.send(.unload(stage: stage))
+                    } label: {
+                        Label { Text(t("unload")) } icon: { IconView(icon: .stop, size: 12) }
+                    }
+                    .disabled(busy)
+                case .staging:
+                    Button {
+                        models.send(.load(stage: stage))
+                    } label: {
+                        Label { Text(t("load-model")) } icon: { IconView(icon: .play, size: 12, color: .white) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!card.canLoad)
+                case .empty:
+                    EmptyView()
                 }
             }
         }
-        .padding(12)
-        .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
-/// A card's row: its name, and the menu on the right at its own width.
-struct PickerRow<Content: View>: View {
+/// The shown model's language, when it has more than one, and for synthesis
+/// its voice.
+struct ModelDetailsSlot: View {
+    let stage: PipelineStage
+    let card: StageCard
+    @ObservedObject private var details = ModelDetailsModel.shared
+
+    var body: some View {
+        if let source = card.source, let model = card.model.name {
+            let known = details.language(stage).map {
+                $0.source == source && $0.model == model && $0.label != nil
+            } ?? false
+            if known {
+                LabeledRow(label: t("language")) {
+                    ModelLanguageButton(stage: stage, source: source, model: model)
+                }
+            } else {
+                // Draws nothing until the language is read, which it asks for.
+                ModelLanguageButton(stage: stage, source: source, model: model)
+            }
+            if stage == .synthesis {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(t("voice"))
+                    Spacer()
+                    ModelVoicePicker(source: source, model: model)
+                        .labelsHidden()
+                        .frame(maxWidth: 360, alignment: .trailing)
+                }
+            }
+        }
+    }
+}
+
+extension CardModel {
+    /// The model a card shows, running or staged.
+    var name: String? {
+        switch self {
+        case let .running(model, _): model
+        case let .staging(model): model
+        case .empty: nil
+        }
+    }
+}
+
+/// A card's row: its name, with a line under it when it has one, and the
+/// control on the right.
+struct LabeledRow<Content: View>: View {
     let label: String
+    var note: String? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
-        HStack {
-            Text(label)
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                if let note {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Spacer()
-            // A width of its own: sized to fit, a menu takes its first item's,
-            // and cuts a longer choice short.
             content
                 .labelsHidden()
                 .frame(minWidth: 200, alignment: .trailing)
                 .fixedSize()
         }
     }
+}
+
+/// A warning glyph and a sentence.
+struct WarningLine: View {
+    let text: String
+
+    var body: some View {
+        Label {
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            IconView(icon: .warning, color: .systemOrange)
+        }
+    }
+}
+
+/// The stage's download, with Cancel; its load, with the backend's step; or
+/// why it failed.
+struct CardProgressView: View {
+    @ObservedObject var models: ModelsModel
+    let stage: PipelineStage
+    let progress: CardProgress
+
+    var body: some View {
+        switch progress {
+        case .none:
+            EmptyView()
+        case let .download(line, fraction, bytes):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(line)
+                ProgressView(value: Double(max(fraction, 0.02)))
+                HStack {
+                    Text(bytes)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(t("cancel"), role: .destructive) {
+                        models.send(.cancelDownload(stage: stage))
+                    }
+                }
+            }
+        case let .load(title, step, fraction):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                HStack {
+                    Text(step)
+                    Spacer()
+                    if let fraction {
+                        Text("\(Int((fraction * 100).rounded()))%")
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                if let fraction {
+                    ProgressView(value: Double(max(fraction, 0.02)))
+                }
+            }
+        case let .working(line):
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(line).foregroundStyle(.secondary)
+            }
+        case let .failed(message):
+            WarningLine(text: message)
+        }
+    }
+}
+
+/// A stage nothing fills: what it is for, and a menu of the backends that can
+/// fill it. When none can, the Library is where to install one.
+struct EmptyStageView: View {
+    @ObservedObject var models: ModelsModel
+    let stage: PipelineStage
+    let card: StageCard?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(t("no-backend-selected")).font(.headline)
+            Text(stage.unselectedLine)
+                .foregroundStyle(.secondary)
+            if let card {
+                if card.backends.isEmpty {
+                    Text(stage.noBackendLine)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button(t("open-library")) {
+                        NotificationCenter.default.post(name: .openLibrary, object: stage)
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Menu(stage.selectLine) {
+                        ForEach(card.backends, id: \.source) { backend in
+                            Button(backend.name) {
+                                models.send(.pickBackend(stage: stage, source: backend.source))
+                            }
+                        }
+                    }
+                    .fixedSize()
+                    .disabled(card.busy)
+                }
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+}
+
+extension Notification.Name {
+    /// Open the Library, to install a backend for the stage in `object`.
+    static let openLibrary = Notification.Name("SuperVoiceOpenLibrary")
 }
 
 extension PipelineStage {
@@ -338,6 +650,33 @@ extension PipelineStage {
 
     var emptyDetail: String {
         self == .postProcessing ? t("optional") : t("select-a-backend")
+    }
+
+    /// What an empty card says the stage is for.
+    var unselectedLine: String {
+        switch self {
+        case .transcription: t("select-a-backend-to-start-transcribing")
+        case .postProcessing: t("optional-clean-up-text-before-it-is")
+        case .synthesis: t("select-a-backend-to-start-speaking")
+        }
+    }
+
+    /// The menu of backends that can fill the stage.
+    var selectLine: String {
+        switch self {
+        case .transcription: t("select-transcription-backend")
+        case .postProcessing: t("select-post-processor-backend")
+        case .synthesis: t("select-synthesis-backend")
+        }
+    }
+
+    /// What an empty card says when nothing installed can fill the stage.
+    var noBackendLine: String {
+        switch self {
+        case .transcription: t("no-installed-backend-provides-a-transcription-model")
+        case .postProcessing: t("no-installed-backend-provides-a-post-processor")
+        case .synthesis: t("no-installed-backend-provides-text-to-speech")
+        }
     }
 }
 

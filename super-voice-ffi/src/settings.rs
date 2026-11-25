@@ -86,7 +86,6 @@ impl SettingsStore {
     /// [`SettingsAction::Reload`].
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn SettingsObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,
@@ -286,7 +285,7 @@ fn notification_method_name(method: NotificationMethod) -> String {
 }
 
 /// An idle time as the settings app names it.
-fn idle_time_name(after_secs: u64) -> String {
+pub(crate) fn idle_time_name(after_secs: u64) -> String {
     let (key, arg, n) = match page::idle_time(after_secs) {
         IdleTime::Minutes(n) => ("idle-minutes", "minutes", n),
         IdleTime::Seconds(n) => ("idle-seconds", "seconds", n),

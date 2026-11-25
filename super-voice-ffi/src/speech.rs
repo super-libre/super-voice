@@ -80,7 +80,6 @@ impl SpeechStore {
     /// A store that tells `observer` what changes.
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn SpeechObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

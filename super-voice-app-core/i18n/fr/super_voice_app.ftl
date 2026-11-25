@@ -844,3 +844,11 @@ progress-loading-on-gpu = Chargement de { $model } sur le GPU…
 backend = Moteur
 stage-could-not-change = Impossible de changer { $stage } : { $error }
 stage-could-not-read = Impossible de lire { $stage } : { $error }
+
+# A backend's Configure sheet
+backend-setting-could-not-save = Impossible d'enregistrer ce réglage : { $error }
+backends-could-not-load = Impossible de lire les moteurs : { $error }
+
+# The window: its Connection page and About
+authorization-denied-restart = L’accès a été refusé. Redémarrez le service ({ $command }) pour qu’il oublie cette réponse, puis appuyez sur Redemander l’autorisation.
+about-super-voice = À propos de Super Voice

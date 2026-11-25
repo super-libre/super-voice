@@ -82,7 +82,6 @@ impl RecordingTestStore {
     /// from now on.
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn RecordingTestObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,

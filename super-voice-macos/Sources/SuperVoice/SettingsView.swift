@@ -76,33 +76,46 @@ struct SettingsView: View {
         .navigationTitle(t("settings"))
         .onAppear { model.send(.reload) }
         .sheet(isPresented: $choosingLanguage) {
-            LanguagePicker(model: model, isPresented: $choosingLanguage)
+            LanguagePicker(
+                title: t("primary-language"),
+                rows: { model.languageRows($0) },
+                selected: model.page.primaryLanguage,
+                pick: { model.send(.primaryLanguagePicked(tag: $0)) },
+                isPresented: $choosingLanguage
+            )
         }
     }
 }
 
-/// The primary language's picker: a search over the languages the daemon
-/// takes, sorted by name. Picking one closes it.
+/// A language picker: a search over the languages on offer, sorted by name,
+/// under any rows pinned above them. Picking one closes it. The primary
+/// language's, on this page, and a model's, on the Models page.
 struct LanguagePicker: View {
-    @ObservedObject var model: SettingsModel
+    let title: String
+    /// The rows for what the search holds.
+    let rows: @MainActor (String) -> [Choice]
+    /// The id of the row to mark.
+    let selected: String?
+    /// A row was picked, by its id.
+    let pick: @MainActor (String) -> Void
     @Binding var isPresented: Bool
     @State private var query = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(t("primary-language"))
+            Text(title)
                 .font(.title2.bold())
             TextField(t("search-languages-progress"), text: $query)
                 .textFieldStyle(.roundedBorder)
-            List(model.languageRows(query), id: \.id) { row in
+            List(rows(query), id: \.id) { row in
                 Button {
-                    model.send(.primaryLanguagePicked(tag: row.id))
+                    pick(row.id)
                     isPresented = false
                 } label: {
                     HStack {
                         Text(row.name)
                         Spacer()
-                        if row.id == model.page.primaryLanguage {
+                        if row.id == selected {
                             IconView(icon: .check, size: 14, color: .controlAccentColor)
                         }
                     }

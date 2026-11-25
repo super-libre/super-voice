@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The pills at the top right, as in the settings app: the GPU and its memory,
-// then a dot for how ready each feature's model is.
+// a dot for how ready each feature's model is, a moon while models sleep when
+// idle, and "Update available" while an update is offered.
 
 import AppKit
 import SuperVoiceCore
@@ -11,7 +12,7 @@ final class HeaderModel: ObservableObject {
     static let shared = HeaderModel()
 
     @Published private(set) var header = HeaderStatus(
-        connected: false, gpus: [], speechToText: .none, textToSpeech: .none, pipeline: []
+        connected: false, gpus: [], speechToText: .none, textToSpeech: .none, pipeline: [], sleepAfter: nil
     )
 
     private var store: StatusStore!
@@ -58,6 +59,9 @@ final class StatusRelay: StatusObserver {
 /// The pills. Nothing until the daemon answers, as in the settings app.
 struct HeaderPills: View {
     @ObservedObject var model: HeaderModel
+    @ObservedObject var updates: UpdatesModel
+    /// Opens the Updates page: what "Update available" does.
+    let openUpdates: () -> Void
 
     var body: some View {
         if model.header.connected {
@@ -67,8 +71,55 @@ struct HeaderPills: View {
                 }
                 FeaturePill(icon: .microphone, feature: t("speech-to-text"), readiness: model.header.speechToText)
                 FeaturePill(icon: .speakerHigh, feature: t("text-to-speech"), readiness: model.header.textToSpeech)
+                if let after = model.header.sleepAfter {
+                    SleepPill(after: after)
+                }
+                if updates.page.headerBadge {
+                    UpdateBadge(action: openUpdates)
+                }
             }
         }
+    }
+}
+
+/// The moon that says models sleep when idle. The readiness dots stay green
+/// while a model sleeps, so this says it instead; its tooltip says after how
+/// long.
+struct SleepPill: View {
+    /// How long, in words: "5 minutes".
+    let after: String
+
+    var body: some View {
+        Pill {
+            IconView(icon: .moon, size: 14)
+        }
+        .help(t("models-sleep-after", ["time": after]))
+    }
+}
+
+/// "Update available": a button in the accent colour, as the settings app's
+/// (accent words on a faint accent fill), since it is the way to the update.
+/// It opens the Updates page.
+struct UpdateBadge: View {
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                IconView(icon: .arrowsClockwise, size: 14, color: .controlAccentColor)
+                Text(t("update-available"))
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.accentColor.opacity(hovered ? 0.26 : 0.14)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help(t("a-new-super-voice-version-is-ready"))
     }
 }
 

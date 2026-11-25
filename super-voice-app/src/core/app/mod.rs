@@ -10,9 +10,6 @@ mod update;
 mod view;
 use subscription::{UdpSubscriptionId, audio_events_subscription};
 
-#[cfg(target_os = "macos")]
-pub(crate) mod macos;
-
 use crate::daemon::backends::BackendInfo;
 use crate::state::{ContextPage, DaemonStatus, MenuAction};
 use crate::ui::messages::{DaemonMessage, Message, ModelsPageMessage, ShellMessage};
@@ -21,7 +18,6 @@ use cosmic::iced::Subscription;
 use cosmic::prelude::*;
 use cosmic::widget::{menu, nav_bar};
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 /// The model operation a pipeline stage has in flight. Defined with the
 /// per-stage container that holds it, and re-exported here because every
@@ -52,13 +48,9 @@ pub struct AppModel {
     nav: nav_bar::Model,
 
     // Super Voice specific state
-    /// Socket path for daemon communication
-    pub socket_path: PathBuf,
-    /// Current daemon connection status
-    pub daemon_status: DaemonStatus,
-    /// Reconnect backoff (shared `RetryStrategy`: exponential + jitter),
-    /// advanced on each failed reconnect and reset on a successful connection.
-    pub reconnect_retry: super_voice_shared::daemon::retry::RetryStrategy,
+    /// The connection to the daemon: whether it answers, and the wait before
+    /// trying again.
+    pub connection: super_voice_app_core::state::connection::ConnectionState,
     /// The daemon's microphone: open or not, its level, and whether that
     /// sounds like speech. Every page that records reads it.
     pub microphone: super_voice_app_core::state::Microphone,
@@ -177,13 +169,9 @@ pub struct AppModel {
     /// Backends discovered by the daemon, with the models/secrets/options
     /// each declares. Drives the per-backend sections on the Models page.
     pub backends: Vec<BackendInfo>,
-    /// In-progress text for each secret input, keyed by `(source, name)`.
-    pub backend_secret_inputs: HashMap<(String, String), String>,
-    /// Whether each declared secret is currently configured, as reported by
-    /// the daemon, keyed by `(source, name)`. Refreshed on catalog load.
-    pub backend_secret_configured: HashMap<(String, String), bool>,
-    /// In-progress text for each option input, keyed by `(source, name)`.
-    pub backend_option_inputs: HashMap<(String, String), String>,
+    /// The Configure sheet: the backend it is open over, what is typed in
+    /// its fields, which secrets are stored, and each backend's context.
+    pub configure: super_voice_app_core::pages::configure::ConfigureState,
 
     // Registry state (catalog + install progress for the Download tab).
     pub registry: crate::state::registry::RegistryState,
@@ -198,17 +186,6 @@ pub struct AppModel {
     /// The view `just screenshots` asked for, until the app has opened it and
     /// said so; see `scene`. `None` for a normal launch.
     scene: Option<scene::Progress>,
-    /// Where the native title bar put the traffic lights; see `macos`.
-    #[cfg(target_os = "macos")]
-    title_bar: macos::TitleBar,
-    /// The system look the theme was built from; see `macos::appearance`.
-    #[cfg(target_os = "macos")]
-    look: macos::appearance::Look,
-    /// Where the bundle's daemon agent stands, while the daemon is
-    /// unreachable; see `macos::bundle`. `None` outside the bundle, and until
-    /// first looked up.
-    #[cfg(target_os = "macos")]
-    pub(crate) daemon_agent: Option<super_voice_shared::launch_agents::Status>,
 }
 
 impl AppModel {
@@ -340,29 +317,6 @@ impl cosmic::Application for AppModel {
         self.nav_model_impl()
     }
 
-    /// A clear window behind frosted glass, so that the only translucency is
-    /// the theme's own: libcosmic otherwise fills the window with the theme's
-    /// background, and a translucent one drawn twice is all but opaque.
-    #[cfg(target_os = "macos")]
-    fn style(&self) -> Option<cosmic::iced::theme::Style> {
-        self.shown_look().frosted().then(|| {
-            let theme = cosmic::theme::active();
-            let on_background = theme.cosmic().on_bg_color().into();
-            cosmic::iced::theme::Style {
-                background_color: cosmic::iced::Color::TRANSPARENT,
-                text_color: on_background,
-                icon_color: on_background,
-            }
-        })
-    }
-
-    /// The sidebar with the toggle above it, beside the traffic lights (see
-    /// `macos`).
-    #[cfg(target_os = "macos")]
-    fn nav_bar(&self) -> Option<Element<'_, cosmic::Action<Self::Message>>> {
-        self.macos_sidebar()
-    }
-
     /// Display a context drawer if the context page is requested.
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
         self.context_drawer_impl()
@@ -434,7 +388,7 @@ impl cosmic::Application for AppModel {
         }
         // The Assistants page's open sessions, while it is shown: they start,
         // speak, listen and end on their own.
-        if self.daemon_status == DaemonStatus::Connected
+        if self.connection.status == DaemonStatus::Connected
             && self.active_page() == crate::state::Page::Assistants
         {
             subs.push(
@@ -466,8 +420,11 @@ impl cosmic::Application for AppModel {
         // running would wake the app for nothing.
         if self.registry.add_preview.is_checking() {
             subs.push(
-                cosmic::iced::time::every(crate::ui::icons::SPINNER_FRAME)
-                    .map(|_| Message::ModelsPage(ModelsPageMessage::AddPreviewSpin)),
+                cosmic::iced::time::every(crate::ui::icons::SPINNER_FRAME).map(|_| {
+                    Message::ModelsPage(ModelsPageMessage::AddBackend(
+                        super_voice_app_core::pages::add_backend::Input::Spin,
+                    ))
+                }),
             );
         }
 
@@ -477,26 +434,6 @@ impl cosmic::Application for AppModel {
                 cosmic::iced::time::every(scene::STEP)
                     .map(|_| Message::Shell(ShellMessage::SceneStep)),
             );
-        }
-
-        // Style the NSWindow once it exists, answer the menu bar, and follow
-        // the system appearance; see `macos`.
-        #[cfg(target_os = "macos")]
-        {
-            subs.push(
-                cosmic::iced::window::open_events()
-                    .map(|id| Message::Shell(ShellMessage::WindowOpened(id))),
-            );
-            subs.push(
-                cosmic::iced::window::resize_events()
-                    .map(|(id, _)| Message::Shell(ShellMessage::WindowResized(id))),
-            );
-            subs.push(Subscription::run(macos::menu_bar::events));
-            subs.push(Subscription::run(macos::appearance::changes));
-            // For the connection page, which says what to do about it.
-            if self.daemon_status != DaemonStatus::Connected && macos::bundle::in_bundle() {
-                subs.push(Subscription::run(macos::bundle::daemon_agent));
-            }
         }
 
         Subscription::batch(subs)

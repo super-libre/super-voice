@@ -137,6 +137,15 @@ pub enum FeatureFilter {
     TextToSpeech,
 }
 
+impl FeatureFilter {
+    /// Whether the Kind filter applies under this feature: it splits speech
+    /// to text's two stages, so it shows only there.
+    #[must_use]
+    pub fn has_kinds(self) -> bool {
+        self == Self::SpeechToText
+    }
+}
+
 /// Which kind of speech-to-text model a backend must serve to be listed: the
 /// filter under [`FeatureFilter::SpeechToText`].
 ///

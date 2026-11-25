@@ -56,7 +56,7 @@ pub(super) fn active_backend_card<'a>(
     let source = backend.source.clone();
     let model_loaded = !app.current_source.is_empty() && app.current_source == backend.source;
     let idle_model = app.idle_model(Stage::Transcription);
-    let missing = unmet_requirements(&app.backend_secret_configured, backend);
+    let missing = unmet_requirements(&app.configure.secrets_configured, backend);
 
     // Header: glyph + name/description, then the repo button, Configure, and
     // Deselect. The repo button + description replace the old source caption.

@@ -7,9 +7,7 @@
 //! the reason this module exists: an open editor is local, unsaved work, and a
 //! refetch landing under it must not overwrite what the user is typing.
 
-use crate::daemon::client::BackendContext;
 use crate::state::TextBuffer;
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use super_voice_shared::models::contexts::DictationContext;
 
@@ -33,12 +31,6 @@ pub struct ContextsState<B = String> {
     /// "not asked yet" and not "none exist" — the difference between a spinner
     /// and an empty state.
     pub loaded: bool,
-    /// What each backend uses, keyed by `source`, as the daemon last reported.
-    ///
-    /// Read on demand when a Configure sheet opens rather than published with
-    /// the catalog: it is one line of one sheet, and the catalog is refetched
-    /// on every navigation to two pages that never show it.
-    pub backend_contexts: HashMap<String, BackendContext>,
 }
 
 impl<B> ContextsState<B> {

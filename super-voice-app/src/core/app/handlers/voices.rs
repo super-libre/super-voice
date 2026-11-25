@@ -106,11 +106,11 @@ impl AppModel {
     /// model", for the same reason every other write on that card is: a reply
     /// that lands after a model switch must not be applied to the model the
     /// user moved to.
+    #[allow(clippy::unused_self)]
     pub(in crate::core::app) fn reload_model_voices(&self) -> Task<cosmic::Action<Message>> {
-        let Some((source, model)) = self.voice.target.clone() else {
-            return Task::none();
-        };
-        super::voice::load_model_voice(&source, model)
+        Task::done(super::voice::page_action(
+            super_voice_app_core::pages::model_voice::Input::Reload,
+        ))
     }
 }
 

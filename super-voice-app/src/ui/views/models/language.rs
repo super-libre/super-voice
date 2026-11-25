@@ -16,6 +16,7 @@ use crate::daemon::backends::BackendInfo;
 use crate::state::Stage;
 use crate::ui::messages::{LanguageMessage, Message};
 use super_voice_app_core::languages::friendly_name;
+use super_voice_app_core::pages::model_language::{Resolved, resolved};
 
 /// The language control for `selected_model`, rendered inline next to the
 /// model/device controls rather than on its own row.
@@ -60,19 +61,10 @@ pub(super) fn language_button<'a>(
     let label = block.map_or_else(
         // Block not fetched yet — a neutral label, not a guessed language.
         || crate::fl!("language"),
-        |block| {
-            let resolved_from = if block.source.is_empty() {
-                "default"
-            } else {
-                block.source.as_str()
-            };
-            match (block.effective.as_deref(), resolved_from) {
-                (Some(tag), "override") => friendly_name(tag),
-                (Some(tag), "global") => {
-                    crate::fl!("language-global", value0 = friendly_name(tag))
-                }
-                _ => crate::fl!("language-default", value0 = friendly_name(&block.primary)),
-            }
+        |block| match resolved(block) {
+            Resolved::Override(tag) => friendly_name(&tag),
+            Resolved::Global(tag) => crate::fl!("language-global", value0 = friendly_name(&tag)),
+            Resolved::Default(tag) => crate::fl!("language-default", value0 = friendly_name(&tag)),
         },
     );
 

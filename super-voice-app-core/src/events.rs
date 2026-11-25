@@ -198,6 +198,32 @@ pub fn setting_changed(event: &Event) -> Option<&str> {
     status.data.get("setting").and_then(Value::as_str)
 }
 
+/// The stage a `download_progress` event is about, and the report: a download
+/// tick, a load step, or the end of either. The daemon says which stage it is
+/// provisioning for, so the report lands on that stage's card.
+#[must_use]
+pub fn download_progress(
+    event: &Event,
+) -> Option<(
+    crate::state::Stage,
+    super_voice_shared::models::protocol::DownloadProgress,
+)> {
+    let Event::Status(status) = event else {
+        return None;
+    };
+    if status.event_type != "download_progress" {
+        return None;
+    }
+    let progress =
+        serde_json::from_value::<super_voice_shared::models::protocol::DownloadProgress>(
+            status.data.clone(),
+        )
+        .ok()?;
+    let feature = status.data.get("feature").and_then(Value::as_str);
+    let stage = crate::state::Stage::from_wire(feature, progress.stage)?;
+    Some((stage, progress))
+}
+
 /// Raw frequency-band energy (typically 0.00001 to 0.1) as a meter's 0 to 1,
 /// on a -60 dB to 0 dB scale, where 0.1 is full. Quiet, normal and loud speech
 /// (0.003, 0.005, 0.008) come to about 49, 57 and 63%.

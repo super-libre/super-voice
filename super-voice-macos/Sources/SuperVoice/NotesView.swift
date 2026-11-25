@@ -50,7 +50,10 @@ struct NotesListView: View {
             }
 
             Section {
-                if model.page.loaded && model.page.notes.isEmpty {
+                if !model.page.loaded {
+                    Text(t("loading-progress"))
+                        .foregroundStyle(.secondary)
+                } else if model.page.notes.isEmpty {
                     Text(t("no-notes-yet"))
                         .foregroundStyle(.secondary)
                 }

@@ -50,15 +50,17 @@ impl AppModel {
                 // The add sheet's whole job is done once what it previewed is
                 // installed: close it and empty it. Only for the install it
                 // started: a Browse card's reports on the same channel.
-                if self.core.window.show_context
+                let close = if self.core.window.show_context
                     && self.context_page == crate::state::models::ContextPage::AddBackend
-                    && self.registry.add_key() == source
                 {
-                    self.core.window.show_context = false;
-                    self.registry.clear_add_sheet();
-                }
+                    self.add_backend_input(
+                        super_voice_app_core::pages::add_backend::Input::Installed(source.clone()),
+                    )
+                } else {
+                    Task::none()
+                };
                 // A build the user asked for moves the model onto it.
-                self.finish_build(&source)
+                Task::batch([close, self.finish_build(&source)])
             }
             Effect::InstallFailed { source, message } => {
                 self.fail_build(&source, &message);

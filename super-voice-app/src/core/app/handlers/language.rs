@@ -1,10 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-only
+//! The language picker sheet, and a model's language, wired to its logic in
+//! the core (`super_voice_app_core::pages::model_language`): the app runs the
+//! work the logic asks for as iced tasks, closes the sheet on a pick, and says
+//! the notices in its own words.
+//!
+//! The app keeps every answer rather than a focus: the transcription card can
+//! show the loaded model and a staged one at once, each with its button.
+
+use cosmic::prelude::*;
+use super_voice_app_core::pages::model_language::{
+    self as page, Effect, Input, ModelKey, Notice, Outcome,
+};
+
 use crate::core::app::AppModel;
-use crate::daemon::client::v1::pipeline::language as model_lang;
+use crate::state::ErrorScope;
 use crate::state::Stage;
 use crate::state::models::ContextPage;
 use crate::ui::messages::{LanguageMessage, Message};
-use cosmic::prelude::*;
+
+pub(in crate::core::app) fn page_action(input: Input) -> cosmic::Action<Message> {
+    cosmic::Action::App(Message::Language(LanguageMessage::Model(input)))
+}
 
 impl AppModel {
     pub(in crate::core::app) fn handle_language_messages(
@@ -27,94 +43,36 @@ impl AppModel {
                 self.language.language_picker_query = q;
                 Task::none()
             }
-            per_model @ (LanguageMessage::ModelLanguagesLoaded { .. }
-            | LanguageMessage::ModelLanguageLoaded { .. }
-            | LanguageMessage::ModelLanguageSelected { .. }) => {
-                self.handle_model_language_messages(per_model)
-            }
-            LanguageMessage::LanguageError(e) => {
-                // The language picker lives on the Settings page — surface
-                // the failure on that page's banner instead of only logging it
-                // (Tier 3 #11).
-                log::warn!("Language settings error: {e}");
-                self.set_action_error(
-                    crate::state::ErrorScope::Customization,
-                    crate::fl!("language-could-not-save", error = e),
-                );
-                Task::none()
-            }
+            LanguageMessage::Model(input) => self.handle_model_language(input),
         }
     }
 
-    /// The arms that act on one model's language, split out so the dispatch
-    /// above stays a table of the global settings.
-    fn handle_model_language_messages(
-        &mut self,
-        message: LanguageMessage,
-    ) -> Task<cosmic::Action<Message>> {
-        match message {
-            LanguageMessage::ModelLanguagesLoaded {
-                stage,
-                source,
-                model,
-                languages,
-            } => {
-                self.language
-                    .model_languages
-                    .record_offer(stage, source, model, languages);
-                Task::none()
-            }
-            LanguageMessage::ModelLanguageLoaded {
-                stage,
-                source,
-                model,
-                block,
-            } => {
-                self.language
-                    .model_languages
-                    .record(stage, source, model, block);
-                Task::none()
-            }
-            LanguageMessage::ModelLanguageSelected {
-                stage,
-                source,
-                model,
-                choice,
-            } => {
-                self.core.window.show_context = false;
-                let src = source.clone();
-                let mdl = model.clone();
-                Task::perform(
-                    async move {
-                        match choice {
-                            Some(tag) => model_lang::set_model_language(stage, model, tag).await,
-                            None => model_lang::clear_model_language(stage, model).await,
-                        }
-                    },
-                    move |res| match res {
-                        Ok(block) => cosmic::Action::App(Message::Language(
-                            LanguageMessage::ModelLanguageLoaded {
-                                stage,
-                                source: src.clone(),
-                                model: mdl.clone(),
-                                block,
-                            },
-                        )),
-                        Err(e) => cosmic::Action::App(Message::Language(
-                            LanguageMessage::LanguageError(e.to_string()),
-                        )),
-                    },
-                )
-            }
-            other => {
-                unreachable!("handle_model_language_messages received {other:?}")
-            }
+    /// Hand `input` to a model's language logic, and do what it asks.
+    fn handle_model_language(&mut self, input: Input) -> Task<cosmic::Action<Message>> {
+        // A pick closes the sheet it was made in.
+        if matches!(input, Input::Picked(..)) {
+            self.core.window.show_context = false;
         }
+        let Outcome {
+            effects,
+            clear_notice,
+            notice,
+        } = page::update(&mut self.language.model_languages, None, input);
+        // The language picker lives on the Settings page: its failures are
+        // told on that page's banner rather than only logged.
+        if clear_notice {
+            self.clear_action_error(ErrorScope::Customization);
+        }
+        if let Some(notice) = notice {
+            log::warn!("Language settings error: {notice:?}");
+            self.set_action_error(ErrorScope::Customization, notice_text(notice));
+        }
+        Task::batch(effects.into_iter().map(run))
     }
 
-    /// Fetch a specific model's language resolution block from the daemon.
-    /// Call when a model becomes selected (staged or loaded) so the
-    /// active-backend card can populate its language control pre-load.
+    /// Read a model's language, and what it can be set to. Call when a model
+    /// becomes selected (staged or loaded) so its card shows its language
+    /// before Load.
     #[allow(clippy::unused_self)]
     pub(in crate::core::app) fn load_model_language(
         &self,
@@ -122,66 +80,24 @@ impl AppModel {
         source: &str,
         model: String,
     ) -> Task<cosmic::Action<Message>> {
-        // An idle stage has no model to ask about. Callers report "nothing
-        // loaded" as an empty pair rather than an absent one, so without this a
-        // daemon that comes up idle answers `400 invalid_backend` and the
-        // Settings page shows "Couldn't update language" for a language
-        // nobody touched.
-        if model.is_empty() || source.is_empty() {
-            return Task::none();
-        }
-        let src = source.to_string();
-        let mdl = model.clone();
-        let block = Task::perform(
-            model_lang::get_model_language(stage, model.clone()),
-            move |res| match res {
-                Ok(block) => {
-                    cosmic::Action::App(Message::Language(LanguageMessage::ModelLanguageLoaded {
-                        stage,
-                        source: src.clone(),
-                        model: mdl.clone(),
-                        block,
-                    }))
-                }
-                Err(e) => cosmic::Action::App(Message::Language(LanguageMessage::LanguageError(
-                    e.to_string(),
-                ))),
-            },
-        );
-        Task::batch([block, Self::load_model_languages(stage, source, model)])
+        Task::done(page_action(Input::Focus(ModelKey::new(
+            stage, source, model,
+        ))))
     }
+}
 
-    /// Fetch what a model can be pinned to, so the picker offers exactly what
-    /// the daemon will accept.
-    ///
-    /// Paired with the block above rather than folded into it: they are
-    /// separate endpoints because they answer separate questions, and only one
-    /// of them changes when the user picks a language.
-    fn load_model_languages(
-        stage: Stage,
-        source: &str,
-        model: String,
-    ) -> Task<cosmic::Action<Message>> {
-        let src = source.to_string();
-        let mdl = model.clone();
-        Task::perform(
-            model_lang::list_model_languages(stage, model),
-            move |res| match res {
-                Ok(languages) => {
-                    cosmic::Action::App(Message::Language(LanguageMessage::ModelLanguagesLoaded {
-                        stage,
-                        source: src.clone(),
-                        model: mdl.clone(),
-                        languages,
-                    }))
-                }
-                // A failed read leaves the picker with nothing to offer rather
-                // than a general language list the model would refuse.
-                Err(e) => {
-                    log::warn!("Could not read the languages for {mdl}: {e}");
-                    cosmic::Action::None
-                }
-            },
-        )
+/// What the logic asks for, as an iced task.
+fn run(effect: Effect) -> Task<cosmic::Action<Message>> {
+    match effect {
+        Effect::Read(key) => Task::perform(page::run_read(key), page_action),
+        Effect::ReadOffer(key) => Task::perform(page::run_read_offer(key), page_action),
+        Effect::Save(key, tag) => Task::perform(page::run_save(key, tag), page_action),
+    }
+}
+
+/// What the logic tells the user, in this app's words.
+fn notice_text(notice: Notice) -> String {
+    match notice {
+        Notice::CouldNotSaveLanguage(e) => crate::fl!("language-could-not-save", error = e),
     }
 }

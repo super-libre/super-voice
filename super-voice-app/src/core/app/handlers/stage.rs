@@ -26,7 +26,6 @@
 use cosmic::prelude::*;
 
 use crate::core::app::AppModel;
-use crate::daemon::backends::BackendInfo;
 use crate::daemon::client::{ModelState, StageState};
 use crate::daemon::client::{
     clear_stage_backend, get_model_device, list_model_devices, list_stage_backends,
@@ -36,6 +35,7 @@ use crate::daemon::client::{
 use crate::state::device_offers::staged_device;
 use crate::state::{BlockStage, Stage};
 use crate::ui::messages::{Message, ModelMessage, StageMessage};
+use super_voice_app_core::rules::load::{StagedLoad, sanitize_home, staged_load_device};
 
 impl AppModel {
     /// Handle a stage message — the same handler for every stage.
@@ -377,7 +377,7 @@ impl AppModel {
     pub(in crate::core::app) fn report_stage_error(&mut self, stage: Stage, err: &str) {
         log::warn!("Stage {stage} operation failed: {err}");
         let home = std::env::var("HOME").unwrap_or_default();
-        let sanitized = super::model::sanitize_home(err, &home);
+        let sanitized = sanitize_home(err, &home);
         self.model_operations.set(
             stage,
             crate::core::app::ModelOperationState::Error { message: sanitized },
@@ -438,7 +438,7 @@ impl AppModel {
         self.staged_picks.clear(stage);
         if stage == Stage::Transcription {
             self.clear_loaded_model();
-            self.models_page.configure_backend = None;
+            self.configure.open = None;
         }
         self.model_operations.set_ready(stage);
         self.core.window.show_context = false;
@@ -832,47 +832,6 @@ impl AppModel {
     }
 }
 
-/// What a Load click resolves to.
-#[derive(Debug, PartialEq, Eq)]
-enum StagedLoad {
-    /// The staged pair is no longer in the installed-backend catalog — the
-    /// click is stale and must not reach the daemon.
-    NotInCatalog,
-    /// Load the staged model, first setting the device when `Some`.
-    Load { device_to_set: Option<String> },
-}
-
-/// Resolve a Load click against the installed-backend catalog.
-///
-/// For online models (the `none` sentinel in `supported_devices`) there is no
-/// device to set; otherwise the staged device is sent as the model's own. The
-/// daemon compares it with where the model already is, so resending an
-/// unchanged device costs nothing.
-fn staged_load_device(
-    backends: &[BackendInfo],
-    source: &str,
-    model: &str,
-    staged_device: Option<&str>,
-) -> StagedLoad {
-    let Some(online) = backends
-        .iter()
-        .find(|b| b.source == source)
-        .and_then(|b| b.models.iter().find(|m| m.name == model))
-        .map(|m| m.supported_devices.iter().any(|d| d == "none"))
-    else {
-        return StagedLoad::NotInCatalog;
-    };
-    StagedLoad::Load {
-        device_to_set: if online {
-            None
-        } else {
-            staged_device
-                .filter(|d| *d != "none")
-                .map(ToString::to_string)
-        },
-    }
-}
-
 /// Re-read `stage`'s block after a write. A failure is reported on its card.
 pub(in crate::core::app) fn refresh_block(stage: BlockStage) -> Task<cosmic::Action<Message>> {
     Task::perform(
@@ -906,111 +865,4 @@ pub(in crate::core::app) fn load_block(stage: BlockStage) -> Task<cosmic::Action
             cosmic::Action::App(Message::Stage(StageMessage::BlockLoaded { stage, block }))
         },
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{StagedLoad, staged_load_device};
-    use crate::daemon::backends::{BackendInfo, BackendModel};
-
-    fn backend(source: &str, model: &str, devices: &[&str]) -> BackendInfo {
-        BackendInfo {
-            source: source.to_string(),
-            description: String::new(),
-            name: "Test".to_string(),
-            version: "1.0.0".to_string(),
-            kind: "wasm".to_string(),
-            allowed_hosts: Vec::new(),
-            installed_accel: Vec::new(),
-            models: vec![BackendModel {
-                name: model.to_string(),
-                provider: String::new(),
-                supported_devices: devices.iter().map(|d| (*d).to_string()).collect(),
-                estimated_vram_bytes: 0,
-                multilingual: false,
-                supported_languages: Vec::new(),
-                primary_language: String::new(),
-                realtime: false,
-                role: "transcription".into(),
-                accepts_context: false,
-                clones_voices: false,
-            }],
-            secrets: Vec::new(),
-            options: Vec::new(),
-            supports: Vec::new(),
-        }
-    }
-
-    /// A Load click for a pair that is no longer installed must not reach the
-    /// daemon at all.
-    #[test]
-    fn a_stale_pair_sends_nothing() {
-        let installed = vec![backend("github.com/x/whisper", "whisper-tiny", &["cuda"])];
-
-        assert_eq!(
-            staged_load_device(
-                &installed,
-                "github.com/x/gone",
-                "whisper-tiny",
-                Some("cuda")
-            ),
-            StagedLoad::NotInCatalog,
-        );
-        assert_eq!(
-            staged_load_device(
-                &installed,
-                "github.com/x/whisper",
-                "whisper-large",
-                Some("cuda"),
-            ),
-            StagedLoad::NotInCatalog,
-        );
-        assert_eq!(
-            staged_load_device(&[], "github.com/x/whisper", "whisper-tiny", Some("cuda")),
-            StagedLoad::NotInCatalog,
-        );
-    }
-
-    /// An online model has no device to set, so the `none` sentinel is never
-    /// sent as one.
-    #[test]
-    fn an_online_model_sets_no_device() {
-        let installed = vec![backend(
-            "github.com/x/openai",
-            "gpt-4o-transcribe",
-            &["none"],
-        )];
-        assert_eq!(
-            staged_load_device(
-                &installed,
-                "github.com/x/openai",
-                "gpt-4o-transcribe",
-                Some("none"),
-            ),
-            StagedLoad::Load {
-                device_to_set: None
-            },
-        );
-    }
-
-    /// A local model sends the staged device as its own.
-    #[test]
-    fn a_local_model_sets_the_staged_device() {
-        let installed = vec![backend(
-            "github.com/x/whisper",
-            "whisper-tiny",
-            &["cpu", "gpu"],
-        )];
-        assert_eq!(
-            staged_load_device(
-                &installed,
-                "github.com/x/whisper",
-                "whisper-tiny",
-                Some("cuda")
-            ),
-            StagedLoad::Load {
-                device_to_set: Some("cuda".to_string())
-            },
-        );
-    }
 }

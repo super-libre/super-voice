@@ -37,12 +37,6 @@ impl AppModel {
             Message::Language(m) => self.handle_language_messages(m),
             Message::Recording(m) => self.handle_recording_messages(m),
             Message::Update(m) => self.handle_update_messages(m),
-
-            // Scoped action failure: park it in the per-page banner slot.
-            Message::SettingActionFailed { scope, message } => {
-                self.action_error = Some(crate::state::ActionError { scope, message });
-                Task::none()
-            }
         }
     }
 }

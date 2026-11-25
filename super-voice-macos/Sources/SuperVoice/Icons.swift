@@ -13,13 +13,21 @@ enum Icon: String {
     case brain
     case caretLeft = "caret-left"
     case caretRight = "caret-right"
+    case chatText = "chat-text"
     case check
+    case cloud
+    case cpu
     case gear
+    case gitBranch = "git-branch"
     case graphicsCard = "graphics-card"
     case keyboard
     case microphone
+    case play
+    case moon
     case robot
     case speakerHigh = "speaker-high"
+    case stop
+    case userSound = "user-sound"
     case warning
     case x
 

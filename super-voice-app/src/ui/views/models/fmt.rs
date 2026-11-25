@@ -6,6 +6,7 @@ use cosmic::widget;
 use crate::ui::messages::Message;
 
 pub(crate) use super_voice_app_core::rules::gpu::accel_name;
+use super_voice_app_core::rules::load::Size;
 
 /// Format a byte count as a one-decimal GiB string (e.g. `"24.0 GiB"`).
 // reason: display-only; the imprecision is cosmetic
@@ -130,30 +131,18 @@ pub(super) fn no_viable_device_warning<'a>(model: &str) -> Element<'a, Message> 
 }
 
 /// A download's size, e.g. `"640 MB"` or `"1.4 GB"`.
-// reason: display-only; the imprecision is cosmetic
-#[allow(clippy::cast_precision_loss)]
 pub(super) fn fmt_size(bytes: u64) -> String {
-    const MB: f64 = 1024.0 * 1024.0;
-    let mb = bytes as f64 / MB;
-    if mb < 1024.0 {
-        crate::fl!("size-mb", size = mb.ceil().to_string())
-    } else {
-        crate::fl!("size-gb", size = format!("{:.1}", mb / 1024.0))
+    match super_voice_app_core::rules::load::size(bytes) {
+        Size::Mb(size) => crate::fl!("size-mb", size = size),
+        Size::Gb(size) => crate::fl!("size-gb", size = size),
     }
 }
 
 /// The line under a Runs on row when the model is not running on the
-/// framework picked, which is one that fell back to the CPU. `None` when they
-/// agree, as they nearly always do, and for a model that runs nowhere local.
+/// framework picked, which is one that fell back to the CPU.
 pub(super) fn running_note(chosen: Option<&str>, running: &str) -> Option<String> {
-    match (chosen, running) {
-        (None, _) | (_, "" | "none" | "remote") => None,
-        (Some(chosen), running) if chosen == running => None,
-        (Some(_), running) => Some(crate::fl!(
-            "running-on-framework",
-            framework = accel_name(running)
-        )),
-    }
+    super_voice_app_core::rules::load::fallback(chosen, running)
+        .map(|framework| crate::fl!("running-on-framework", framework = accel_name(framework)))
 }
 
 #[cfg(test)]

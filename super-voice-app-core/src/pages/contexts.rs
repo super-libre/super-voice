@@ -7,8 +7,8 @@
 //! user is typing is theirs, and a list read again under an open editor never
 //! rewrites the sentence they are halfway through.
 //!
-//! Which context one backend uses is set from the Models page's Configure
-//! sheet, and lives with that page.
+//! Which context one backend uses is set from its Configure sheet, and lives
+//! with that sheet ([`super::configure`]).
 
 use super_voice_shared::models::contexts::DictationContext;
 
@@ -230,6 +230,47 @@ fn save<B: TextBuffer>(state: &mut ContextsState<B>, out: &mut Outcome) {
     out.effects.push(Effect::Save(context));
 }
 
+/// How far a context reaches among the installed backends, when the page
+/// says so: a context that reaches nothing is the one failure the user cannot
+/// see, so the page says it rather than let them wonder why nothing changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reach {
+    /// None of the installed backends can use a context.
+    Nothing,
+    /// `accepting` of the `total` installed backends can.
+    Partly { accepting: usize, total: usize },
+}
+
+/// How far a context reaches among `backends`, the installed ones; `None`
+/// when there is nothing to say (no backend installed, or all of them can use
+/// one).
+#[must_use]
+pub fn reach(backends: &[crate::daemon::backends::BackendInfo]) -> Option<Reach> {
+    let accepting = backends
+        .iter()
+        .filter(|b| {
+            super_voice_registry_types::index::supports::has(
+                &b.supports,
+                super_voice_registry_types::index::supports::DICTATION_CONTEXT,
+            )
+        })
+        .count();
+    reach_of(accepting, backends.len())
+}
+
+/// [`reach`], from the count of backends that can use a context and the count
+/// installed.
+#[must_use]
+pub const fn reach_of(accepting: usize, total: usize) -> Option<Reach> {
+    if total == 0 || accepting == total {
+        None
+    } else if accepting == 0 {
+        Some(Reach::Nothing)
+    } else {
+        Some(Reach::Partly { accepting, total })
+    }
+}
+
 /// Read the list.
 pub async fn run_list() -> Input {
     Input::Loaded(list_contexts().await.map_err(|e| e.to_string()))
@@ -258,6 +299,20 @@ pub async fn run_save(context: DictationContext) -> Input {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_reach_is_said_only_when_some_backend_misses_out() {
+        assert_eq!(reach_of(0, 0), None);
+        assert_eq!(reach_of(2, 2), None);
+        assert_eq!(reach_of(0, 3), Some(Reach::Nothing));
+        assert_eq!(
+            reach_of(1, 3),
+            Some(Reach::Partly {
+                accepting: 1,
+                total: 3
+            })
+        );
+    }
 
     fn catalog(ids: &[&str], active: Option<&str>) -> ContextCatalog {
         ContextCatalog {

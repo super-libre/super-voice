@@ -7,6 +7,7 @@
 pub mod assistants;
 pub mod behavior;
 pub mod clips;
+pub mod connection;
 pub mod contexts;
 pub mod device_offers;
 pub mod language;

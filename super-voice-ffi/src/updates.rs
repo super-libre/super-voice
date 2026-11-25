@@ -119,6 +119,9 @@ pub struct UpdatesPage {
     pub panel: Option<UpdatePanel>,
     /// What to tell the user, in the user's language.
     pub notice: Option<String>,
+    /// Whether the window header shows "Update available", which opens this
+    /// page: while an update is offered and none is running.
+    pub header_badge: bool,
 }
 
 #[derive(Default)]
@@ -140,7 +143,6 @@ impl UpdatesStore {
     /// update events.
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn UpdatesObserver>) -> Arc<Self> {
-        crate::identify();
         let store = Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,
@@ -325,6 +327,7 @@ fn snapshot(held: &Held) -> UpdatesPage {
         }),
         panel,
         notice: state.notice.as_ref().map(notice_text),
+        header_badge: state.header_badge_visible(),
     }
 }
 

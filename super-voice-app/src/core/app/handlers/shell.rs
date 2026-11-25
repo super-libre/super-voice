@@ -56,64 +56,6 @@ impl AppModel {
             ShellMessage::SceneTarget(bounds) => self.scene_target(bounds),
             ShellMessage::SceneStt(read) => self.scene_stt(read),
 
-            #[cfg(target_os = "macos")]
-            ShellMessage::WindowOpened(id) => self.window_opened(id),
-            #[cfg(target_os = "macos")]
-            ShellMessage::TitleBarMeasured(title_bar) => {
-                self.title_bar = title_bar;
-                Task::none()
-            }
-            #[cfg(target_os = "macos")]
-            ShellMessage::WindowResized(id) => {
-                cosmic::iced::window::run_with_handle(id, crate::core::app::macos::is_full_screen)
-                    .map(|full_screen| {
-                        cosmic::Action::App(Message::Shell(ShellMessage::FullScreenChecked(
-                            full_screen,
-                        )))
-                    })
-            }
-            #[cfg(target_os = "macos")]
-            ShellMessage::FullScreenChecked(full_screen) => self.full_screen_checked(full_screen),
-            #[cfg(target_os = "macos")]
-            ShellMessage::SystemLook(look) => self.follow_system_look(look),
-            #[cfg(target_os = "macos")]
-            ShellMessage::DragWindow => self
-                .core
-                .main_window_id()
-                .map_or_else(Task::none, cosmic::iced::window::drag),
-            #[cfg(target_os = "macos")]
-            ShellMessage::ZoomWindow => self
-                .core
-                .main_window_id()
-                .map_or_else(Task::none, cosmic::iced::window::toggle_maximize),
-            #[cfg(target_os = "macos")]
-            ShellMessage::ToggleSidebar => {
-                // As libcosmic's own toggle does: a narrow window swaps the
-                // sidebar for the content rather than showing both.
-                if self.core.is_condensed() {
-                    self.core.nav_bar_toggle_condensed();
-                } else {
-                    self.core.nav_bar_toggle();
-                }
-                Task::none()
-            }
-            #[cfg(target_os = "macos")]
-            ShellMessage::DaemonAgent(status) => {
-                self.daemon_agent = Some(status);
-                Task::none()
-            }
-            #[cfg(target_os = "macos")]
-            ShellMessage::RegisterAgents => {
-                // The next status poll reports how it went.
-                std::thread::spawn(crate::core::app::macos::bundle::register_agents);
-                Task::none()
-            }
-            #[cfg(target_os = "macos")]
-            ShellMessage::OpenLoginItems => {
-                super_voice_shared::launch_agents::open_login_items_settings();
-                Task::none()
-            }
-
             ShellMessage::LaunchUrl(url) => {
                 match open::that_detached(&url) {
                     Ok(()) => {}

@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The synthesis model's voice: reading which one it speaks in, and setting it.
-//!
-//! The sibling of [`super::language`], and shaped the same way — the two values
-//! (what is set, what may be set) arrive from two endpoints and are held apart,
-//! because choosing a voice rewrites the first and cannot change the second.
+//! The synthesis model's voice, wired to its logic in the core
+//! (`super_voice_app_core::pages::model_voice`): the app runs the work the
+//! logic asks for as iced tasks, and says the notices in its own words.
+
+use cosmic::prelude::*;
+use super_voice_app_core::pages::model_voice::{self as page, Effect, Input, Notice, Outcome};
 
 use crate::core::app::AppModel;
-use crate::daemon::client::v1::pipeline::voice as model_voice;
-use crate::state::{ErrorScope, VoiceResolution};
+use crate::state::ErrorScope;
 use crate::ui::messages::{Message, VoiceMessage};
-use cosmic::prelude::*;
-use super_voice_shared::daemon::http_client::HttpResult;
+
+pub(in crate::core::app) fn page_action(input: Input) -> cosmic::Action<Message> {
+    cosmic::Action::App(Message::Voice(VoiceMessage::Page(input)))
+}
 
 impl AppModel {
     /// Route every voice message.
@@ -18,104 +20,51 @@ impl AppModel {
         &mut self,
         message: VoiceMessage,
     ) -> Task<cosmic::Action<Message>> {
-        match message {
-            // The block names the pair it describes, and the list is chained
-            // off it: issuing the list before the pair is held would have its
-            // answer discarded on arrival as another model's.
-            VoiceMessage::ModelVoiceLoaded {
-                source,
-                model,
-                block,
-            } => {
-                self.voice.resolution = Some(block);
-                self.voice.target = Some((source.clone(), model.clone()));
-                self.voice.choices.clear();
-                list_model_voices(source, model)
-            }
-            VoiceMessage::ModelVoicesListed {
-                source,
-                model,
-                voices,
-            } => {
-                // Guarded: a list that arrives after the user has moved to
-                // another model belongs to the model they left.
-                if self.voice.target.as_ref() == Some(&(source, model)) {
-                    self.voice.choices = voices;
-                }
-                Task::none()
-            }
-            VoiceMessage::ModelVoiceSelected(voice) => self.write_model_voice(voice),
-            VoiceMessage::VoiceError(e) => {
-                log::warn!("Voice settings error: {e}");
-                self.set_action_error(
-                    ErrorScope::Synthesis,
-                    crate::fl!("voice-could-not-save", error = e),
-                );
-                Task::none()
-            }
+        let VoiceMessage::Page(input) = message;
+        let Outcome {
+            effects,
+            clear_notice,
+            notice,
+        } = page::update(&mut self.voice, input);
+        if clear_notice {
+            self.clear_action_error(ErrorScope::Synthesis);
         }
-    }
-
-    /// Write the picked voice, or clear it when the user chose the model's own
-    /// default.
-    ///
-    /// Both verbs answer with the resolution that results, so the card renders
-    /// its own click without a second read — and both are addressed to the pair
-    /// the card is currently showing, never to "the active model", so a click
-    /// landing after a model switch writes nothing rather than the wrong
-    /// model's preference.
-    fn write_model_voice(&mut self, voice: Option<String>) -> Task<cosmic::Action<Message>> {
-        let Some((source, model)) = self.voice.target.clone() else {
-            return Task::none();
-        };
-        self.clear_action_error(ErrorScope::Synthesis);
-        let finish = voice_loaded(source, model.clone());
-        match voice {
-            Some(voice) => Task::perform(model_voice::set_model_voice(model, voice), finish),
-            None => Task::perform(model_voice::clear_model_voice(model), finish),
+        if let Some(notice) = notice {
+            log::warn!("Voice settings error: {notice:?}");
+            self.set_action_error(ErrorScope::Synthesis, notice_text(notice));
         }
+        Task::batch(effects.into_iter().map(run))
     }
 }
 
-/// Fetch a model's voice resolution. Called when a synthesis model is staged or
-/// selected, so the card can show its voice before Load.
+/// Read a model's voice. Called when a synthesis model is staged or selected,
+/// so the card can show its voice before Load.
 pub(in crate::core::app) fn load_model_voice(
     source: &str,
     model: String,
 ) -> Task<cosmic::Action<Message>> {
-    Task::perform(
-        model_voice::get_model_voice(model.clone()),
-        voice_loaded(source.to_string(), model),
-    )
+    Task::done(page_action(Input::Focus {
+        source: source.to_string(),
+        model,
+    }))
 }
 
-/// Re-read the voices one model can be pinned to.
-fn list_model_voices(source: String, model: String) -> Task<cosmic::Action<Message>> {
-    Task::perform(
-        model_voice::list_model_voices(model.clone()),
-        move |res| match res {
-            Ok(voices) => cosmic::Action::App(Message::Voice(VoiceMessage::ModelVoicesListed {
-                source: source.clone(),
-                model: model.clone(),
-                voices,
-            })),
-            Err(e) => cosmic::Action::App(Message::Voice(VoiceMessage::VoiceError(e.to_string()))),
-        },
-    )
+/// What the logic asks for, as an iced task.
+fn run(effect: Effect) -> Task<cosmic::Action<Message>> {
+    match effect {
+        Effect::Read { source, model } => Task::perform(page::run_read(source, model), page_action),
+        Effect::List { source, model } => Task::perform(page::run_list(source, model), page_action),
+        Effect::Save {
+            source,
+            model,
+            voice,
+        } => Task::perform(page::run_save(source, model, voice), page_action),
+    }
 }
 
-/// The message a voice read or write answers with: the block for the pair it
-/// was asked about, or the failure.
-fn voice_loaded(
-    source: String,
-    model: String,
-) -> impl Fn(HttpResult<VoiceResolution>) -> cosmic::Action<Message> {
-    move |res| match res {
-        Ok(block) => cosmic::Action::App(Message::Voice(VoiceMessage::ModelVoiceLoaded {
-            source: source.clone(),
-            model: model.clone(),
-            block,
-        })),
-        Err(e) => cosmic::Action::App(Message::Voice(VoiceMessage::VoiceError(e.to_string()))),
+/// What the logic tells the user, in this app's words.
+fn notice_text(notice: Notice) -> String {
+    match notice {
+        Notice::CouldNotSaveVoice(e) => crate::fl!("voice-could-not-save", error = e),
     }
 }

@@ -12,13 +12,11 @@ use crate::ui::messages::{Message, ModelsPageMessage};
 
 use super::active::backend_glyph_tile;
 use super::chips::{
-    CloudEgress, backend_has_user_url, backend_is_online, backend_supports_cpu,
-    backend_supports_gpu, capability_chips, models_inventory, role_groups, update_chip,
-    update_offer, update_progress_chip,
+    backend_chips, models_inventory, role_groups, update_chip, update_offer, update_progress_chip,
 };
 use super::surface::{card_divider, card_surface, card_title_block, repo_button};
 use super_voice_app_core::pages::library::Input;
-use super_voice_registry_types::index::supports;
+use super_voice_app_core::rules::backends::backend_capabilities;
 
 /// The Library's Installed tab, as its filter toolbar and its cards: every
 /// backend the daemon discovered on disk, one card each. The active backend is
@@ -99,7 +97,7 @@ fn installed_toolbar<'a>(
     // take a whole line to itself.
     let mut chips = row![feature];
     // The kind splits speech to text's two stages, so it shows only there.
-    if filters.feature == crate::state::registry::FeatureFilter::SpeechToText {
+    if filters.feature.has_kinds() {
         chips = chips.push(kind);
     }
     chips
@@ -121,7 +119,6 @@ pub(super) fn installed_card<'a>(
     app: &'a AppModel,
 ) -> Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
-    let online = backend_is_online(backend);
     let source = backend.source.clone();
 
     // Registry entry (by source) supplies the latest version that drives the
@@ -177,21 +174,10 @@ pub(super) fn installed_card<'a>(
             .iter()
             .map(|m| (m.name.as_str(), m.role.as_str())),
     );
-    let egress = online.then(|| CloudEgress {
-        hosts: backend.allowed_hosts.as_slice(),
-        user_url: backend_has_user_url(backend),
-    });
     let inventory = models_inventory(&groups);
-    let caps = capability_chips(
-        backend_supports_gpu(backend),
-        backend_supports_cpu(backend),
-        egress,
-        supports::has(&backend.supports, supports::DICTATION_CONTEXT),
-        supports::has(&backend.supports, supports::VOICE_CLONING),
-        // Suppress chip tooltips while this card's overflow menu is open, so the
-        // menu paints cleanly on top instead of a tooltip showing half-behind it.
-        !menu_open,
-    );
+    // Suppress chip tooltips while this card's overflow menu is open, so the
+    // menu paints cleanly on top instead of a tooltip showing half-behind it.
+    let caps = backend_chips(&backend_capabilities(backend), !menu_open);
     let header = row![
         backend_glyph_tile(),
         card_title_block(backend.name.clone(), &backend.version, description, caps),

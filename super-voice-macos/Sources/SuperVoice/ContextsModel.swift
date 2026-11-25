@@ -12,7 +12,7 @@ final class ContextsModel: ObservableObject {
     /// What the store last said the page shows.
     @Published private(set) var page = ContextsPage(
         loaded: false, contexts: [], active: nil, confirmingDelete: nil, editor: nil,
-        focusRow: nil, focusAsked: 0, notice: nil
+        focusRow: nil, focusAsked: 0, notice: nil, reach: nil
     )
 
     /// The editor's fields. Taken from the store when the editor opens, and

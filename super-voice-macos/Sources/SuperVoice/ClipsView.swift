@@ -36,7 +36,10 @@ struct ClipsView: View {
                 }
 
                 Section {
-                    if model.page.loaded && model.page.clips.isEmpty {
+                    if !model.page.loaded {
+                        Text(t("loading-progress"))
+                            .foregroundStyle(.secondary)
+                    } else if model.page.clips.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(t("no-clips-yet"))
                             Text(t("each-clip-you-make-shows-here"))

@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use super_voice_app_core::pages::contexts::{self as page, Effect, Input, Notice};
+use super_voice_app_core::pages::contexts::{self as page, Effect, Input, Notice, Reach};
 use super_voice_app_core::state::contexts::{ContextDraft, ContextsState};
 
 use crate::{Buffer, RUNTIME};
@@ -152,6 +152,28 @@ impl From<Notice> for ContextsNotice {
     }
 }
 
+/// How far a context reaches among the installed backends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ContextReach {
+    /// None of them can use a context.
+    Nothing,
+    /// `accepting` of the `total` installed backends can.
+    Partly { accepting: u32, total: u32 },
+}
+
+impl From<Reach> for ContextReach {
+    fn from(reach: Reach) -> Self {
+        let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+        match reach {
+            Reach::Nothing => Self::Nothing,
+            Reach::Partly { accepting, total } => Self::Partly {
+                accepting: count(accepting),
+                total: count(total),
+            },
+        }
+    }
+}
+
 /// Everything the page shows.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ContextsPage {
@@ -171,6 +193,10 @@ pub struct ContextsPage {
     pub focus_asked: u64,
     /// What to tell the user.
     pub notice: Option<ContextsNotice>,
+    /// How far a context reaches among the installed backends, when the page
+    /// says so: `None` when every one of them can use it, or none is
+    /// installed, or the list isn't read yet.
+    pub reach: Option<ContextReach>,
 }
 
 /// The page's state, the notice it shows, and the focus it last asked for.
@@ -180,6 +206,7 @@ struct Held {
     notice: Option<ContextsNotice>,
     focus_row: Option<u64>,
     focus_asked: u64,
+    reach: Option<Reach>,
 }
 
 /// The Contexts page's store.
@@ -195,7 +222,6 @@ impl ContextsStore {
     /// app sends [`ContextsAction::Reload`].
     #[uniffi::constructor]
     pub fn new(observer: Arc<dyn ContextsObserver>) -> Arc<Self> {
-        crate::identify();
         Arc::new(Self {
             held: Mutex::new(Held::default()),
             observer,
@@ -209,6 +235,9 @@ impl ContextsStore {
 
     /// The user did `action`.
     pub fn send(self: Arc<Self>, action: ContextsAction) {
+        if action == ContextsAction::Reload {
+            Arc::clone(&self).read_reach();
+        }
         self.dispatch(action.into());
     }
 
@@ -231,6 +260,23 @@ impl ContextsStore {
 impl ContextsStore {
     fn lock(&self) -> MutexGuard<'_, Held> {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Read which installed backends can use a context, for the note under
+    /// the page's introduction. A list that can't be read leaves the note as
+    /// it was: the note is a hint, and the page works without it.
+    fn read_reach(self: Arc<Self>) {
+        RUNTIME.spawn(async move {
+            let Ok(backends) = super_voice_app_core::daemon::client::list_backends().await else {
+                return;
+            };
+            let page = {
+                let mut held = self.lock();
+                held.reach = page::reach(&backends);
+                snapshot(&held)
+            };
+            self.observer.changed(page);
+        });
     }
 
     /// Hand `input` to the page's logic, tell the app what changed, and start
@@ -296,5 +342,6 @@ fn snapshot(held: &Held) -> ContextsPage {
         focus_row: held.focus_row,
         focus_asked: held.focus_asked,
         notice: held.notice.clone(),
+        reach: held.reach.map(ContextReach::from),
     }
 }

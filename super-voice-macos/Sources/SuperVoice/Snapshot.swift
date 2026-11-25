@@ -19,8 +19,13 @@
 // daemon and shot when the take is over (its transcript, or why not),
 // scrolled to the test at the bottom of the tab; `models`, the Models page
 // once the daemon has said what fills each stage; `models-running`, that page
-// with made-up stages (running, asleep, not loaded), for the layout;
-// `settings`, the Settings page once its settings are read;
+// with made-up stages (running, asleep, not loaded) and its transcription
+// card's model running, for the layout; `models-download`, that card
+// downloading its model; `models-staged`, a model staged that may not fit;
+// `model-language`, a model's language button alone, its picker open, and
+// `model-voice`, the synthesis model's voice picker alone, both with made-up
+// languages and voices; `settings`, the Settings page once its settings are
+// read;
 // `settings-languages`, that page with the language picker up; `assistants`,
 // the Assistants page once the daemon has listed them; `assistants-key`, a
 // key for another assistant made there, which writes to the daemon the app is
@@ -30,10 +35,17 @@
 // listed them; `library`, the Library page's Installed tab; `library-browse`,
 // its Browse tab once the catalog is read (or why not); `library-sample` and
 // `library-sample-browse`, both tabs with made-up backends, for the layout;
-// `notes-take`, the list with a made-up take recording a new note; or
-// `note-take`, the newest note open with a made-up take adding to it. A take
-// scene's take, level and words are made up in the app, for the layout: a
-// real one needs a microphone and a model.
+// `library-add`, the "Install manually" sheet over them, previewing a
+// made-up backend; `configure`, a made-up API-key backend's Configure sheet
+// over the Library page, for the layout;
+// `notes-take`, the list with a made-up take recording a new note;
+// `note-take`, the newest note open with a made-up take adding to it;
+// `connection`, the window as it is while the daemon doesn't answer, with
+// the command that starts it; `connection-denied`, the same once the user
+// refused the app, with Retry authorization; or `header`, the notes with
+// made-up header pills: the moon of Sleep When Idle, and Update available. A
+// take scene's take, level and words are made up in the app, for the layout:
+// a real one needs a microphone and a model.
 // Once the page is in that state, the window is drawn into the file at one
 // size and the app quits. The app draws its own window rather than a screen
 // capture taking it: that needs no Screen Recording permission, so it works
@@ -120,9 +132,42 @@ enum Snapshot {
                 model.pretend(shown)
                 MicrophoneModel.shared.pretend(Microphone(recording: true, level: 0.55, speech: true))
             }
-        case "models", "models-running", "settings", "settings-languages", "assistants", "assistants-key",
+        case "connection", "connection-denied":
+            // Made up, for the layout: a daemon that doesn't answer, or one
+            // whose user refused the app.
+            let model = ConnectionModel.shared
+            let target = "gui/501/ai.menjivar.super-voice"
+            model.pretend(scene == "connection"
+                ? ConnectionPage(
+                    status: .error(message: "Daemon HTTP listener not running. Start the daemon first."),
+                    socketPath: model.page.socketPath,
+                    fix: .start(command: "launchctl kickstart \(target)")
+                )
+                : ConnectionPage(
+                    status: .denied(reason: "auth_denied (user_denied_cached)"),
+                    socketPath: model.page.socketPath,
+                    fix: .reauthorize(restart: "launchctl kickstart -k \(target)")
+                ))
+        case "header":
+            // Made up, for the layout: the pills with Sleep When Idle on and
+            // an update offered.
+            HeaderModel.shared.pretend(HeaderStatus(
+                connected: true,
+                gpus: [GpuReadout(
+                    name: "M3 Max", fullName: "Apple M3 Max", totalBytes: 48 << 30, usedBytes: 12 << 30,
+                    fraction: 0.25, level: .ok
+                )],
+                speechToText: .ready, textToSpeech: .idle, pipeline: [],
+                sleepAfter: t("idle-minutes", ["minutes": "5"])
+            ))
+            var updates = UpdatesModel.shared.page
+            updates.latestVersion = "v0.10.0"
+            updates.headerBadge = true
+            UpdatesModel.shared.pretend(updates)
+        case "models", "models-running", "models-download", "models-staged", "settings", "settings-languages", "assistants", "assistants-key",
              "assistants-connected", "updates", "shortcuts", "library", "library-browse",
-             "library-sample", "library-sample-browse":
+             "library-sample", "library-sample-browse", "model-language", "model-voice",
+             "library-add", "configure":
             // Shot from its own page; see `modelsShown`.
             return
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
@@ -363,44 +408,164 @@ enum Snapshot {
     }
 
     /// The Library page showed `page`: shoot it once the catalog is read
-    /// (or why not), for `library` and `library-browse`.
+    /// (or why not), for `library` and `library-browse`; with made-up
+    /// backends for `library-sample` and `library-sample-browse`, and with the
+    /// "Install manually" sheet up over them, previewing one, for
+    /// `library-add`.
     static func libraryShown(_ page: LibraryPage) {
-        guard path != nil, !taken, scene.hasPrefix("library"), page.catalogLoaded else { return }
-        if scene.hasPrefix("library-sample") {
+        guard path != nil, !taken, scene.hasPrefix("library") || scene == "configure", page.catalogLoaded
+        else { return }
+        if scene == "configure" {
+            pretendConfigure(page)
+            taken = true
+            Task {
+                // The sheet slides in.
+                try? await Task.sleep(for: .milliseconds(600))
+                await take()
+            }
+            return
+        }
+        if scene.hasPrefix("library-sample") || scene == "library-add" {
             var shown = page
             shown.catalogError = nil
+            shown.catalogUpdated = "2026-11-20T09:30:00Z"
             shown.installedTotal = 2
             shown.installed = [
                 InstalledRow(source: "github.com/super-libre/super-stt-whisper", name: "Whisper", version: "0.2.1",
-                             description: "Local Whisper speech to text.", online: false, models: 6,
-                             updateTo: "0.2.2", installing: false, uninstallError: nil),
+                             description: "Local Whisper speech to text.", online: false,
+                             capabilities: [.gpu, .cpu, .contexts],
+                             modelGroups: [LibraryModelGroup(kind: .transcription, names: [
+                                 "tiny", "base", "small", "medium", "large-v3", "large-v3-turbo",
+                             ])],
+                             repository: "https://github.com/super-libre/super-stt-whisper",
+                             updateTo: nil, update: .running(phase: .downloading, fraction: 0.6),
+                             uninstallError: nil),
                 InstalledRow(source: "github.com/super-libre/super-tts-kokoro", name: "Kokoro", version: "0.1.4",
-                             description: "Fast local text to speech.", online: false, models: 1,
-                             updateTo: nil, installing: false, uninstallError: nil),
+                             description: "Fast local text to speech.", online: false,
+                             capabilities: [.cpu, .voiceCloning],
+                             modelGroups: [LibraryModelGroup(kind: .synthesis, names: ["kokoro-82m"])],
+                             repository: "https://github.com/super-libre/super-tts-kokoro",
+                             updateTo: "0.1.5", update: .idle, uninstallError: nil),
             ]
             shown.catalog = [
                 CatalogRow(source: "github.com/super-libre/super-stt-qwen-asr", name: "Qwen", version: "0.1.0",
                            description: "Local Qwen3-ASR speech to text with streamed previews.", online: false,
-                           models: 2, compatible: true, incompatibleReason: nil, needsVersion: nil,
+                           capabilities: [.gpu, .cpu, .contexts],
+                           modelGroups: [
+                               LibraryModelGroup(kind: .transcription, names: ["qwen3-asr-0.6b", "qwen3-asr-1.7b"]),
+                               LibraryModelGroup(kind: .postProcessing, names: ["qwen3-0.6b-tidy"]),
+                           ],
+                           repository: "https://github.com/super-libre/super-stt-qwen-asr", needsKey: false,
+                           compatible: true, incompatibleReason: nil, needsVersion: nil,
                            install: .running(phase: .downloading, fraction: 0.42)),
                 CatalogRow(source: "github.com/super-libre/super-stt-deepgram", name: "Deepgram", version: "0.3.0",
-                           description: "Deepgram's speech to text, online.", online: true, models: 3,
+                           description: "Deepgram's speech to text, online.", online: true,
+                           capabilities: [.cloud(hosts: ["api.deepgram.com"], userUrl: false)],
+                           modelGroups: [LibraryModelGroup(kind: .transcription, names: [
+                               "nova-3", "nova-2", "enhanced",
+                           ])],
+                           repository: "https://github.com/super-libre/super-stt-deepgram", needsKey: true,
                            compatible: true, incompatibleReason: nil, needsVersion: nil, install: .idle),
                 CatalogRow(source: "github.com/super-libre/super-stt-voxtral", name: "Voxtral", version: "0.4.0",
-                           description: "Mistral's Voxtral, local.", online: false, models: 2,
+                           description: "Mistral's Voxtral, local.", online: false, capabilities: [.gpu],
+                           modelGroups: [LibraryModelGroup(kind: .transcription, names: [
+                               "voxtral-mini", "voxtral-small",
+                           ])],
+                           repository: "https://github.com/super-libre/super-stt-voxtral", needsKey: false,
                            compatible: true, incompatibleReason: nil, needsVersion: "v0.4.0", install: .idle),
             ]
+            if scene == "library-add" {
+                let url = "https://github.com/someone/super-stt-parakeet"
+                shown.add = AddSheet(
+                    open: true, source: .repository, url: url, folder: "",
+                    preview: .ready(backend: AddPreviewBackend(
+                        source: "github.com/someone/super-stt-parakeet", name: "Parakeet", version: "0.2.0",
+                        description: "NVIDIA's Parakeet speech to text, local.", incompatible: nil,
+                        capabilities: [.gpu, .cpu],
+                        runsAs: .subprocess, needs: [], reaches: ["huggingface.co"],
+                        builtFor: "aarch64-apple-darwin, metal", license: "Apache-2.0",
+                        models: [
+                            AddPreviewModel(name: "parakeet-tdt-0.6b-v2", kind: .transcription,
+                                            gpu: true, cpu: true, online: false),
+                            AddPreviewModel(name: "parakeet-tdt-0.6b-v3", kind: .transcription,
+                                            gpu: true, cpu: true, online: false),
+                        ]
+                    )),
+                    install: .idle, installable: "Parakeet"
+                )
+            }
             LibraryModel.shared.pretend(shown)
         }
         taken = true
-        Task { await take() }
+        // A moment for the sheet to come up.
+        Task {
+            if scene == "library-add" {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            await take()
+        }
+    }
+
+    /// The `configure` scene: an online backend with an API key not set yet,
+    /// a switch, a pick from a list, a text option set away from its default,
+    /// and the context picker, its sheet up over the Library page.
+    private static func pretendConfigure(_ page: LibraryPage) {
+        let source = "github.com/super-libre/super-stt-openai"
+        var shown = page
+        shown.catalogError = nil
+        shown.installedTotal = 2
+        shown.installed = [
+            InstalledRow(source: source, name: "OpenAI", version: "0.3.0",
+                         description: "OpenAI's speech to text, online.", online: true,
+                         capabilities: [.cloud(hosts: ["api.openai.com"], userUrl: false)],
+                         modelGroups: [LibraryModelGroup(kind: .transcription, names: ["whisper-1", "gpt-4o-transcribe"])],
+                         repository: "https://\(source)",
+                         updateTo: nil, update: .idle, uninstallError: nil),
+            InstalledRow(source: "github.com/super-libre/super-stt-whisper", name: "Whisper", version: "0.2.1",
+                         description: "Local Whisper speech to text.", online: false,
+                         capabilities: [.gpu, .cpu],
+                         modelGroups: [LibraryModelGroup(kind: .transcription, names: ["base", "small", "large-v3-turbo"])],
+                         repository: "https://github.com/super-libre/super-stt-whisper",
+                         updateTo: nil, update: .idle, uninstallError: nil),
+        ]
+        LibraryModel.shared.pretend(shown)
+        ConfigureModel.shared.pretend(ConfigureSheet(
+            source: source, name: "OpenAI", loaded: true,
+            context: ContextPicker(
+                options: [
+                    ContextOption(choice: .followActive, name: t("follow-active-context", ["value0": "Coding"])),
+                    ContextOption(choice: .nothing, name: t("no-context")),
+                    ContextOption(choice: .pinned(id: "coding"), name: "Coding"),
+                    ContextOption(choice: .pinned(id: "email"), name: "Email"),
+                ],
+                selected: .followActive,
+                hint: t("sending-context", ["value0": "Coding"])
+            ),
+            rows: [
+                ConfigureRow(name: "api_key", label: "API key", hint: "Your OpenAI API key.", required: true,
+                             control: .secret(configured: false, input: "")),
+                ConfigureRow(name: "stream", label: "Stream", hint: "Send audio as it is recorded.",
+                             required: false, control: .bool(on: true)),
+                ConfigureRow(name: "model_size", label: "Speed", hint: "Faster, or more accurate.",
+                             required: false,
+                             control: .choice(choices: ["fast", "balanced", "accurate"], selected: "balanced")),
+                ConfigureRow(name: "base_url", label: "Base URL",
+                             hint: t("setting-hint-default", ["hint": "Where requests go.",
+                                                              "default": "https://api.openai.com/v1"]),
+                             required: false,
+                             control: .text(input: "https://gateway.example.com/v1",
+                                            value: "https://gateway.example.com/v1", overridden: true)),
+            ],
+            unmet: ["API key"],
+            notice: nil
+        ))
     }
 
     /// The Models page showed `header`: shoot it once the daemon has said what
     /// fills each stage, for `models`.
     static func modelsShown(_ header: HeaderStatus) {
         guard path != nil, !taken, scene.hasPrefix("models") else { return }
-        if scene == "models-running" {
+        if scene != "models" {
             var shown = header
             shown.connected = true
             shown.speechToText = .ready
@@ -420,18 +585,70 @@ enum Snapshot {
                 ),
             ]
             HeaderModel.shared.pretend(shown)
-            ModelsModel.shared.pretend(ModelsPage(cards: [
-                StageCard(
-                    stage: .transcription, source: "whisper",
-                    backends: [Choice(id: "whisper", name: "Whisper"), Choice(id: "qwen", name: "Qwen")],
-                    model: "large-v3-turbo", models: ["base", "small", "large-v3-turbo"], loaded: true,
-                    device: "metal", devices: [Choice(id: "metal", name: "Metal"), Choice(id: "cpu", name: "CPU")],
-                    busy: false
-                ),
-            ], notice: nil))
+            ModelsModel.shared.pretend(ModelsPage(cards: [madeUpCard(scene)], notice: nil))
         } else if header.pipeline.isEmpty {
             return
         }
+        taken = true
+        Task { await take() }
+    }
+
+    /// A made-up transcription card for `scene`: `models-running`, its model
+    /// up on Metal; `models-download`, a model downloading; `models-staged`, a
+    /// model staged that may not fit on the GPU.
+    private static func madeUpCard(_ scene: String) -> StageCard {
+        let whisper = CardBackend(
+            source: "github.com/super-libre/super-voice-whisper", name: "Whisper", version: "0.2.1",
+            description: "Local Whisper speech to text.",
+            repository: "https://github.com/super-libre/super-voice-whisper",
+            chips: BackendChips(gpu: true, cpu: true, online: false), models: 3
+        )
+        let qwen = CardBackend(
+            source: "github.com/super-libre/super-voice-qwen-asr", name: "Qwen ASR", version: "0.1.0",
+            description: "", repository: "https://github.com/super-libre/super-voice-qwen-asr",
+            chips: BackendChips(gpu: true, cpu: true, online: false), models: 1
+        )
+        let devices = [Choice(id: "metal", name: "Metal"), Choice(id: "cpu", name: "CPU")]
+        let notes = CardNotes(memory: nil, fallback: nil, warning: nil, unmet: [])
+        var card = StageCard(
+            stage: .transcription, source: whisper.source, backends: [whisper, qwen], backend: whisper,
+            model: .running(model: "large-v3-turbo", idle: false),
+            models: ["base", "small", "large-v3-turbo"], devices: devices, device: "metal",
+            notes: notes, progress: .none, canLoad: false, reloadable: false, busy: false
+        )
+        switch scene {
+        case "models-download":
+            card.model = .staging(model: "large-v3-turbo")
+            card.progress = .download(
+                line: t("provision-model-progress", [
+                    "value0": t("downloading"), "value1": "large-v3-turbo",
+                    "value2": "2", "value3": "3", "value4": "42.0",
+                ]),
+                fraction: 0.42,
+                bytes: t("download-size", ["mb": "690.5", "total": "1624.0"])
+            )
+        case "models-staged":
+            card.model = .staging(model: "large-v3-turbo")
+            card.canLoad = true
+            card.notes = CardNotes(
+                memory: t("model-needs-memory", ["size": t("size-gb", ["size": "3.1"])]),
+                fallback: nil,
+                warning: t("model-memory-warning", [
+                    "value0": t("memory-size", ["gib": "3.1"]), "value1": t("memory-size", ["gib": "2.0"]),
+                ]),
+                unmet: []
+            )
+        default:
+            break
+        }
+        return card
+    }
+
+    /// A model's language button or voice picker is up, with made-up
+    /// languages and voices: shoot it, for `model-language` (the picker open)
+    /// and `model-voice`.
+    static func modelDetailsShown() {
+        guard path != nil, !taken, ["model-language", "model-voice"].contains(scene) else { return }
         taken = true
         Task { await take() }
     }
@@ -452,8 +669,10 @@ enum Snapshot {
             fail("no window is open")
         }
         // A run pointed at a daemon waits for it, so the header's pills are in
-        // the shot.
-        if let socket = ProcessInfo.processInfo.environment["SUPER_VOICE_HTTP_SOCKET"] {
+        // the shot. Not the connection scenes', which show it not answering.
+        if !scene.hasPrefix("connection"),
+           let socket = ProcessInfo.processInfo.environment["SUPER_VOICE_HTTP_SOCKET"]
+        {
             for _ in 0..<50 where !HeaderModel.shared.header.connected {
                 try? await Task.sleep(for: .milliseconds(100))
             }

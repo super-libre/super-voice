@@ -4,9 +4,9 @@ use cosmic::iced::widget::row;
 use cosmic::widget::{self, text};
 use cosmic::{Apply, Element};
 // The rules behind the chips are the core's; the views reach them here.
+use super_voice_app_core::rules::backends::{Capabilities, ModelKind, model_groups};
 pub(super) use super_voice_app_core::rules::backends::{
-    backend_has_user_url, backend_is_online, backend_supports_cpu, backend_supports_gpu,
-    entry_accepts_context, entry_clones_voices, model_is_online, stage_clones_voices,
+    backend_has_user_url, backend_is_online, model_is_online, stage_clones_voices,
     stage_device_support, stage_hears_context, update_offer,
 };
 
@@ -352,52 +352,31 @@ pub(super) struct RoleGroup {
     pub names: Vec<String>,
 }
 
-/// How a model `role` reads on a card.
-///
-/// An unknown role — one a newer backend declares and this build has no name
-/// for — reads as speech-to-text, matching the wire default and the daemon's
-/// own reading of a missing value.
-pub(super) fn role_label(role: &str) -> String {
-    match role {
-        "post_processor" => crate::fl!("post-processing"),
-        "synthesis" => crate::fl!("text-to-speech"),
-        _ => crate::fl!("speech-to-text"),
+/// How a kind of model reads on a card.
+pub(super) fn kind_label(kind: ModelKind) -> String {
+    match kind {
+        ModelKind::Transcription => crate::fl!("speech-to-text"),
+        ModelKind::PostProcessing => crate::fl!("post-processing"),
+        ModelKind::Synthesis => crate::fl!("text-to-speech"),
     }
 }
 
-/// Group `(name, role)` pairs by role, transcription first.
-///
-/// The order is fixed rather than catalog-derived so two backends with the same
-/// kinds present them the same way round. Empty groups are dropped, so a
-/// single-role backend yields exactly one.
+/// How a model `role` reads on a card. An unknown role reads as speech to
+/// text (see [`ModelKind::of`]).
+pub(super) fn role_label(role: &str) -> String {
+    kind_label(ModelKind::of(role))
+}
+
+/// Group `(name, role)` pairs by kind, in the core's fixed order
+/// ([`model_groups`]), each under its label.
 pub(super) fn role_groups<'a>(models: impl Iterator<Item = (&'a str, &'a str)>) -> Vec<RoleGroup> {
-    let mut transcription = Vec::new();
-    let mut post_processing = Vec::new();
-    let mut synthesis = Vec::new();
-    for (name, role) in models {
-        match role {
-            "post_processor" => post_processing.push(name.to_string()),
-            "synthesis" => synthesis.push(name.to_string()),
-            _ => transcription.push(name.to_string()),
-        }
-    }
-    [
-        RoleGroup {
-            label: role_label("transcription"),
-            names: transcription,
-        },
-        RoleGroup {
-            label: role_label("post_processor"),
-            names: post_processing,
-        },
-        RoleGroup {
-            label: crate::fl!("text-to-speech"),
-            names: synthesis,
-        },
-    ]
-    .into_iter()
-    .filter(|g| !g.names.is_empty())
-    .collect()
+    model_groups(models)
+        .into_iter()
+        .map(|group| RoleGroup {
+            label: kind_label(group.kind),
+            names: group.names,
+        })
+        .collect()
 }
 
 /// A backend's model inventory: one block per kind of model it ships — a muted
@@ -485,6 +464,26 @@ pub(super) fn cloud_chip(
         popup = popup.push(text::body(crate::fl!("another-url-you-set")));
     }
     rounded_tooltip(chip, popup, widget::tooltip::Position::Top)
+}
+
+/// [`capability_chips`] for a backend's capabilities as the core reads them
+/// ([`backend_capabilities`](super_voice_app_core::rules::backends::backend_capabilities),
+/// [`entry_capabilities`](super_voice_app_core::rules::backends::entry_capabilities)).
+pub(super) fn backend_chips(
+    caps: &Capabilities,
+    tooltips: bool,
+) -> Option<Element<'static, Message>> {
+    capability_chips(
+        caps.compute.gpu,
+        caps.compute.cpu,
+        caps.cloud.as_ref().map(|egress| CloudEgress {
+            hosts: egress.hosts.as_slice(),
+            user_url: egress.user_url,
+        }),
+        caps.contexts,
+        caps.voice_cloning,
+        tooltips,
+    )
 }
 
 /// The capability-chip row for a backend: GPU / CPU advertise local compute,

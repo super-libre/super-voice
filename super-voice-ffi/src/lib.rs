@@ -11,13 +11,17 @@ use std::sync::LazyLock;
 
 use super_voice_app_core::state::TextBuffer;
 
+pub mod about;
 pub mod assistants;
 pub mod behavior;
 pub mod clips;
+pub mod configure;
+pub mod connection;
 pub mod contexts;
 mod events;
 pub mod library;
 pub mod microphone;
+pub mod model_details;
 pub mod models;
 pub mod notes;
 pub mod recording_test;
@@ -41,11 +45,17 @@ pub(crate) static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| 
         .expect("the stores' tokio runtime starts")
 });
 
-/// Make this app a client of its own to the daemon, before its first call:
-/// its token kept apart from the settings app's, which shares the machine
-/// while both exist.
-pub(crate) fn identify() {
-    super_voice_app_core::daemon::client::set_identity("super-voice-macos", "Super Voice");
+/// Keep this run's session token apart from the installed app's, for a
+/// development build: the daemon binds a token to the binary it was granted
+/// to, so a development build keeping its own under the app's name would
+/// replace the installed app's. Called once at launch, before any store.
+///
+/// The installed app is the settings app as far as the daemon knows: on macOS
+/// it is the one in Super Voice.app, under the settings app's name, and it
+/// keeps its token where the settings app kept it.
+#[uniffi::export]
+pub fn use_development_token() {
+    super_voice_app_core::daemon::client::use_scene_token();
 }
 
 /// Show the app's words in the first of `languages` there is a catalog for,

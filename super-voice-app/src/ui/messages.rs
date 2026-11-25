@@ -49,15 +49,6 @@ pub enum Message {
     Language(LanguageMessage),
     Recording(RecordingMessage),
     Update(UpdateMessage),
-
-    /// A scoped settings/backend save failed. Stored in `AppModel::action_error`
-    /// and rendered as an inline banner on the page named by `scope`, instead of
-    /// hijacking the UI (Tier 1 #13) or being dropped to the log (Tier 1 #15).
-    /// Handled inline in `dispatch` (no dedicated handler).
-    SettingActionFailed {
-        scope: crate::state::ErrorScope,
-        message: String,
-    },
 }
 
 /// Template / shell-chrome messages.
@@ -86,48 +77,11 @@ pub enum ShellMessage {
     /// The transcription stage as the daemon has it, read for the running
     /// scene, which puts it in the state its shot needs.
     SceneStt(Result<crate::daemon::client::StageState, String>),
-    /// A window finished opening, so its `NSWindow` can be given the native
-    /// frame. See `core::app::macos`.
-    #[cfg(target_os = "macos")]
-    WindowOpened(cosmic::iced::window::Id),
-    /// Where the native title bar put the traffic lights, so the toolbar can
-    /// line up with them.
-    #[cfg(target_os = "macos")]
-    TitleBarMeasured(crate::core::app::macos::TitleBar),
-    /// A window was resized, perhaps into or out of full screen.
-    #[cfg(target_os = "macos")]
-    WindowResized(cosmic::iced::window::Id),
-    /// Whether the window is in full screen, checked after a resize.
-    #[cfg(target_os = "macos")]
-    FullScreenChecked(bool),
-    /// The system's look changed: light or dark, or the accent color.
-    #[cfg(target_os = "macos")]
-    SystemLook(crate::core::app::macos::appearance::Look),
-    /// The title bar was pressed: move the window.
-    #[cfg(target_os = "macos")]
-    DragWindow,
-    /// The title bar was double-clicked: zoom the window.
-    #[cfg(target_os = "macos")]
-    ZoomWindow,
-    /// The toolbar's sidebar button, standing in for libcosmic's header toggle.
-    #[cfg(target_os = "macos")]
-    ToggleSidebar,
-    /// Where the bundle's daemon agent stands, looked up while the daemon is
-    /// unreachable. See `core::app::macos::bundle`.
-    #[cfg(target_os = "macos")]
-    DaemonAgent(super_voice_shared::launch_agents::Status),
-    /// Register the bundle's agents, for a daemon agent that is not.
-    #[cfg(target_os = "macos")]
-    RegisterAgents,
-    /// Open Login Items, where a daemon agent the user switched off goes back on.
-    #[cfg(target_os = "macos")]
-    OpenLoginItems,
 }
 
 /// Daemon connection, connection-time settings loads, and the SSE event stream.
 #[derive(Debug, Clone)]
 pub enum DaemonMessage {
-    DaemonConnectionResult(super_voice_shared::daemon::http_client::HttpResult<()>),
     DaemonConnected,
     /// The `/events` SSE stream finished (re)subscribing. Distinct from
     /// `DaemonConnected` (which the REST ping loop also fires): it marks the
@@ -152,6 +106,10 @@ pub enum DaemonMessage {
     /// page. Drops the cached settings token and triggers a fresh
     /// consent flow.
     RetryAuthorization,
+    /// An input for the Connection page's logic with no message of its own:
+    /// the answer to a status check (`RefreshDaemonStatus`), which only shows
+    /// the status and tries nothing again.
+    Connection(super_voice_app_core::pages::connection::Input),
     PingTimeout,
     DaemonEventsReceived(Vec<super_voice_shared::models::protocol::NotificationEvent>),
 }
@@ -221,35 +179,13 @@ pub enum ModelsPageMessage {
     ToggleInstalledMenu(String),
     /// Dismiss any open installed-backend overflow menu (click-outside).
     CloseInstalledMenu,
-    /// User clicked "+ Import from dir" on the Download tab. Opens an async
-    /// folder picker; if the user picks one, the path comes back as
-    /// [`ModelsPageMessage::ImportBackendFromDirPicked`].
-    ImportBackendFromDir,
-    /// Async folder picker resolved. `None` means the user cancelled — no-op.
-    ImportBackendFromDirPicked(Option<String>),
-    /// User typed in the Custom-repo URL field in the Download tab.
-    RegistryCustomRepoInputChanged(String),
+    /// The "Install manually" sheet's logic: its source, the preview, and
+    /// the install it starts. See `super_voice_app_core::pages::add_backend`.
+    AddBackend(super_voice_app_core::pages::add_backend::Input),
     /// Toggle the Browse toolbar's overflow ("⋯") menu.
     ToggleBrowseMenu,
     /// Dismiss the Browse toolbar's overflow menu (click-outside).
     CloseBrowseMenu,
-    /// User picked an install source in the Add-a-backend drawer. Switching
-    /// clears the preview: it described the other source.
-    AddSourceChanged(crate::state::registry::AddSource),
-    /// User typed in the drawer's folder-path field.
-    AddFolderInputChanged(String),
-    /// User pressed Check in the drawer, or submitted the URL field. Resolves
-    /// the source without installing it.
-    CheckAddSource,
-    /// A preview resolved. Carries the backend the source would install.
-    AddPreviewLoaded(Box<super_voice_shared::registry::PreviewResponse>),
-    /// A preview failed. Carries the daemon's message, shown verbatim.
-    AddPreviewFailed(String),
-    /// One frame of the drawer's "reading" spinner. Only fires while a check
-    /// is in flight; the subscription that emits it is gated on that.
-    AddPreviewSpin,
-    /// User pressed Install in the drawer, committing to the previewed backend.
-    InstallPreviewed,
 }
 
 /// The stage-1 model's device + device-switch errors.
@@ -437,28 +373,9 @@ pub enum VoicesMessage {
 /// The synthesis model's voice.
 #[derive(Debug, Clone)]
 pub enum VoiceMessage {
-    /// Resolution block for `(source, model)`, from
-    /// `GET /tts/pipeline/{stage}/model/{model}/voice`.
-    ModelVoiceLoaded {
-        source: String,
-        model: String,
-        block: crate::state::VoiceResolution,
-    },
-    /// The voices `(source, model)` can be pinned to.
-    ///
-    /// A separate message from the block for the same reason the language pair
-    /// is split: choosing a voice rewrites the block and leaves this list as it
-    /// was, so folding the two would blank the picker on every pick.
-    ModelVoicesListed {
-        source: String,
-        model: String,
-        voices: Vec<crate::state::VoiceChoice>,
-    },
-    /// The user picked a voice for the shown model, or cleared it back to the
-    /// model's own default (`None`).
-    ModelVoiceSelected(Option<String>),
-    /// A voice request failed; carries what to show.
-    VoiceError(String),
+    /// Something the voice's logic handles. See
+    /// `super_voice_app_core::pages::model_voice`.
+    Page(super_voice_app_core::pages::model_voice::Input),
 }
 
 /// The Shortcuts page.
@@ -498,9 +415,7 @@ pub enum SettingsMessage {
     Page(super_voice_app_core::pages::settings::Input),
 }
 
-/// Backend catalog + per-backend secret/option configuration.
-/// Secrets are managed via the daemon's secrets endpoints; options go to the
-/// daemon config via the client.
+/// The installed-backend list, and a backend's Configure sheet.
 #[derive(Debug, Clone)]
 pub enum BackendMessage {
     BackendsLoaded(Vec<BackendInfo>),
@@ -508,58 +423,9 @@ pub enum BackendMessage {
     /// UI reflects the new effective values.
     BackendsReload,
     BackendsError(String),
-    /// Daemon-sourced configured flags for a backend's secrets, received after
-    /// `BackendsLoaded`. Folds `(name, configured)` into `backend_secret_configured`.
-    BackendSecretsConfigured {
-        source: String,
-        items: Vec<(String, bool)>,
-    },
-    BackendSecretInputChanged {
-        source: String,
-        name: String,
-        value: String,
-    },
-    BackendSecretSaved {
-        source: String,
-        name: String,
-    },
-    /// Daemon confirmed that a backend secret was written successfully.
-    /// Triggers input-buffer clearance and a catalog reload.
-    BackendSecretStored {
-        source: String,
-        name: String,
-    },
-    BackendSecretRemoved {
-        source: String,
-        name: String,
-    },
-    BackendOptionInputChanged {
-        source: String,
-        name: String,
-        value: String,
-    },
-    BackendOptionSaved {
-        source: String,
-        name: String,
-    },
-    /// A `type = "bool"` option's switch was flipped. A switch has no Save
-    /// button to press, so this both records the new value and writes it.
-    BackendOptionToggled {
-        source: String,
-        name: String,
-        value: bool,
-    },
-    /// A value was picked from an option's dropdown. Like the switch, a
-    /// dropdown has nothing to press afterwards, so choosing writes.
-    BackendOptionChosen {
-        source: String,
-        name: String,
-        value: String,
-    },
-    BackendOptionReset {
-        source: String,
-        name: String,
-    },
+    /// Something the Configure sheet's logic handles: its secrets, options
+    /// and context. See `super_voice_app_core::pages::configure`.
+    Configure(super_voice_app_core::pages::configure::Input),
 }
 
 /// Transcription language (global Primary Language + per-model override).
@@ -575,40 +441,10 @@ pub enum LanguageMessage {
     },
     CloseLanguagePicker,
     LanguagePickerQueryChanged(String),
-    /// Per-model resolution block (`/stt/pipeline/{stage}/model/{model}/language`)
-    /// loaded from the daemon for `(source, model)`.
-    /// The languages a model can be pinned to, from
-    /// `GET /stt/pipeline/{stage}/model/{model}/language/list`.
-    ///
-    /// Separate from the resolution block: the block changes with every pick,
-    /// the offer cannot change for a given model, so a pick does not re-fetch
-    /// a list that has not moved.
-    ModelLanguagesLoaded {
-        stage: Stage,
-        source: String,
-        model: String,
-        languages: Vec<String>,
-    },
-    ModelLanguageLoaded {
-        /// The stage the block was read through.
-        stage: Stage,
-        source: String,
-        model: String,
-        block: crate::state::LanguageResolution,
-    },
-    /// User picked a per-model override.
-    /// `choice = None` → Follow global (DELETE override);
-    /// `choice = Some("auto")` → Auto-detect;
-    /// `choice = Some(tag)` → explicit BCP-47 tag.
-    ModelLanguageSelected {
-        /// The stage the model is addressed through: it resolves the bare
-        /// model name against the backend filling it.
-        stage: Stage,
-        source: String,
-        model: String,
-        choice: Option<String>,
-    },
-    LanguageError(String),
+    /// Something a model's language logic handles: reading it, what it can
+    /// be set to, and a pick. See
+    /// `super_voice_app_core::pages::model_language`.
+    Model(super_voice_app_core::pages::model_language::Input),
 }
 
 /// Speech to text's Behavior tab: its settings and the typing test.
@@ -647,8 +483,8 @@ pub enum UpdateMessage {
     RestartApp,
 }
 
-/// The Contexts tab, and which context each backend uses (set from the
-/// Models page's Configure sheet).
+/// The Contexts tab. Which context each backend uses is set from its
+/// Configure sheet ([`BackendMessage::Configure`]).
 #[derive(Debug, Clone)]
 pub enum ContextsMessage {
     /// Something the page's logic handles: a press, or the answer to work it
@@ -657,18 +493,6 @@ pub enum ContextsMessage {
     /// A keystroke in the editor's prompt. Carries the widget's own action,
     /// since the editor owns the cursor; the app applies it to its buffer.
     PromptAction(cosmic::widget::text_editor::Action),
-
-    /// Point one backend at a context of its own, or at none. `None` means "no
-    /// context at all"; going back to following the active one is
-    /// [`Self::BackendFollowsActive`].
-    BackendPinned { source: String, id: Option<String> },
-    /// Put one backend back on the active context.
-    BackendFollowsActive(String),
-    /// What a backend uses now, as the daemon reports it.
-    BackendContextLoaded {
-        source: String,
-        state: crate::daemon::client::BackendContext,
-    },
 }
 
 /// The Notes tab: the notes the app keeps in its own folder, and the takes
