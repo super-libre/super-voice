@@ -8,8 +8,10 @@
 // saved, which writes to the notes it reads, so point it at a copy; or
 // `clips`, the Clips page with its clips read; `clips-playing`, the newest
 // clip partway through playing, out loud; `voices`, the Voices page with its
-// library read; or `voices-pending`, a WAV file imported there, waiting to be
-// saved.
+// library read; `voices-pending`, a WAV file imported there, waiting to be
+// saved; `tts-behavior`, text to speech's Behavior tab; or
+// `tts-behavior-spoken`, a sentence typed there and Speak pressed, shot once
+// the daemon has answered (speaking, or why not).
 // Once the page is in that state, the window is drawn into the file at one
 // size and the app quits. The app draws its own window rather than a screen
 // capture taking it: that needs no Screen Recording permission, so it works
@@ -73,8 +75,9 @@ enum Snapshot {
             guard open.saved, open.text.hasSuffix(addition) else { return }
         case "notes":
             guard page.open == nil else { return }
-        case _ where scene.hasPrefix("clips") || scene.hasPrefix("voices"):
-            // Shot from their own pages; see `clipsShown` and `voicesShown`.
+        case _ where ["clips", "voices", "tts-behavior"].contains(where: scene.hasPrefix):
+            // Shot from their own pages; see `clipsShown`, `voicesShown` and
+            // `speechShown`.
             return
         default:
             fail("no scene is called \(scene)")
@@ -131,6 +134,36 @@ enum Snapshot {
                 return
             }
         } else if scene != "voices" {
+            fail("no scene is called \(scene)")
+        }
+        taken = true
+        Task { await take() }
+    }
+
+    /// The speech test showed `page`: shoot it at once, for `tts-behavior`, or
+    /// once a sentence typed into it has been spoken or refused, for
+    /// `tts-behavior-spoken`.
+    static func speechShown(_ page: SpeechPage) {
+        guard path != nil, !taken, scene.hasPrefix("tts-behavior") else { return }
+        switch scene {
+        case "tts-behavior":
+            break
+        case "tts-behavior-spoken":
+            guard page.speaking || page.notice != nil else {
+                if !opened {
+                    opened = true
+                    // Through the field's binding, as typing would, once the
+                    // field is on screen.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(500))
+                        SpeechModel.shared.text = "Hello from the Mac."
+                        try? await Task.sleep(for: .milliseconds(300))
+                        SpeechModel.shared.send(.speak)
+                    }
+                }
+                return
+            }
+        default:
             fail("no scene is called \(scene)")
         }
         taken = true

@@ -12,7 +12,9 @@ use std::sync::LazyLock;
 use super_voice_app_core::state::TextBuffer;
 
 pub mod clips;
+mod events;
 pub mod notes;
+pub mod speech;
 pub mod status;
 pub mod voices;
 

@@ -551,12 +551,13 @@ macos-swift-app config="release":
 # Scenes: `notes`, the list; `note`, the newest note open; `edited`, that
 # note with a sentence typed into it and saved; `clips`, the Clips page;
 # `clips-playing`, its newest clip partway through playing, out loud;
-# `voices`, the Voices page; and `voices-pending`, a recording imported there,
-# waiting to be saved. It reads a copy of the sample notes and clips in
+# `voices`, the Voices page; `voices-pending`, a recording imported there,
+# waiting to be saved; `tts-behavior`, text to speech's Behavior tab; and
+# `tts-behavior-spoken`, a sentence spoken there (or the daemon's refusal). It reads a copy of the sample notes and clips in
 # super-voice-macos/Fixtures, never yours, so `edited` changes only the copy.
 # The voices are the daemon's.
 #
-# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending]
+# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken]
 macos-swift-shot out scene="notes": (macos-swift-app "debug")
     #!/usr/bin/env bash
     set -euo pipefail

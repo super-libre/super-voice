@@ -43,7 +43,7 @@ struct ContentView: View {
     /// of another was asked for.
     private static var firstPage: Destination {
         #if DEBUG
-        if Snapshot.scene.hasPrefix("clips") || Snapshot.scene.hasPrefix("voices") {
+        if ["clips", "voices", "tts-behavior"].contains(where: Snapshot.scene.hasPrefix) {
             return .textToSpeech
         }
         #endif
@@ -73,7 +73,7 @@ struct ContentView: View {
             case .speechToText:
                 SpeechToTextView(notes: notes)
             case .textToSpeech:
-                TextToSpeechView(clips: ClipsModel.shared, voices: VoicesModel.shared)
+                TextToSpeechView(clips: ClipsModel.shared, voices: VoicesModel.shared, speech: SpeechModel.shared)
             case let other?:
                 NotYetView(title: other.title, icon: other.icon)
             case nil:
@@ -141,20 +141,23 @@ struct SpeechToTextView: View {
 }
 
 /// Text to speech's tabs, at the top of the page as in the settings app.
-/// Behavior isn't here yet.
 struct TextToSpeechView: View {
     @ObservedObject var clips: ClipsModel
     @ObservedObject var voices: VoicesModel
+    @ObservedObject var speech: SpeechModel
 
     enum Tab: Hashable { case clips, voices, behavior }
     @State private var tab: Tab = Self.firstTab
 
-    /// The tab the page opens on: Clips, unless a screenshot of Voices was
+    /// The tab the page opens on: Clips, unless a screenshot of another was
     /// asked for.
     private static var firstTab: Tab {
         #if DEBUG
         if Snapshot.scene.hasPrefix("voices") {
             return .voices
+        }
+        if Snapshot.scene.hasPrefix("tts-behavior") {
+            return .behavior
         }
         #endif
         return .clips
@@ -175,7 +178,7 @@ struct TextToSpeechView: View {
             switch tab {
             case .clips: ClipsView(model: clips)
             case .voices: VoicesView(model: voices)
-            case .behavior: NotYetView(title: t("behavior"), icon: .speakerHigh)
+            case .behavior: TextToSpeechBehaviorView(model: speech)
             }
         }
         .navigationTitle(t("text-to-speech"))
