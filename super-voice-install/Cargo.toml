@@ -26,6 +26,8 @@
     serde_json.workspace = true
     tar = "0.4.46"
     tokio.workspace = true
+    # Reads the workspace's manifests for the names of its apps.
+    toml.workspace = true
 
 [lints]
     workspace = true
