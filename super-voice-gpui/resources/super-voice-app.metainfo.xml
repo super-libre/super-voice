@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>ai.menjivar.SuperVoice</id>
+  <id>org.superlibre.SuperVoice</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <name>Super Voice</name>
@@ -18,7 +18,7 @@
       record voices to clone, and configure the daemon.
     </p>
   </description>
-  <developer id="ai.menjivar">
+  <developer id="org.superlibre">
     <name>Jorge Menjivar</name>
   </developer>
   <icon type="stock">super-voice-app</icon>

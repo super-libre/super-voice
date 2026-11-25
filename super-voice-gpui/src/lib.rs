@@ -15,7 +15,7 @@ use gpui_kit::{
 
 /// The window's id with the desktop: its Wayland app id, which the desktop
 /// entry's `StartupWMClass` names.
-pub const APP_ID: &str = "ai.menjivar.SuperVoice";
+pub const APP_ID: &str = "org.superlibre.SuperVoice";
 
 /// Start the app: one window, until it is closed.
 pub fn run() {

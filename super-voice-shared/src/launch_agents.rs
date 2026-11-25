@@ -52,8 +52,8 @@ impl Agent {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Daemon => "ai.menjivar.super-voice",
-            Self::Hotkey => "ai.menjivar.super-voice.hotkey",
+            Self::Daemon => "org.superlibre.super-voice",
+            Self::Hotkey => "org.superlibre.super-voice.hotkey",
         }
     }
 

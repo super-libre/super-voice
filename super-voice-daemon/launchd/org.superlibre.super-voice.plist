@@ -20,7 +20,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>ai.menjivar.super-voice</string>
+    <string>org.superlibre.super-voice</string>
 
     <!--
       Relative to the bundle, so the app can be moved after it is installed.

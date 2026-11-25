@@ -142,7 +142,7 @@ just run-cli hotkey --key ctrl+alt+shift+F19
 ```
 
 Pick a binding the installed listener is not already holding, or stop it
-first with `launchctl bootout gui/$(id -u)/ai.menjivar.super-voice.hotkey`.
+first with `launchctl bootout gui/$(id -u)/org.superlibre.super-voice.hotkey`.
 
 `--key` holds only until the daemon answers. The keys are the daemon's
 `hotkey` setting (`/v1/settings/hotkey`, which the app's Shortcuts page
@@ -203,7 +203,7 @@ ad-hoc (what the linker gives you)
   designated => cdhash H"828ac4ed4175c86a6aa18c6b618d923a22eafca5"
 
 Developer ID
-  designated => identifier "ai.menjivar.super-voice-daemon"
+  designated => identifier "org.superlibre.super-voice-daemon"
                 and anchor apple generic
                 and certificate leaf[subject.OU] = "8JDTBFQ3F5"
 ```

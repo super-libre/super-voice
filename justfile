@@ -89,10 +89,10 @@ macos_resources := 'super-voice-gpui' / 'macos'
 # user's GUI session to type, notify, and prompt for consent. It ships inside
 # the bundle, and launchd loads it from there once it is registered; see
 # super-voice-daemon/launchd/.
-launchd_label := 'ai.menjivar.super-voice'
+launchd_label := 'org.superlibre.super-voice'
 
 # Code-signing identifier prefix for local macOS builds. See `codesign-macos`.
-macos_sign_prefix := 'ai.menjivar.super-voice'
+macos_sign_prefix := 'org.superlibre.super-voice'
 launchd_plist_file := launchd_label + '.plist'
 launchd_plist_src := 'super-voice-daemon' / 'launchd' / launchd_plist_file
 # Where the agents were installed before the bundle existed, as loose plists
@@ -113,6 +113,11 @@ hotkey_plist_file := hotkey_label + '.plist'
 hotkey_plist_src := 'super-voice-cli' / 'launchd' / hotkey_plist_file
 hotkey_plist_dst := launchd_agent_dir / hotkey_plist_file
 hotkey_target := launchd_domain + '/' + hotkey_label
+
+# The labels Super Voice's agents had before its IDs moved to superlibre.org.
+# `install-macos` and `uninstall-macos` retire them, so an upgrade never runs
+# a second daemon or shortcut beside the new ones.
+old_launchd_labels := 'ai.menjivar.super-voice.hotkey ai.menjivar.super-voice'
 
 # Default recipe which runs `just build-release`
 default: build-release
@@ -1044,6 +1049,29 @@ install-macos:
     sudo install -m755 "$wrapper_tmp" {{ wrapper_dst }}
     rm -f "$wrapper_tmp"
 
+    # Retire the agents of an install from before the IDs moved to
+    # superlibre.org. The unregister above, run by that install's own CLI,
+    # dropped them from Login Items; a loose plist or a job launchd still
+    # holds goes here. Under the old labels they would run a second daemon
+    # beside the new one, which then could not bind the socket.
+    for label in {{ old_launchd_labels }}; do
+        launchctl bootout "{{ launchd_domain }}/$label" 2>/dev/null || true
+        rm -f "{{ launchd_agent_dir }}/$label.plist"
+    done
+    # launchd will not load a job while one it is tearing down still runs.
+    for _ in $(seq 1 50); do
+        still=""
+        for label in {{ old_launchd_labels }}; do
+            if launchctl print "{{ launchd_domain }}/$label" >/dev/null 2>&1; then
+                still=1
+            fi
+        done
+        if [ -z "$still" ]; then
+            break
+        fi
+        sleep 0.1
+    done
+
     # Loads both agents from the new bundle and starts them.
     "{{ macos_bundle_cli }}" service register
 
@@ -1376,6 +1404,12 @@ uninstall-macos:
         "{{ macos_bundle_cli }}" service unregister || true
     fi
     rm -rf "{{ macos_bundle_dst }}"
+
+    # The agents of an install from before the IDs moved to superlibre.org.
+    for label in {{ old_launchd_labels }}; do
+        launchctl bootout "{{ launchd_domain }}/$label" 2>/dev/null || true
+        rm -f "{{ launchd_agent_dir }}/$label.plist"
+    done
 
     # An install from before the bundle, if one is still here.
     launchctl bootout {{ hotkey_target }} 2>/dev/null || true

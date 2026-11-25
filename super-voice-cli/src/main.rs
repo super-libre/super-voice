@@ -828,7 +828,7 @@ mod tests {
 
     /// The `ProgramArguments` of the hotkey `LaunchAgent`.
     fn hotkey_launch_agent_arguments() -> Vec<String> {
-        let plist = include_str!("../launchd/ai.menjivar.super-voice.hotkey.plist");
+        let plist = include_str!("../launchd/org.superlibre.super-voice.hotkey.plist");
         let array = plist
             .split("<key>ProgramArguments</key>")
             .nth(1)

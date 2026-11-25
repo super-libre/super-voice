@@ -29,12 +29,14 @@
     <string>AppIcon</string>
 
     <!--
-      The settings app's identifier. The Keychain grants access by code
-      signature, and a signature's identifier is part of it: with the same one,
-      the app goes on reading the session token the settings app kept there.
+      The app's identifier, under superlibre.org. The Keychain grants access
+      by code signature, and a signature's identifier is part of it: with the
+      same one, every build goes on reading the session token the app keeps
+      there. (Moving from ai.menjivar.super-voice-app to this one may cost a Mac
+      that ran the old app one Keychain or consent prompt the first time.)
     -->
     <key>CFBundleIdentifier</key>
-    <string>ai.menjivar.super-voice-app</string>
+    <string>org.superlibre.super-voice-app</string>
 
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>

@@ -29,7 +29,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>ai.menjivar.super-voice.hotkey</string>
+    <string>org.superlibre.super-voice.hotkey</string>
 
     <!--
       A copy of the CLI in Contents/Helpers, not the one in Contents/MacOS.
