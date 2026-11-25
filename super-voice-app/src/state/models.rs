@@ -159,7 +159,7 @@ pub enum ContextPage {
     /// Right-side sheet for editing the active/selected backend's secrets and
     /// options. Reuses the drawer instead of a full-page takeover so the
     /// backend list stays visible behind it. The backend is identified by
-    /// `AppModel::configure_backend`; also Models-scoped.
+    /// `ConfigureState::open` (`AppModel::configure`); also Models-scoped.
     ConfigureBackend,
     /// Right-side search sheet for picking a transcription language. Scope
     /// (global vs per-model) is carried by `AppModel::language_picker_target`.

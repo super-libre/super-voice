@@ -158,8 +158,8 @@ impl AppModel {
                 let on_backend_page = self.daemon_status == DaemonStatus::Connected
                     && matches!(self.active_page(), Page::Models | Page::Library);
                 let backend = self
-                    .models_page
-                    .configure_backend
+                    .configure
+                    .open
                     .as_ref()
                     .and_then(|src| self.backends.iter().find(|b| &b.source == src));
                 backend.filter(|_| on_backend_page).map(|backend| {

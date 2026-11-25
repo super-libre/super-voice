@@ -438,7 +438,7 @@ impl AppModel {
         self.staged_picks.clear(stage);
         if stage == Stage::Transcription {
             self.clear_loaded_model();
-            self.models_page.configure_backend = None;
+            self.configure.open = None;
         }
         self.model_operations.set_ready(stage);
         self.core.window.show_context = false;

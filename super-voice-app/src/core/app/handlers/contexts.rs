@@ -4,15 +4,14 @@
 //! editor's own actions, runs the work the logic asks for as iced tasks, shows
 //! and hides its editor sheet, and says its notices in its own words.
 //!
-//! Which context one backend uses is set from the Models page's Configure
-//! sheet, and handled here until that page moves into the core too.
+//! Which context one backend uses is set from its Configure sheet
+//! (`handlers/backend.rs`).
 
 use cosmic::prelude::*;
 use cosmic::widget::text_input;
 use super_voice_app_core::pages::contexts::{self as page, Effect, Input, Notice, Outcome};
 
 use crate::core::app::AppModel;
-use crate::daemon::client::v1::contexts::backend as backend_client;
 use crate::state::models::ContextPage;
 use crate::ui::messages::{ContextsMessage, Message};
 
@@ -29,11 +28,6 @@ impl AppModel {
                 };
                 draft.prompt.0.perform(action);
                 self.contexts_input(Input::PromptEdited)
-            }
-            per_backend @ (ContextsMessage::BackendPinned { .. }
-            | ContextsMessage::BackendFollowsActive(_)
-            | ContextsMessage::BackendContextLoaded { .. }) => {
-                self.handle_backend_context_messages(per_backend)
             }
         }
     }
@@ -61,16 +55,11 @@ impl AppModel {
             Effect::List => {
                 let list = Task::perform(page::run_list(), page_action);
                 // The open Configure sheet shows what its backend is pointed
-                // at, read when it opened. The list is read again when
-                // another app changed the contexts, and a backend pinned or
-                // unpinned elsewhere left the sheet saying the opposite until
-                // it was closed and opened again.
-                match self.models_page.configure_backend.clone() {
-                    Some(source) if self.contexts.backend_contexts.contains_key(&source) => {
-                        Task::batch([list, Self::fetch_backend_context(source)])
-                    }
-                    _ => list,
-                }
+                // at, which the contexts changing may have changed too.
+                let sheet = self.configure_input(
+                    super_voice_app_core::pages::configure::Input::ContextsChanged,
+                );
+                Task::batch([list, sheet])
             }
             Effect::Activate(id) => Task::perform(page::run_activate(id), page_action),
             Effect::Delete(id) => Task::perform(page::run_delete(id), page_action),
@@ -86,92 +75,6 @@ impl AppModel {
                 Task::none()
             }
         }
-    }
-
-    /// Which context one backend uses, from its Configure sheet.
-    fn handle_backend_context_messages(
-        &mut self,
-        message: ContextsMessage,
-    ) -> Task<cosmic::Action<Message>> {
-        match message {
-            ContextsMessage::BackendPinned { source, id } => {
-                self.clear_action_error(crate::state::ErrorScope::ConfigureBackend);
-                let for_message = source.clone();
-                Task::perform(
-                    backend_client::set_backend_context(source, id),
-                    move |res| match res {
-                        Ok(state) => app(ContextsMessage::BackendContextLoaded {
-                            source: for_message.clone(),
-                            state,
-                        }),
-                        Err(e) => cosmic::Action::App(Message::SettingActionFailed {
-                            scope: crate::state::ErrorScope::ConfigureBackend,
-                            message: crate::fl!(
-                                "backend-context-change-failed",
-                                error = e.to_string()
-                            ),
-                        }),
-                    },
-                )
-            }
-            ContextsMessage::BackendFollowsActive(source) => {
-                self.clear_action_error(crate::state::ErrorScope::ConfigureBackend);
-                let for_message = source.clone();
-                Task::perform(
-                    backend_client::clear_backend_context(source),
-                    move |res| match res {
-                        Ok(state) => app(ContextsMessage::BackendContextLoaded {
-                            source: for_message.clone(),
-                            state,
-                        }),
-                        Err(e) => cosmic::Action::App(Message::SettingActionFailed {
-                            scope: crate::state::ErrorScope::ConfigureBackend,
-                            message: crate::fl!(
-                                "backend-context-change-failed",
-                                error = e.to_string()
-                            ),
-                        }),
-                    },
-                )
-            }
-            ContextsMessage::BackendContextLoaded { source, state } => {
-                self.contexts.backend_contexts.insert(source, state);
-                Task::none()
-            }
-
-            other @ (ContextsMessage::Page(_) | ContextsMessage::PromptAction(_)) => {
-                log::error!("contexts: the backend handler can't serve {other:?}");
-                Task::none()
-            }
-        }
-    }
-
-    /// Ask the daemon what one backend uses, for the Configure sheet's picker.
-    ///
-    /// Read on demand rather than published with the catalog: it is one line of
-    /// the sheet, and `GET /backend/list` is fetched on every navigation to two
-    /// pages that never show it.
-    pub(in crate::core::app) fn fetch_backend_context(
-        source: String,
-    ) -> Task<cosmic::Action<Message>> {
-        let for_message = source.clone();
-        Task::perform(
-            backend_client::get_backend_context(source),
-            move |res| match res {
-                Ok(state) => app(ContextsMessage::BackendContextLoaded {
-                    source: for_message.clone(),
-                    state,
-                }),
-                // A backend whose context cannot be read renders as "follows
-                // the active one", which is the default and the truth for
-                // almost every backend. Not worth a banner in a sheet that is
-                // about secrets and options.
-                Err(e) => {
-                    log::warn!("Couldn't read this backend's context: {e}");
-                    cosmic::Action::None
-                }
-            },
-        )
     }
 }
 

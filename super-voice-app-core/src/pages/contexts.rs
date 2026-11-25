@@ -7,8 +7,8 @@
 //! user is typing is theirs, and a list read again under an open editor never
 //! rewrites the sentence they are halfway through.
 //!
-//! Which context one backend uses is set from the Models page's Configure
-//! sheet, and lives with that page.
+//! Which context one backend uses is set from its Configure sheet, and lives
+//! with that sheet ([`super::configure`]).
 
 use super_voice_shared::models::contexts::DictationContext;
 

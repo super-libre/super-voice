@@ -52,14 +52,14 @@ pub(super) fn stage_status(app: &AppModel, stage: Stage) -> ModelStatus {
         None => classify_model_status(
             app.models_page.active_backend.as_deref(),
             &app.backends,
-            &app.backend_secret_configured,
+            &app.configure.secrets_configured,
             &app.current_model,
             &app.current_source,
         ),
         Some(block) => classify_block_status(
             app.block(block),
             &app.backends,
-            &app.backend_secret_configured,
+            &app.configure.secrets_configured,
         ),
     };
     let no_voice = stage == Stage::Synthesis

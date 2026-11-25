@@ -15,8 +15,6 @@ pub struct ModelsPageState {
     /// Source of the currently-selected (active) backend, shown in the card
     /// above the tabs. `None` when the daemon is idle.
     pub active_backend: Option<String>,
-    /// The backend whose configuration sub-view is open, if any (`source`).
-    pub configure_backend: Option<String>,
     /// `source` of the installed-backend card whose overflow ("⋯") menu is
     /// open, if any. Only one is open at a time.
     pub installed_menu_open: Option<String>,
@@ -65,7 +63,6 @@ impl Default for ModelsPageState {
         Self {
             models_tabs,
             active_backend: None,
-            configure_backend: None,
             installed_menu_open: None,
             browse_menu_open: false,
             pipeline_step: crate::state::Stage::Transcription,

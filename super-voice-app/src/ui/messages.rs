@@ -49,15 +49,6 @@ pub enum Message {
     Language(LanguageMessage),
     Recording(RecordingMessage),
     Update(UpdateMessage),
-
-    /// A scoped settings/backend save failed. Stored in `AppModel::action_error`
-    /// and rendered as an inline banner on the page named by `scope`, instead of
-    /// hijacking the UI (Tier 1 #13) or being dropped to the log (Tier 1 #15).
-    /// Handled inline in `dispatch` (no dedicated handler).
-    SettingActionFailed {
-        scope: crate::state::ErrorScope,
-        message: String,
-    },
 }
 
 /// Template / shell-chrome messages.
@@ -457,9 +448,7 @@ pub enum SettingsMessage {
     Page(super_voice_app_core::pages::settings::Input),
 }
 
-/// Backend catalog + per-backend secret/option configuration.
-/// Secrets are managed via the daemon's secrets endpoints; options go to the
-/// daemon config via the client.
+/// The installed-backend list, and a backend's Configure sheet.
 #[derive(Debug, Clone)]
 pub enum BackendMessage {
     BackendsLoaded(Vec<BackendInfo>),
@@ -467,58 +456,9 @@ pub enum BackendMessage {
     /// UI reflects the new effective values.
     BackendsReload,
     BackendsError(String),
-    /// Daemon-sourced configured flags for a backend's secrets, received after
-    /// `BackendsLoaded`. Folds `(name, configured)` into `backend_secret_configured`.
-    BackendSecretsConfigured {
-        source: String,
-        items: Vec<(String, bool)>,
-    },
-    BackendSecretInputChanged {
-        source: String,
-        name: String,
-        value: String,
-    },
-    BackendSecretSaved {
-        source: String,
-        name: String,
-    },
-    /// Daemon confirmed that a backend secret was written successfully.
-    /// Triggers input-buffer clearance and a catalog reload.
-    BackendSecretStored {
-        source: String,
-        name: String,
-    },
-    BackendSecretRemoved {
-        source: String,
-        name: String,
-    },
-    BackendOptionInputChanged {
-        source: String,
-        name: String,
-        value: String,
-    },
-    BackendOptionSaved {
-        source: String,
-        name: String,
-    },
-    /// A `type = "bool"` option's switch was flipped. A switch has no Save
-    /// button to press, so this both records the new value and writes it.
-    BackendOptionToggled {
-        source: String,
-        name: String,
-        value: bool,
-    },
-    /// A value was picked from an option's dropdown. Like the switch, a
-    /// dropdown has nothing to press afterwards, so choosing writes.
-    BackendOptionChosen {
-        source: String,
-        name: String,
-        value: String,
-    },
-    BackendOptionReset {
-        source: String,
-        name: String,
-    },
+    /// Something the Configure sheet's logic handles: its secrets, options
+    /// and context. See `super_voice_app_core::pages::configure`.
+    Configure(super_voice_app_core::pages::configure::Input),
 }
 
 /// Transcription language (global Primary Language + per-model override).
@@ -576,8 +516,8 @@ pub enum UpdateMessage {
     RestartApp,
 }
 
-/// The Contexts tab, and which context each backend uses (set from the
-/// Models page's Configure sheet).
+/// The Contexts tab. Which context each backend uses is set from its
+/// Configure sheet ([`BackendMessage::Configure`]).
 #[derive(Debug, Clone)]
 pub enum ContextsMessage {
     /// Something the page's logic handles: a press, or the answer to work it
@@ -586,18 +526,6 @@ pub enum ContextsMessage {
     /// A keystroke in the editor's prompt. Carries the widget's own action,
     /// since the editor owns the cursor; the app applies it to its buffer.
     PromptAction(cosmic::widget::text_editor::Action),
-
-    /// Point one backend at a context of its own, or at none. `None` means "no
-    /// context at all"; going back to following the active one is
-    /// [`Self::BackendFollowsActive`].
-    BackendPinned { source: String, id: Option<String> },
-    /// Put one backend back on the active context.
-    BackendFollowsActive(String),
-    /// What a backend uses now, as the daemon reports it.
-    BackendContextLoaded {
-        source: String,
-        state: crate::daemon::client::BackendContext,
-    },
 }
 
 /// The Notes tab: the notes the app keeps in its own folder, and the takes

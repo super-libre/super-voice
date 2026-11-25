@@ -12,6 +12,7 @@ pub mod add_backend;
 pub mod assistants;
 pub mod behavior;
 pub mod clips;
+pub mod configure;
 pub mod contexts;
 pub mod library;
 pub mod model_language;

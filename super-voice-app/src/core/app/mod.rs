@@ -177,13 +177,9 @@ pub struct AppModel {
     /// Backends discovered by the daemon, with the models/secrets/options
     /// each declares. Drives the per-backend sections on the Models page.
     pub backends: Vec<BackendInfo>,
-    /// In-progress text for each secret input, keyed by `(source, name)`.
-    pub backend_secret_inputs: HashMap<(String, String), String>,
-    /// Whether each declared secret is currently configured, as reported by
-    /// the daemon, keyed by `(source, name)`. Refreshed on catalog load.
-    pub backend_secret_configured: HashMap<(String, String), bool>,
-    /// In-progress text for each option input, keyed by `(source, name)`.
-    pub backend_option_inputs: HashMap<(String, String), String>,
+    /// The Configure sheet: the backend it is open over, what is typed in
+    /// its fields, which secrets are stored, and each backend's context.
+    pub configure: super_voice_app_core::pages::configure::ConfigureState,
 
     // Registry state (catalog + install progress for the Download tab).
     pub registry: crate::state::registry::RegistryState,

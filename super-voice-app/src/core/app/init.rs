@@ -5,7 +5,6 @@ use crate::ui::icons;
 use crate::ui::messages::{Message, ModelMessage};
 use cosmic::prelude::*;
 use cosmic::widget::nav_bar;
-use std::collections::HashMap;
 
 use super::{AppModel, DeviceState};
 
@@ -169,9 +168,7 @@ impl AppModel {
 
             // Backend catalog + per-backend configuration state
             backends: Vec::new(),
-            backend_secret_inputs: HashMap::new(),
-            backend_secret_configured: HashMap::new(),
-            backend_option_inputs: HashMap::new(),
+            configure: super_voice_app_core::pages::configure::ConfigureState::default(),
 
             // Registry state
             registry: crate::state::registry::RegistryState::default(),
