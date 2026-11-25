@@ -11,6 +11,7 @@ use gpui_kit::{AssetSource, Result, SharedString};
 icon_assets!(
     ExtraIcons,
     [
+        AudioLines,
         BookOpenText,
         Brain,
         Bug,
@@ -23,6 +24,7 @@ icon_assets!(
         ServerOff,
         ShieldX,
         SlidersHorizontal,
+        Upload,
         UserRoundPen,
         Volume2,
     ]

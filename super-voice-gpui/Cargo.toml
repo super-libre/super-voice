@@ -36,6 +36,8 @@
     # Default features: components, the default Lucide icons, and X11 beside
     # Wayland on Linux, which the app before this one had too.
     gpui-kit = "=0.11.0"
+    # When a clip was made, and today, for its row.
+    chrono.workspace = true
     # Reading the daemon's event stream (src/daemon_events.rs).
     futures-util.workspace = true
     # The desktop's languages, for the words (the catalogs are the core's).

@@ -12,6 +12,7 @@ use super_voice_shared::tts::models::voices::{VoiceInfo, VoiceModelSupport};
 use crate::audio::recorder::Recorder;
 use crate::daemon::client::v1::speak::speak_in_voice;
 use crate::daemon::client::v1::voices::{create_voice, delete_voice, list_voices, rename_voice};
+use crate::events::Event;
 use crate::state::scripts;
 use crate::state::voices::{PendingSample, SampleOrigin, ScriptChoice, VoicesState};
 
@@ -47,7 +48,11 @@ pub enum Input {
     /// The rename was saved, or why not.
     Renamed(Result<VoiceInfo, String>),
 
-    /// Delete a voice.
+    /// Delete was pressed for a voice: ask first.
+    DeleteRequested(String),
+    /// The delete was called off.
+    DeleteCancelled,
+    /// Delete a voice: the ask was answered yes.
     Delete(String),
     /// The voice was deleted, or why not.
     Deleted {
@@ -63,6 +68,15 @@ pub enum Input {
     },
     /// The preview was spoken, or why not.
     Previewed(Result<(), String>),
+    /// The daemon is getting a model ready to speak in this voice (its
+    /// `preparing_voice` event), whoever asked.
+    Preparing(String),
+    /// It is done with this voice, ready or not (its `voice_prepared`
+    /// event).
+    Prepared(String),
+    /// The daemon started speaking: whatever was being got ready is done,
+    /// since a voice is ready before its utterance is taken.
+    SpeechStarted,
 
     /// A script was picked to read, or none (the user's own words).
     ScriptSelected(Option<&'static str>),
@@ -176,10 +190,15 @@ pub fn update(state: &mut VoicesState, input: Input) -> Outcome {
         | Input::CommitRename
         | Input::Renamed(_)) => renaming(state, rename, &mut out),
 
-        library @ (Input::Delete(_)
+        library @ (Input::DeleteRequested(_)
+        | Input::DeleteCancelled
+        | Input::Delete(_)
         | Input::Deleted { .. }
         | Input::Preview { .. }
-        | Input::Previewed(_)) => library_work(state, library, &mut out),
+        | Input::Previewed(_)
+        | Input::Preparing(_)
+        | Input::Prepared(_)
+        | Input::SpeechStarted) => library_work(state, library, &mut out),
 
         capture @ (Input::ScriptSelected(_)
         | Input::StartRecording
@@ -230,8 +249,11 @@ fn renaming(state: &mut VoicesState, input: Input, out: &mut Outcome) {
 /// Deleting a voice, and hearing one.
 fn library_work(state: &mut VoicesState, input: Input, out: &mut Outcome) {
     match input {
+        Input::DeleteRequested(id) => state.confirming_delete = Some(id),
+        Input::DeleteCancelled => state.confirming_delete = None,
         // The row greys while the request is in flight.
         Input::Delete(id) => {
+            state.confirming_delete = None;
             out.clear_notice = true;
             state.deleting.push(id.clone());
             out.effects.push(Effect::Delete(id));
@@ -266,7 +288,60 @@ fn library_work(state: &mut VoicesState, input: Input, out: &mut Outcome) {
                 out.notice = Some(Notice::CouldNotPreview(e));
             }
         }
+        // The wait is the same whoever started it, so the page shows it for
+        // a preparation another client asked for too.
+        Input::Preparing(voice) => state.preparing = Some(voice),
+        // A failure is not said here: nothing the user did has failed yet,
+        // and the next attempt to speak in the voice reports it.
+        Input::Prepared(voice) => {
+            if state.preparing.as_deref() == Some(voice.as_str()) {
+                state.preparing = None;
+            }
+        }
+        // The event is the speaker's, so another app's utterance clears the
+        // wait too; that only ends a label early.
+        Input::SpeechStarted => {
+            state.previewing = None;
+            state.preparing = None;
+        }
         _ => {}
+    }
+}
+
+/// What a daemon event means for the page: nothing, or the inputs to take in.
+#[must_use]
+pub fn heard(event: &Event) -> Vec<Input> {
+    use super_voice_shared::tts::models::protocol::DaemonStatusEvent as SynthesisEvent;
+    match event {
+        Event::Speaking {
+            is_speaking: true, ..
+        } => vec![Input::SpeechStarted],
+        // A voice was added, renamed or deleted, by this app or another.
+        _ if crate::events::setting_changed(event) == Some("voices") => vec![Input::Refresh],
+        Event::Status(status)
+            if status.event_type == "daemon_status_changed"
+                && status
+                    .data
+                    .get("feature")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("tts") =>
+        {
+            match serde_json::from_value::<SynthesisEvent>(status.data.clone()) {
+                Ok(SynthesisEvent::PreparingVoice { voice, .. }) => vec![Input::Preparing(voice)],
+                Ok(SynthesisEvent::VoicePrepared {
+                    voice,
+                    error,
+                    model,
+                }) => {
+                    if let Some(e) = error {
+                        log::warn!("the daemon could not prepare voice {voice} for {model}: {e}");
+                    }
+                    vec![Input::Prepared(voice)]
+                }
+                _ => Vec::new(),
+            }
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -631,5 +706,75 @@ mod tests {
         );
         assert!(state.deleting.is_empty());
         assert!(matches!(out.effects.as_slice(), [Effect::LibraryChanged]));
+    }
+
+    fn status(data: serde_json::Value) -> Event {
+        Event::Status(super_voice_shared::models::protocol::NotificationEvent {
+            event_type_field: "daemon_status_changed".into(),
+            event_type: "daemon_status_changed".into(),
+            client_id: "daemon".into(),
+            timestamp: String::new(),
+            data,
+        })
+    }
+
+    #[test]
+    fn a_delete_asks_first() {
+        let mut state = VoicesState::default();
+        let out = update(&mut state, Input::DeleteRequested("v".into()));
+        assert!(out.effects.is_empty());
+        assert_eq!(state.confirming_delete.as_deref(), Some("v"));
+        update(&mut state, Input::DeleteCancelled);
+        assert!(state.confirming_delete.is_none());
+
+        update(&mut state, Input::DeleteRequested("v".into()));
+        let out = update(&mut state, Input::Delete("v".into()));
+        assert!(matches!(out.effects.as_slice(), [Effect::Delete(id)] if id == "v"));
+        assert!(state.confirming_delete.is_none());
+    }
+
+    #[test]
+    fn a_preparation_shows_until_the_daemon_is_done_or_speaks() {
+        let preparing = status(serde_json::json!({
+            "feature": "tts", "status": "preparing_voice",
+            "voice": "voice:a", "model": "qwen3-tts-0.6b-base",
+        }));
+        let mut state = VoicesState::default();
+        for input in heard(&preparing) {
+            update(&mut state, input);
+        }
+        assert!(state.is_busy("voice:a"));
+
+        let prepared = status(serde_json::json!({
+            "feature": "tts", "status": "voice_prepared",
+            "voice": "voice:a", "model": "qwen3-tts-0.6b-base",
+        }));
+        for input in heard(&prepared) {
+            update(&mut state, input);
+        }
+        assert!(!state.any_busy());
+
+        state.preparing = Some("voice:b".into());
+        state.previewing = Some("voice:b".into());
+        let speaking = Event::Speaking {
+            is_speaking: true,
+            utterance_id: None,
+        };
+        for input in heard(&speaking) {
+            update(&mut state, input);
+        }
+        assert!(!state.any_busy());
+    }
+
+    #[test]
+    fn a_library_changed_elsewhere_is_read_again() {
+        let changed = status(serde_json::json!({
+            "feature": "tts", "status": "settings_changed", "setting": "voices",
+        }));
+        assert!(matches!(heard(&changed).as_slice(), [Input::Refresh]));
+        let other = status(serde_json::json!({
+            "feature": "tts", "status": "settings_changed", "setting": "volume",
+        }));
+        assert!(heard(&other).is_empty());
     }
 }

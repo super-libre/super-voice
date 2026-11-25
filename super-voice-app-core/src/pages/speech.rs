@@ -112,6 +112,28 @@ pub fn can_speak(state: &SpeechState) -> bool {
     state.status == SpeakingStatus::Idle && !state.test_text.trim().is_empty()
 }
 
+/// What the daemon is doing, as the test says it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Saying {
+    /// Nothing.
+    Nothing,
+    /// It took an utterance, and no sound has reached the speakers yet.
+    Starting,
+    /// Sound is reaching the speakers.
+    Speaking,
+}
+
+/// What the daemon is doing: an utterance it took is speaking before its
+/// first sound plays.
+#[must_use]
+pub fn saying(state: &SpeechState) -> Saying {
+    match (&state.status, state.is_playing) {
+        (SpeakingStatus::Idle, _) => Saying::Nothing,
+        (SpeakingStatus::Speaking, false) => Saying::Starting,
+        (SpeakingStatus::Speaking, true) => Saying::Speaking,
+    }
+}
+
 /// Speak `text`.
 pub async fn run_speak(text: String) -> Input {
     Input::Spoke(speak_command(text).await.map_err(|e| e.to_string()))
@@ -177,6 +199,28 @@ mod tests {
         );
         assert!(!state.is_playing);
         assert!(state.level.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn an_utterance_starts_before_its_sound() {
+        let mut state = SpeechState::default();
+        assert_eq!(saying(&state), Saying::Nothing);
+        update(
+            &mut state,
+            Input::Speaking {
+                is_speaking: true,
+                utterance_id: None,
+            },
+        );
+        assert_eq!(saying(&state), Saying::Starting);
+        update(
+            &mut state,
+            Input::Level {
+                level: 0.4,
+                is_speech: true,
+            },
+        );
+        assert_eq!(saying(&state), Saying::Speaking);
     }
 
     #[test]
