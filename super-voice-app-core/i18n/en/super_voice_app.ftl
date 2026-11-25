@@ -807,6 +807,13 @@ contexts-could-not-load = Couldn't load contexts: { $error }
 context-could-not-save = Couldn't save that context: { $error }
 backend-context-change-failed = Couldn't change this backend's context: { $error }
 
+# Speech to text's Behavior tab
+stop-mode-could-not-save = Couldn't save the stop mode: { $error }
+preview-typing-could-not-save = Couldn't save preview typing: { $error }
+write-method-could-not-save = Couldn't save the write method: { $error }
+typing-test-failed = The typing test failed: { $error }
+no-speech-detected = No speech was heard.
+
 # The macOS app, while its pages arrive
 page-not-in-this-app-yet = This page is in the Linux app, and not here yet.
 recording-not-in-this-app-yet = Recording isn't in this app yet. Use the Linux app, or the shortcut.

@@ -807,6 +807,13 @@ contexts-could-not-load = Impossible de charger les contextes : { $error }
 context-could-not-save = Impossible d'enregistrer ce contexte : { $error }
 backend-context-change-failed = Impossible de changer le contexte de ce moteur : { $error }
 
+# Speech to text's Behavior tab
+stop-mode-could-not-save = Impossible d'enregistrer le mode d’arrêt : { $error }
+preview-typing-could-not-save = Impossible d'enregistrer l'aperçu de la saisie : { $error }
+write-method-could-not-save = Impossible d'enregistrer la méthode de saisie : { $error }
+typing-test-failed = Le test de saisie a échoué : { $error }
+no-speech-detected = Aucune parole n'a été entendue.
+
 # The macOS app, while its pages arrive
 page-not-in-this-app-yet = Cette page est dans l'application Linux, pas encore ici.
 recording-not-in-this-app-yet = L'enregistrement n'est pas encore dans cette application. Utilisez l'application Linux, ou le raccourci.
