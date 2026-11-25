@@ -299,7 +299,7 @@ struct CardHeader: View {
                 }
                 .help(t("open-repository"))
             }
-            ConfigureSlot(source: backend.source)
+            ConfigureButton(source: backend.source)
             Button {
                 models.send(.pickBackend(stage: stage, source: nil))
             } label: {
@@ -330,15 +330,6 @@ struct UpdateChip: View {
                 .controlSize(.small)
             }
         }
-    }
-}
-
-/// Where the Configure button goes on a card.
-struct ConfigureSlot: View {
-    let source: String
-
-    var body: some View {
-        EmptyView()
     }
 }
 
