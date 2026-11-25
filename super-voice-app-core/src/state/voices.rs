@@ -93,6 +93,9 @@ pub struct VoicesState {
     pub renaming: Option<(String, String)>,
     /// Voice ids with a delete in flight, so the row can grey out.
     pub deleting: Vec<String>,
+    /// The voice whose Delete was pressed, waiting for the answer to "Delete
+    /// it?".
+    pub confirming_delete: Option<String>,
     /// The `voice_id` the daemon says it is preparing, from `/events`.
     ///
     /// Distinct from [`Self::previewing`], which is this window's own request:
