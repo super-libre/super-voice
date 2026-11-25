@@ -10,7 +10,7 @@
 pub mod editor;
 pub mod models;
 pub mod models_page;
-pub mod update;
+pub use super_voice_app_core::state::update;
 
 pub use super_voice_app_core::state::{
     assistants, behavior, device_offers, language, model_operations, registry, scripts, shortcuts,

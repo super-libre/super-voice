@@ -23,6 +23,7 @@ pub mod stage;
 pub mod stage_catalog;
 pub mod staged_picks;
 pub mod text_buffer;
+pub mod update;
 pub mod voice;
 pub mod voices;
 

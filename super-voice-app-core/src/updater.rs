@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use futures_util::SinkExt;
+use futures_util::StreamExt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 use super_voice_shared::models::self_update::InstallerAsset;
@@ -65,21 +65,30 @@ const STDERR_TAIL_LINES: usize = 30;
 const STALE_RUN_AGE: Duration = Duration::from_hours(24);
 
 /// Download `asset`, spawn it against `target_tag`, and stream its progress.
-/// Consumed via `cosmic::task::stream(...).abortable()` — dropping the
+/// Each app runs it as an abortable stream: dropping the
 /// returned stream (on cancel) drops the spawned `Child`, which
 /// `kill_on_drop(true)` turns into an actual kill.
 pub fn run_update_stream(
     asset: InstallerAsset,
     target_tag: String,
-) -> impl futures_util::Stream<Item = UpdateRunEvent> {
-    cosmic::iced::stream::channel(32, move |mut tx| async move {
+) -> impl futures_util::Stream<Item = UpdateRunEvent> + Send + 'static {
+    let (tx, events) = tokio::sync::mpsc::channel(32);
+    // The run is driven inside the returned stream, not on a task of its own:
+    // dropping the stream drops the installer with it (`kill_on_drop`).
+    let run = futures_util::stream::once(async move {
+        let mut tx = tx;
         if let Err(message) = drive(&asset, &target_tag, &mut tx).await {
             let _ = tx.send(UpdateRunEvent::Failed(message)).await;
         }
     })
+    .filter_map(|()| async { None });
+    let events = futures_util::stream::unfold(events, |mut events| async move {
+        events.recv().await.map(|event| (event, events))
+    });
+    futures_util::stream::select(events, run)
 }
 
-type Tx = cosmic::iced::futures::channel::mpsc::Sender<UpdateRunEvent>;
+type Tx = tokio::sync::mpsc::Sender<UpdateRunEvent>;
 
 /// Download the installer, spawn it, and stream its stdout until it exits.
 /// `Err` covers only app-side failures (download/spawn); the installer's own
@@ -412,7 +421,6 @@ mod tests {
         installer_args, installer_run_paths, stream_installer_events, sweep_stale_run_dirs,
         verify_installer_checksum,
     };
-    use futures_util::StreamExt;
     use std::path::Path;
     use std::time::{Duration, SystemTime};
 
@@ -613,13 +621,13 @@ mod tests {
             "\n",
         );
         let reader = std::io::Cursor::new(data.as_bytes().to_vec());
-        let (mut tx, mut rx) = cosmic::iced::futures::channel::mpsc::channel::<UpdateRunEvent>(8);
+        let (mut tx, mut rx) = tokio::sync::mpsc::channel::<UpdateRunEvent>(8);
 
         stream_installer_events(reader, &mut tx).await;
         drop(tx);
 
         let mut received = Vec::new();
-        while let Some(ev) = rx.next().await {
+        while let Some(ev) = rx.recv().await {
             received.push(ev);
         }
 
@@ -639,10 +647,10 @@ mod tests {
     #[tokio::test]
     async fn stream_installer_events_emits_nothing_for_an_empty_stream() {
         let reader = std::io::Cursor::new(Vec::new());
-        let (mut tx, mut rx) = cosmic::iced::futures::channel::mpsc::channel::<UpdateRunEvent>(8);
+        let (mut tx, mut rx) = tokio::sync::mpsc::channel::<UpdateRunEvent>(8);
         stream_installer_events(reader, &mut tx).await;
         drop(tx);
-        assert!(rx.next().await.is_none());
+        assert!(rx.recv().await.is_none());
     }
 
     // ---- F3: --beta argument -----------------------------------------------
@@ -673,14 +681,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("blob");
 
-        let (mut tx, mut rx) = cosmic::iced::futures::channel::mpsc::channel::<UpdateRunEvent>(8);
+        let (mut tx, mut rx) = tokio::sync::mpsc::channel::<UpdateRunEvent>(8);
         download_installer(&format!("{}/blob", s.url()), &dest, &mut tx)
             .await
             .unwrap();
         drop(tx);
 
         let mut events = Vec::new();
-        while let Some(ev) = rx.next().await {
+        while let Some(ev) = rx.recv().await {
             events.push(ev);
         }
         assert!(

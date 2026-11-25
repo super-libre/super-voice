@@ -18,3 +18,4 @@ pub mod notes;
 pub mod pages;
 pub mod rules;
 pub mod state;
+pub mod updater;

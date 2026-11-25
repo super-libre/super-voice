@@ -211,7 +211,9 @@ impl AppModel {
             // that page.
             DaemonStatusEvent::UpdateAvailable { latest_version } => {
                 log::info!("Daemon reports update available: {latest_version}");
-                Some(self.handle_update_messages(UpdateMessage::AvailableEventReceived))
+                Some(self.handle_update_messages(UpdateMessage::Page(
+                    super_voice_app_core::pages::updates::Input::Available,
+                )))
             }
         }
     }
@@ -431,7 +433,9 @@ impl AppModel {
                     // already chains `CheckNow`), while a genuine
                     // cross-app change still gets a correct fresh
                     // recompute.
-                    Some(self.handle_update_messages(UpdateMessage::CheckNow))
+                    Some(self.handle_update_messages(UpdateMessage::Page(
+                        super_voice_app_core::pages::updates::Input::CheckNow,
+                    )))
                 }
                 None => None,
             },
@@ -507,7 +511,9 @@ impl AppModel {
             SynthesisEvent::SettingsChanged { setting } => self.handle_setting_changed(&setting),
             SynthesisEvent::UpdateAvailable { latest_version } => {
                 log::info!("Daemon reports update available: {latest_version}");
-                Some(self.handle_update_messages(UpdateMessage::AvailableEventReceived))
+                Some(self.handle_update_messages(UpdateMessage::Page(
+                    super_voice_app_core::pages::updates::Input::Available,
+                )))
             }
             // A backend selected or deselected elsewhere, with no load to
             // follow it and no `ready` to say so.

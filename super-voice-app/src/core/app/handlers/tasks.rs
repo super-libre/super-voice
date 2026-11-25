@@ -5,12 +5,11 @@
 
 use crate::daemon::client::{
     get_current_audio_theme, get_preview_typing, get_read_method, get_recording_stop_mode,
-    get_update_check_enabled, get_update_status, get_volume, get_write_method, list_backends,
-    ping_daemon,
+    get_volume, get_write_method, list_backends, ping_daemon,
 };
 use crate::state::AudioTheme;
 use crate::ui::messages::{
-    BackendMessage, DaemonMessage, Message, ModelsPageMessage, ReadMethodMessage, UpdateMessage,
+    BackendMessage, DaemonMessage, Message, ModelsPageMessage, ReadMethodMessage,
 };
 use cosmic::prelude::*;
 use log::warn;
@@ -215,10 +214,10 @@ pub(in crate::core::app) fn load_write_method() -> Task<cosmic::Action<Message>>
 /// `beta_optin_effective` rides this status, not a separate field), so its
 /// data isn't stale from whenever the app last connected or last re-fetched.
 pub(in crate::core::app) fn refresh_update_status() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_update_status(), |result| match result {
-        Ok(status) => cosmic::Action::App(Message::Update(UpdateMessage::StatusLoaded(status))),
-        Err(e) => cosmic::Action::App(Message::Update(UpdateMessage::StatusError(e.to_string()))),
-    })
+    Task::perform(
+        super_voice_app_core::pages::updates::run_status(),
+        super::update::page_action,
+    )
 }
 
 /// Load the automatic-check-enabled setting, defaulting to `true` (its
@@ -227,13 +226,8 @@ pub(in crate::core::app) fn refresh_update_status() -> Task<cosmic::Action<Messa
 /// `SettingsChanged { setting: "update_check_enabled" }` SSE handler so a
 /// change from another client is reflected here too.
 pub(in crate::core::app) fn load_update_check_enabled() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_update_check_enabled(), |result| match result {
-        Ok(enabled) => {
-            cosmic::Action::App(Message::Update(UpdateMessage::AutoCheckLoaded(enabled)))
-        }
-        Err(e) => {
-            warn!("Failed to load update-check-enabled setting: {e}");
-            cosmic::Action::App(Message::Update(UpdateMessage::AutoCheckLoaded(true)))
-        }
-    })
+    Task::perform(
+        super_voice_app_core::pages::updates::run_load_auto_check(),
+        super::update::page_action,
+    )
 }

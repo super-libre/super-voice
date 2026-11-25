@@ -7,7 +7,6 @@ pub(crate) mod scene;
 mod small_state;
 mod subscription;
 mod update;
-pub(crate) mod updater;
 mod view;
 use subscription::{UdpSubscriptionId, audio_events_subscription};
 

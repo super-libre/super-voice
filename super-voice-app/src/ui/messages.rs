@@ -698,58 +698,20 @@ pub enum RecordingMessage {
     Microphone(super_voice_app_core::events::Event),
 }
 
-/// How a beta-opt-in toggle ended. Three cases because each leaves the UI
-/// somewhere different: only a failed *write* may snap the toggle back — a
-/// failed re-check means the setting did change and only the candidate
-/// version is unknown, so reverting the switch would misreport the daemon.
-#[derive(Debug, Clone)]
-pub enum BetaOptinOutcome {
-    /// Saved, and the re-check returned a fresh status (`None` = the daemon
-    /// predates `/v1/update`).
-    Applied(Option<super_voice_shared::models::self_update::SelfUpdateStatus>),
-    /// The setting write itself failed; nothing changed daemon-side.
-    WriteFailed(String),
-    /// Saved, but the follow-up re-check failed. The toggle stands; only the
-    /// banner reports it.
-    CheckFailed(String),
-}
-
 /// Self-update: status load/check, the two settings toggles, the apply-flow
 /// run (installer download + spawn + JSON progress stream), and the
 /// `UpdateAvailable` SSE-driven refetch.
 #[derive(Debug, Clone)]
 pub enum UpdateMessage {
-    StatusLoaded(Option<super_voice_shared::models::self_update::SelfUpdateStatus>),
-    StatusError(String),
-    CheckNow,
-    AutoCheckLoaded(bool),
-    AutoCheckToggled(bool),
-    BetaOptinToggled(bool),
-    /// The beta-opt-in write and its follow-up re-check settled. Ends the
-    /// lock the toggle took when it was pressed; `enabled` is the value that
-    /// was requested, so a failed write knows what to snap back from.
-    BetaOptinApplied {
-        enabled: bool,
-        outcome: BetaOptinOutcome,
-    },
+    /// Something the page's logic handles. See
+    /// `super_voice_app_core::pages::updates`.
+    Page(super_voice_app_core::pages::updates::Input),
     /// Open the Updates page (from the header bar's "Update available"
     /// badge). Routed through the nav model so the page's status refetch
     /// happens exactly as it does when the sidebar entry is clicked.
     OpenUpdatesPage,
-    /// A settings-toggle write (`AutoCheckToggled`/`BetaOptinToggled`)
-    /// failed. Distinct from `StatusError` (a fetch/check failure) so the
-    /// banner names the right verb ("update a setting" vs. "fetch status").
-    SettingError(String),
-    StartUpdate,
-    CancelUpdate,
-    RunEvent(crate::core::app::updater::UpdateRunEvent),
+    /// Start the app again after an update.
     RestartApp,
-    AvailableEventReceived,
-    /// User dismissed a finished (`Done`/`Failed`) run's panel without
-    /// restarting — clears it so the page returns to the idle CTA (or a
-    /// future `StartUpdate` is no longer blocked). No-op on an in-flight run;
-    /// that goes through `CancelUpdate` instead.
-    DismissRun,
 }
 
 /// The Contexts tab, and which context each backend uses (set from the
