@@ -44,6 +44,8 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libxkbcommon-x11-dev \
+            libx11-xcb-dev \
+            libfontconfig-dev \
             libegl1-mesa-dev \
             libxrandr-dev \
             libxinerama-dev \
@@ -105,8 +107,9 @@ jobs:
         with:
           tool: just
 
-      # `just check` lints the workspace, which includes the COSMIC/iced GUI
-      # crates — those need the Wayland/xkbcommon/GTK system libraries to build.
+      # `just check` lints the workspace, which includes the GUI crates (the
+      # app on GPUI, the consent helper on COSMIC/iced): those need the
+      # Wayland/xkbcommon/X11/fontconfig system libraries to build.
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -114,6 +117,8 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libxkbcommon-x11-dev \
+            libx11-xcb-dev \
+            libfontconfig-dev \
             libegl1-mesa-dev \
             libxrandr-dev \
             libxinerama-dev \
@@ -222,11 +227,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Scoped to the members that build here rather than the whole
-      # workspace: the consent helper and the settings app are Linux-only.
-      # They are on libcosmic, whose `applet` feature reaches
-      # cosmic-panel-config, a crate with no macOS build. On macOS the app is
-      # the SwiftUI one in super-voice-macos/. `just check-macos` owns that
-      # list, so it stays in one place.
+      # workspace: the consent helper is Linux-only, a libcosmic Wayland
+      # overlay with no macOS counterpart. The app (super-voice-gpui) is one
+      # of the members, so this lints the app macOS ships. `just check-macos`
+      # owns that list, so it stays in one place.
       - name: Run clippy
         run: just check-macos
 
@@ -237,11 +241,6 @@ jobs:
       # makes this more load-bearing here than on Linux.
       - name: Check backend-feature combinations
         run: just check-features
-
-      # The app macOS ships: the SwiftUI app over super-voice-app-core, which
-      # the Linux jobs never see. The Linux settings app is the Linux jobs'.
-      - name: Build the macOS app
-        run: just macos-swift-app release
 
   fmt:
     name: Rustfmt
@@ -310,6 +309,8 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libxkbcommon-x11-dev \
+            libx11-xcb-dev \
+            libfontconfig-dev \
             libegl1-mesa-dev \
             libxrandr-dev \
             libxinerama-dev \
@@ -413,9 +414,9 @@ jobs:
         with:
           tool: just,cargo-llvm-cov
 
-      # `cargo llvm-cov` builds the whole workspace, including the COSMIC/iced
-      # GUI crates, so it needs the same Wayland/xkbcommon/GTK/dbus/alsa libs
-      # the Linux test and clippy jobs install.
+      # `cargo llvm-cov` builds the whole workspace, including the GUI crates,
+      # so it needs the same system libraries the Linux test and clippy jobs
+      # install.
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -423,6 +424,8 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libxkbcommon-x11-dev \
+            libx11-xcb-dev \
+            libfontconfig-dev \
             libegl1-mesa-dev \
             libxrandr-dev \
             libxinerama-dev \

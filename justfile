@@ -50,8 +50,9 @@ wrapper_dst := bin_dir / wrapper_name
 
 # App files
 app_desktop_file_name := 'super-voice-app.desktop'
-app_desktop_file_src := 'super-voice-app' / 'resources' / app_desktop_file_name
-app_icon_src := 'super-voice-app' / 'resources' / 'icons' / 'hicolor' / 'scalable' / 'apps' / 'super-voice-app.svg'
+app_resources := 'super-voice-gpui' / 'resources'
+app_desktop_file_src := app_resources / app_desktop_file_name
+app_icon_src := app_resources / 'icons' / 'hicolor' / 'scalable' / 'apps' / 'super-voice-app.svg'
 app_desktop_file_dst := desktop_dir / app_desktop_file_name
 app_icon_dst := icons_dir / 'super-voice-app.svg'
 
@@ -61,15 +62,14 @@ service_dst := systemd_unit_dir / service_file
 
 # Workspace members that build on macOS.
 #
-# Everything except the COSMIC consent helper, the settings app and the
-# CI-only indexer. The consent helper and the settings app are Linux-only. On
-# macOS the app is the SwiftUI one in super-voice-macos/, built on
-# super-voice-app-core through super-voice-ffi. See `bundle-macos`.
+# Everything except the COSMIC consent helper and the CI-only indexer. The
+# consent helper is Linux-only. The app (super-voice-gpui) is on GPUI, which
+# draws with Metal here. See `bundle-macos`.
 #
 # Named as a list rather than reached with `--workspace --exclude` so the
 # macOS gates say what they cover, and so a new portable crate has to be added
 # deliberately rather than silently skipped.
-macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app-core -p super-voice-ffi'
+macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app-core -p super-voice-gpui'
 
 # macOS ships as one app bundle, `Super Voice.app`: the settings app is its
 # executable, and the daemon and the CLI sit beside it in Contents/MacOS. The
@@ -81,7 +81,8 @@ macos_bundle_dst := '/Applications' / macos_bundle_name
 # The CLI inside the installed bundle. `voice service` has to run as this copy:
 # ServiceManagement finds the agents through the caller's bundle.
 macos_bundle_cli := macos_bundle_dst / 'Contents' / 'MacOS' / cli_name
-macos_resources := 'super-voice-macos'
+# The bundle's Info.plist, and what renders its icon.
+macos_resources := 'super-voice-gpui' / 'macos'
 
 # macOS launchd agent (the counterpart to the systemd user unit above).
 # A per-user LaunchAgent, not a root-owned LaunchDaemon: the daemon needs the
@@ -362,9 +363,8 @@ ci-macos: fmt-check check-macos check-features test-macos test-install doctest-m
 
 # Stop a recipe that builds a Linux-only GUI component before cargo does.
 #
-# The settings app is Linux-only: on macOS the app is the SwiftUI one in
-# super-voice-macos/, bundled by `just bundle-macos`. The other two components
-# are Linux shell integration by nature, for two different reasons:
+# Two components are Linux shell integration by nature, for two different
+# reasons (the app itself builds on both; `just bundle-macos` bundles it):
 #
 #   The panel applet takes libcosmic's `applet` feature, which reaches
 #   cosmic-panel-config -> smithay-client-toolkit -> xkbcommon via
@@ -383,19 +383,17 @@ ci-macos: fmt-check check-macos check-features test-macos test-install doctest-m
 linux-only-gui:
     #!/usr/bin/env bash
     if [ "$(uname -s)" = "Darwin" ]; then
-        echo "This recipe builds a Linux-only component: the settings app, the COSMIC" >&2
-        echo "panel applet (which needs cosmic-panel-config, a crate with no macOS" >&2
-        echo "build) or the consent helper (a Wayland layer-shell overlay)." >&2
+        echo "This recipe builds a Linux-only component: the COSMIC panel applet" >&2
+        echo "(which needs cosmic-panel-config, a crate with no macOS build) or the" >&2
+        echo "consent helper (a Wayland layer-shell overlay)." >&2
         echo "" >&2
-        echo "On macOS the app is the SwiftUI one in super-voice-macos/." >&2
-        echo "Build it with 'just bundle-macos'." >&2
         echo "The consent dialog is not a separate binary on macOS; the daemon shows" >&2
         echo "it itself through osascript." >&2
         exit 1
     fi
 
-# Build Super Voice.app into target/release: the app (the SwiftUI one in
-# super-voice-macos, see `macos-swift-build`), the daemon and the CLI; the two
+# Build Super Voice.app into target/release: the app (super-voice-gpui, as
+# `super-voice-app`), the daemon and the CLI; the two
 # LaunchAgents that run the daemon and the global shortcut; and an icon
 # rendered from the app's SVG. `just install` puts it in /Applications.
 #
@@ -420,7 +418,7 @@ bundle-macos:
     fi
 
     # One build per binary; the package selection is explained above `run-app`.
-    just macos-swift-build release
+    cargo build --release {{ app_select }}
     cargo build --release {{ daemon_select }}
     cargo build --release {{ cli_select }}
 
@@ -434,10 +432,10 @@ bundle-macos:
     sed -e "s|__VERSION__|$version|g" -e "s|__BUILD__|${version%%-*}|g" \
         {{ macos_resources }}/Info.plist > "$contents/Info.plist"
 
-    # Copies, not links: signing rewrites them, and the originals are cargo's
-    # and Swift's.
-    just macos-swift-into "$contents" release
-    cp target/release/{{ daemon_bin_name }} target/release/{{ cli_name }} "$contents/MacOS/"
+    # Copies, not links: signing rewrites them, and the originals are cargo's.
+    # The app is the bundle's executable (Info.plist's CFBundleExecutable).
+    cp target/release/{{ app_name }} target/release/{{ daemon_bin_name }} \
+        target/release/{{ cli_name }} "$contents/MacOS/"
     # A second CLI for the shortcut agent, which must not run from
     # Contents/MacOS; see super-voice-cli/launchd/.
     cp target/release/{{ cli_name }} "$contents/Helpers/"
@@ -466,179 +464,8 @@ bundle-macos:
 
     echo "✓ Built $bundle ($version)"
 
-# Build the macOS app's executable: the SwiftUI app in super-voice-macos, on
-# super-voice-app-core through the `UniFFI` bindings in super-voice-ffi.
-#
-# Three steps: the core as a static library (and a dynamic one, which
-# uniffi-bindgen reads the exported interface from); the Swift bindings and C
-# header generated from it, into super-voice-macos/Generated; and the Swift
-# package. `config` is the Swift package's: `release`, or `debug` for a build
-# that can take a screenshot of itself (see `macos-swift-shot`). The core is
-# always a release build. `bundle-macos` puts the release build in
-# Super Voice.app; `macos-swift-app` bundles either on its own.
-[private]
-macos-swift-build config="release":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ "$(uname)" != Darwin ]; then
-        echo "❌ The macOS app builds on macOS only" >&2
-        exit 1
-    fi
-
-    # The macOS the Swift package targets (Package.swift), for the Rust code and
-    # the C code its dependencies build too, so they don't target this Mac's.
-    export MACOSX_DEPLOYMENT_TARGET=14.0
-    cargo build -p super-voice-ffi --release --lib
-
-    gen=super-voice-macos/Generated
-    rm -rf "$gen"
-    mkdir -p "$gen/SuperVoiceCore" "$gen/headers" "$gen/bindings"
-    cargo run -p super-voice-ffi --bin uniffi-bindgen -- generate \
-        --library target/release/libsuper_voice_ffi.dylib \
-        --language swift --out-dir "$gen/bindings"
-    mv "$gen/bindings/super_voice_ffi.swift" "$gen/SuperVoiceCore/"
-    mv "$gen/bindings/super_voice_ffiFFI.h" "$gen/headers/"
-    # An xcframework's headers carry their module map under this one name.
-    mv "$gen/bindings/super_voice_ffiFFI.modulemap" "$gen/headers/module.modulemap"
-    xcodebuild -create-xcframework \
-        -library target/release/libsuper_voice_ffi.a -headers "$gen/headers" \
-        -output "$gen/SuperVoiceFFI.xcframework" >/dev/null
-
-    swift build --package-path super-voice-macos -c {{ config }}
-
-# Put the macOS app's executable and what it draws with into the bundle at
-# `contents` (its `Contents` directory): the executable under the settings
-# app's name (see super-voice-macos/Info.plist), and the Phosphor icons.
-[private]
-macos-swift-into contents config="release":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    bin=$(swift build --package-path super-voice-macos -c {{ config }} --show-bin-path)
-    mkdir -p "{{ contents }}/MacOS" "{{ contents }}/Resources/icons"
-    cp "$bin/SuperVoice" "{{ contents }}/MacOS/{{ app_name }}"
-    cp super-voice-app/resources/icons/phosphor/*.svg "{{ contents }}/Resources/icons/"
-
-# The macOS app on its own, for development: `target/<config>/Super Voice
-# (dev).app`, signed ad hoc, with no daemon or LaunchAgents beside it (point it
-# at a daemon with SUPER_VOICE_HTTP_SOCKET). Its identifier is its own, so it
-# doesn't take the installed app's place with macOS, and in DEBUG it keeps its
-# session token apart from the installed app's. See `macos-swift-build`.
-#
-# Usage: just macos-swift-app [release|debug]
-macos-swift-app config="release": (macos-swift-build config)
-    #!/usr/bin/env bash
-    set -euo pipefail
-    bundle="target/{{ config }}/Super Voice (dev).app"
-    rm -rf "$bundle"
-    mkdir -p "$bundle/Contents"
-    version=$(cargo pkgid -p super-voice-ffi | sed 's/.*[#@]//')
-    sed -e "s|__VERSION__|$version|g" -e "s|__BUILD__|${version%%-*}|g" \
-        -e "s|<string>ai.menjivar.super-voice-app</string>|<string>ai.menjivar.super-voice-app-dev</string>|" \
-        {{ macos_resources }}/Info.plist > "$bundle/Contents/Info.plist"
-    just macos-swift-into "$bundle/Contents" {{ config }}
-    codesign --force --sign - "$bundle"
-    codesign --verify --strict "$bundle"
-
-    echo "✓ Built $bundle ($version)"
-
-# Screenshot the SwiftUI app's window into `out`, a PNG.
-#
-# A debug build draws its own window once the page is in `scene`'s state, at
-# one size, and quits: no Screen Recording permission, so it works over ssh.
-# The app has to come to the front for its accent colours; a run where it
-# can't fails rather than shooting a grey window; set
-# SUPER_VOICE_SNAPSHOT_INACTIVE=1 to take it anyway, for layout alone.
-# SUPER_VOICE_HTTP_SOCKET points it at a daemon (a test one, with
-# XDG_STATE_HOME keeping its token apart), and the shot waits for the header.
-# SUPER_VOICE_LANGUAGE=fr shoots it in French.
-# Scenes: `notes`, the list; `note`, the newest note open; `edited`, that
-# note with a sentence typed into it and saved; `clips`, the Clips page;
-# `clips-playing`, its newest clip partway through playing, out loud;
-# `voices`, the Voices page; `voices-pending`, a recording imported there,
-# waiting to be saved; `tts-behavior`, text to speech's Behavior tab; and
-# `tts-behavior-spoken`, a sentence spoken there (or the daemon's refusal);
-# `contexts`, speech to text's Contexts tab; `contexts-edit`, a new context
-# typed into its editor; `contexts-saved`, that context saved to the daemon;
-# `stt-behavior`, speech to text's Behavior tab; `stt-behavior-recorded`, its
-# recording test run once against the daemon, scrolled down to it; `models`,
-# the Models page's pipeline and its first step's card; `models-running`,
-# that page with made-up stages, for the layout; `models-download` and
-# `models-staged`, its card downloading or with a model staged;
-# `model-language`, a model's language button alone with its picker open,
-# and `model-voice`, the synthesis model's voice picker alone, both made up;
-# `settings`, the Settings
-# page; `settings-languages`, with its language picker up; `assistants`, the
-# Assistants page; `assistants-key`, a key made there, on the daemon;
-# `assistants-connected`, a made-up connected assistant's page; `updates`,
-# the Updates page; `shortcuts`, the Shortcuts page; `library` and
-# `library-browse`, the Library page's two tabs; `library-sample` and
-# `library-sample-browse`, those with made-up backends, for the layout;
-# `library-add`, the "Install manually" sheet previewing a made-up backend;
-# `configure`, a made-up backend's Configure sheet over the Library page;
-# `notes-take` and `note-take`, a made-up take recording a new note or
-# adding to the open one, for the layout; `connection` and
-# `connection-denied`, the window while the daemon doesn't answer and once
-# the user refused the app, made up; and `header`, the notes with made-up
-# header pills (the moon of Sleep When Idle, and Update available). It
-# reads a copy of the sample notes and clips in
-# super-voice-macos/Fixtures, never yours, so `edited` changes only the copy.
-# The voices are the daemon's.
-#
-# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved|stt-behavior|stt-behavior-recorded|models|models-running|models-download|models-staged|model-language|model-voice|settings|settings-languages|assistants|assistants-key|assistants-connected|updates|shortcuts|shortcuts-mac|library|library-browse|library-sample|library-sample-browse|library-add|configure|notes-take|note-take|connection|connection-denied|header]
-macos-swift-shot out scene="notes": (macos-swift-app "debug")
-    #!/usr/bin/env bash
-    set -euo pipefail
-    out="$(cd "$(dirname "{{ out }}")" && pwd)/$(basename "{{ out }}")"
-    rm -f "$out"
-    data=$(mktemp -d)
-    trap 'rm -rf "$data"' EXIT
-    # What the app says on stderr, such as why it refused a shot: `open`
-    # doesn't hand it back.
-    said="$data/stderr.log"
-    cp -R super-voice-macos/Fixtures/super-voice "$data/"
-    # The sample clips keep only their text in git: each is voiced here, with
-    # the Mac's own speech, into the WAV beside it.
-    for about in "$data"/super-voice/clips/*.json; do
-        [ -e "$about" ] || continue
-        say -o "${about%.json}.wav" --data-format=LEI16@24000 \
-            "$(plutil -extract text raw "$about")"
-    done
-    # The recording `voices-pending` imports, in the Mac's own voice.
-    mkdir -p "$data/import"
-    say -o "$data/import/Grace_Hopper.wav" --data-format=LEI16@24000 \
-        "A ship in port is safe, but that is not what ships are built for."
-    # The user is active, as far as macOS knows, for the next few seconds:
-    # wakes a display that is off and dismisses a screen saver, either of
-    # which keeps the app from coming to the front. The display takes a moment
-    # to come back, so the app opens after it. The shot is refused if it still
-    # can't come to the front.
-    caffeinate -u -t 8 &
-    sleep 3
-    # A new instance (-n), so a copy already open can't take the request and
-    # ignore the environment; -W waits for it to quit.
-    open -n -W --stderr "$said" \
-        --env SUPER_VOICE_SNAPSHOT="$out" \
-        --env SUPER_VOICE_SCENE="{{ scene }}" \
-        ${SUPER_VOICE_SNAPSHOT_INACTIVE:+--env SUPER_VOICE_SNAPSHOT_INACTIVE=1} \
-        ${SUPER_VOICE_HTTP_SOCKET:+--env SUPER_VOICE_HTTP_SOCKET="$SUPER_VOICE_HTTP_SOCKET"} \
-        ${XDG_STATE_HOME:+--env XDG_STATE_HOME="$XDG_STATE_HOME"} \
-        ${SUPER_VOICE_LANGUAGE:+--env SUPER_VOICE_LANGUAGE="$SUPER_VOICE_LANGUAGE"} \
-        --env XDG_DATA_HOME="$data" \
-        "target/debug/Super Voice (dev).app"
-    if [ ! -s "$out" ]; then
-        cat "$said" >&2 2>/dev/null || true
-        echo "❌ no screenshot at $out" >&2
-        exit 1
-    fi
-    if [ "{{ scene }}" = edited ]; then
-        newest=$(ls "$data/super-voice/notes" | sort | tail -1)
-        echo "The edited note on disk:"
-        cat "$data/super-voice/notes/$newest"
-    fi
-    echo "✓ $out"
-
 # Render the macOS app icon into an .icns at `out`, from the SVG the Linux
-# desktop entry uses. See super-voice-macos/app-icon.swift.
+# desktop entry uses. See super-voice-gpui/macos/app-icon.swift.
 [private]
 macos-icon out:
     #!/usr/bin/env bash
@@ -732,26 +559,24 @@ codesign-macos bin identifier:
 # helper and the daemon in one invocation, and the app's `applet` came along
 # for the ride.
 #
-# The settings app is Linux-only, so `app_select` is `--bin` alone.
-#
 # On Linux that union is what ships: the release workflow builds every binary
 # in one invocation. Narrowing it there changes the binary, not just the
 # build. The daemon built with `-p` gets zbus without its tokio executor and
 # a different Wayland client backend. So Linux keeps `--bin` alone, and a
 # binary built here is the one that ships.
-app_select := "--bin " + app_name
+app_select := if os() == "macos" { "-p super-voice-gpui --bin " + app_name } else { "--bin " + app_name }
 daemon_select := if os() == "macos" { "-p " + daemon_bin_name + " --bin " + daemon_bin_name } else { "--bin " + daemon_bin_name }
 cli_select := if os() == "macos" { "-p " + cli_name + " --bin " + cli_name } else { "--bin " + cli_name }
 
 # Run the app for testing purposes
-run-app *args: linux-only-gui
+run-app *args:
     #!/usr/bin/env bash
     set -euo pipefail
 
     # The app's own lines down to debug, and none of the toolkit's. A RUST_LOG
-    # of your own wins, e.g. `RUST_LOG=super_voice_app=trace just run-app`.
+    # of your own wins, e.g. `RUST_LOG=super_voice_gpui=trace just run-app`.
     exec env RUST_BACKTRACE=full \
-        RUST_LOG="${RUST_LOG:-super_voice_app=debug,super_voice_shared=debug}" \
+        RUST_LOG="${RUST_LOG:-super_voice_gpui=debug,super_voice_app_core=debug,super_voice_shared=debug}" \
         cargo run {{ app_select }} {{ args }}
 
 # Run the daemon for testing purposes.
@@ -858,42 +683,12 @@ run-consent *scopes: linux-only-gui
         SUPER_VOICE_AUTH_EXE_PATH="/usr/bin/test-app" \
         cargo run --bin {{ consent_name }}
 
-# Screenshot the settings app for the README: every shot in
-# .github/assets/screenshots, or only the ones named. It runs off screen, in a
-# nested COSMIC compositor on Xvfb, against the running daemon. See
-# scripts/screenshots.sh for how, and for the shots by name.
-#
-# The Models page shows a different card for each state speech to text is in,
-# so the run moves the daemon through them: no backend, a backend with no
-# model, then the model running. It shows the model you have loaded, and puts
-# speech to text back as it found it at the end, Ctrl-C included. Load the
-# model to show before running; dictation is out while it reloads.
-#
-# The daemon binds a token to the binary it was granted to, so the first run
-# after the app is rebuilt asks for consent on your desktop. Choose Allow.
-#
-# Needs Xvfb, xdotool, cosmic-comp, cosmic-bg, grim and ImageMagick.
-#
-# Usage: just screenshots [name...]
-#   just screenshots
-#   just screenshots models voices
-[doc("Screenshot the settings app for the README. Usage: just screenshots [name...]")]
-screenshots *names:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    # A debug build: scenes are compiled out of release builds. Cargo
-    # reports where it put the binary, which follows `CARGO_TARGET_DIR`.
-    exe=$(cargo build {{ app_select }} --message-format=json-render-diagnostics \
-        | sed -n 's|.*"executable":"\([^"]*/{{ app_name }}\)".*|\1|p')
-    bash scripts/screenshots.sh "$exe" .github/assets/screenshots {{ names }}
-
 # Run security audit to check for vulnerabilities
 audit:
     cargo audit
 
 # Build only the app. The package selection is explained above `run-app`.
-build-app *args: linux-only-gui
+build-app *args:
     #!/usr/bin/env bash
     set -euo pipefail
     cargo build --release {{ app_select }} {{ args }}

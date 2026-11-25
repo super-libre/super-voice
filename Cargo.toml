@@ -1,12 +1,11 @@
 [workspace]
   resolver        = "2"
   members         = [
-    "super-voice-app",
     "super-voice-app-core",
     "super-voice-cli",
     "super-voice-consent",
     "super-voice-daemon",
-    "super-voice-ffi",
+    "super-voice-gpui",
     "super-voice-indexer",
     "super-voice-install",
     "super-voice-registry-types",
@@ -25,13 +24,17 @@
   # lints and tests it like everything else. But it's a CI-only tool with
   # heavy deps, so keep it out of `default-members`: the everyday
   # `cargo build`/`run`/`test` (no `--workspace`) stays lean.
+  #
+  # The app (super-voice-gpui, whose binary is `super-voice-app`) is a default
+  # member, as the app before it was: it ships in every release, which builds
+  # it with `--bin super-voice-app` beside the daemon, and `just test` builds
+  # it like everything else that ships.
   default-members = [
-    "super-voice-app",
     "super-voice-app-core",
     "super-voice-cli",
     "super-voice-consent",
     "super-voice-daemon",
-    "super-voice-ffi",
+    "super-voice-gpui",
     "super-voice-install",
     "super-voice-registry-types",
     "super-voice-shared",
@@ -85,15 +88,6 @@
         "fluent-system",
       ]
     }
-    i18n-embed-fl            = "0.10.0"
-    # The accessibility tree a wrapper widget hands on from what it wraps,
-    # which libcosmic does not re-export. The same repo and rev as libcosmic
-    # below, so it is the copy libcosmic already builds; bump the two
-    # together.
-    iced_accessibility       = {
-      git = "https://github.com/pop-os/libcosmic.git",
-      rev = "ef162b8e16ba4493e05c169cd56c7b9f77f0fda5",
-    }
     # System calls (for client singleton)
     libc                     = "0.2"
     # Cosmic specific. The lib target is `cosmic`, so this is `use cosmic::`
@@ -114,17 +108,17 @@
     # each compile twice, and `cargo tree -d` reports them. Harmless, and
     # not ours to fix upstream.
     #
-    # Features live on each member instead of here, since the consent helper
-    # wants a much smaller build than the app. `default-features` can only be
-    # turned off at the workspace level, so members opt into "default" by
-    # name rather than inheriting it.
+    # libcosmic is the consent helper's alone: the app is on GPUI (see
+    # super-voice-gpui). Its features live on the consent helper, which wants
+    # a small build. `default-features` can only be turned off at the
+    # workspace level, so a member opts into "default" by name rather than
+    # inheriting it.
     libcosmic                = {
       git              = "https://github.com/pop-os/libcosmic.git",
       rev              = "ef162b8e16ba4493e05c169cd56c7b9f77f0fda5",
       default-features = false,
     }
     log                      = "0.4.29"
-    open                     = "5.3.3"
     parking_lot              = "0.12"
     reqwest                  = {
       version          = "0.13.2",
@@ -206,8 +200,6 @@
     # declaration and cannot drift apart.
     utoipa-axum              = "0.3.0"
     uuid                     = { version = "1.23.0", features = ["v4"] }
-    # Build dependencies
-    vergen                   = { version = "8.3.1", features = ["git", "gitcl"] }
     # D-Bus integration
     zbus                     = "5.14.0"
 
@@ -219,6 +211,21 @@
   # `cargo build` apply the same standard locally instead of only in CI.
   [workspace.lints.rust]
     unused_must_use = "deny"
+
+# GPUI and gpui-kit optimised in debug builds too (gpui-kit's own advice):
+# unoptimised, the app's window draws too slowly to use. Only the framework
+# and its text shaping and layout; the app and everything else stay quick to
+# rebuild. A profile only takes effect in the workspace's root manifest.
+[profile.dev.package]
+  gpui-base         = { opt-level = 3 }
+  gpui-component    = { opt-level = 3 }
+  gpui-kit          = { opt-level = 3 }
+  gpui-kit-assets   = { opt-level = 3 }
+  gpui-pre          = { opt-level = 3 }
+  gpui-pre-platform = { opt-level = 3 }
+  rustybuzz         = { opt-level = 3 }
+  taffy             = { opt-level = 3 }
+  ttf-parser        = { opt-level = 3 }
 
 [profile.release]
   lto           = true

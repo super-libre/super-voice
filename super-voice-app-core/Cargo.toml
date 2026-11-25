@@ -3,12 +3,12 @@
     version.workspace = true
     authors.workspace = true
     edition.workspace = true
-    description = "What Super Voice's apps share, with no UI library: the daemon client, state, notes and clips, and audio"
+    description = "What the Super Voice app draws, with no UI library: the daemon client, state, page logic, notes and clips, and audio"
     repository = "https://github.com/super-libre/super-voice"
     license = "GPL-3.0-only"
 
-# No UI library here, on purpose. Each app (libcosmic on Linux today) draws on
-# top of this crate, so whatever lands here has to work for all of them.
+# No UI library here, on purpose. The app (GPUI, in super-voice-gpui) draws on
+# top of this crate; what lands here is logic, kept apart from the drawing.
 [dependencies]
     # The Fluent catalogs every app reads its words from. `fluent` at the
     # version i18n-embed uses, for the values a lookup is given.

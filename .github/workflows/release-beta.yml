@@ -47,6 +47,8 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libxkbcommon-x11-dev \
+            libx11-xcb-dev \
+            libfontconfig-dev \
             libegl1-mesa-dev \
             libxrandr-dev \
             libxinerama-dev \
@@ -111,6 +113,8 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libxkbcommon-x11-dev \
+            libx11-xcb-dev \
+            libfontconfig-dev \
             libegl1-mesa-dev \
             libxrandr-dev \
             libxinerama-dev \
@@ -150,7 +154,7 @@ jobs:
           mkdir -p dist/resources
 
           # The app's desktop resources: launcher entry, metainfo, icons.
-          cp -r super-voice-app/resources/* dist/resources
+          cp -r super-voice-gpui/resources/* dist/resources
 
           # Remove any extra assets
           rm -rf dist/resources/assets

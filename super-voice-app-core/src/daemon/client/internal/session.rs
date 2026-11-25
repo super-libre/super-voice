@@ -54,7 +54,7 @@ pub(crate) fn app_name() -> &'static str {
     IDENTITY.get().map_or(APP_NAME, |(_, name)| name)
 }
 
-/// Where a `just screenshots` run keeps its token instead. The daemon binds a
+/// Where a development build keeps its token instead. The daemon binds a
 /// token to the binary it was granted to, so a debug build storing its own
 /// under [`APP_ID_NAME`] would replace the installed app's token with one the
 /// installed app cannot use, and its next launch would ask for consent again.
@@ -64,8 +64,8 @@ const SCENE_APP_ID: AppId = session::app_id("super-voice-app-scene");
 /// by [`use_scene_token`].
 static SCENE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Keep this run's token apart from the installed app's, for a `just
-/// screenshots` run. The app calls it at start, before its first daemon call.
+/// Keep this run's token apart from the installed app's, for a debug build
+/// (`just run-app`). The app calls it at start, before its first daemon call.
 pub fn use_scene_token() {
     SCENE.store(true, std::sync::atomic::Ordering::Relaxed);
 }

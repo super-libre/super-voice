@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The apps' words: the Fluent catalogs in `i18n/`, one per language, English
-//! the fallback. Every app reads them from here, so each string is translated
-//! once.
-//!
-//! The settings app checks its keys as it compiles, with its `fl!` macro over
-//! [`LANGUAGE_LOADER`]. An app in another language looks a message up by its
-//! key at run time with [`text`].
+//! The app's words: the Fluent catalogs in `i18n/`, one per language, English
+//! the fallback. The app reads them from here, so each string is translated
+//! once, and looks a message up by its key at run time with [`text`].
 
 use std::collections::HashMap;
 use std::sync::LazyLock;

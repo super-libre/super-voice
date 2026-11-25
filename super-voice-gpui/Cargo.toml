@@ -1,0 +1,62 @@
+[package]
+    name = "super-voice-gpui"
+    version.workspace = true
+    authors.workspace = true
+    edition.workspace = true
+    description = "The Super Voice app, on GPUI with gpui-kit"
+    repository = "https://github.com/super-libre/super-voice"
+    license = "GPL-3.0-only"
+    publish = false
+
+# The app's binary keeps the name the app has always had. The daemon trusts a
+# client by that name beside it, runs it for its banners on macOS
+# (`super-voice-app --notify`), and starts it after an update; the desktop
+# entry, the icon and the COSMIC applet's launch button name it too.
+[[bin]]
+    name = "super-voice-app"
+    path = "src/main.rs"
+
+[dependencies]
+    # The UI: GPUI, which gpui-kit re-exports, and the kit's components.
+    #
+    # 0.11.0 (2026-11-23) is the newest release, and it pins GPUI exactly:
+    # `gpui-pre =0.3.14`, Longbridge's weekly snapshot of Zed's crates/gpui
+    # (Zed publishes none). Pinned exactly here too, since most of the kit's
+    # weekly releases break something small: bump on purpose, with its
+    # release notes, never by `cargo update`. It needs Rust 1.92 or newer.
+    #
+    # Default features: components, the default Lucide icons, and X11 beside
+    # Wayland on Linux, which the app before this one had too.
+    gpui-kit = "=0.11.0"
+    log.workspace = true
+    # The daemon client and the logic of every page, which the app draws.
+    super-voice-app-core = { path = "../super-voice-app-core" }
+    super-voice-shared = { path = "../super-voice-shared" }
+
+# `--notify`: posting the daemon's banners as Super Voice (src/notifier.rs).
+# objc2 and its framework crates at the versions GPUI's macOS platform
+# already builds.
+[target.'cfg(target_os = "macos")'.dependencies]
+    anyhow.workspace = true
+    block2 = "0.6"
+    objc2 = "0.6"
+    objc2-app-kit.version = "0.3"
+    objc2-app-kit.default-features = false
+    objc2-app-kit.features = ["std", "NSApplication", "NSResponder", "NSRunningApplication"]
+    objc2-foundation.version = "0.3"
+    objc2-foundation.default-features = false
+    objc2-foundation.features = ["std", "block2", "NSBundle", "NSError", "NSString"]
+    objc2-user-notifications.version = "0.3"
+    objc2-user-notifications.default-features = false
+    objc2-user-notifications.features = [
+        "std",
+        "block2",
+        "UNNotificationContent",
+        "UNNotificationRequest",
+        "UNNotificationSettings",
+        "UNNotificationTrigger",
+        "UNUserNotificationCenter",
+    ]
+
+[lints]
+    workspace = true
