@@ -17,7 +17,10 @@
 // pointed at; `stt-behavior`, speech to text's Behavior tab with its settings
 // read; `stt-behavior-recorded`, its recording test run once against the
 // daemon and shot when the take is over (its transcript, or why not),
-// scrolled to the test at the bottom of the tab; `notes-take`, the list with a made-up take recording a new note; or
+// scrolled to the test at the bottom of the tab; `models`, the Models page
+// once the daemon has said what fills each stage; `models-running`, that page
+// with made-up stages (running, asleep, not loaded), for the layout;
+// `notes-take`, the list with a made-up take recording a new note; or
 // `note-take`, the newest note open with a made-up take adding to it. A take
 // scene's take, level and words are made up in the app, for the layout: a
 // real one needs a microphone and a model.
@@ -107,6 +110,9 @@ enum Snapshot {
                 model.pretend(shown)
                 MicrophoneModel.shared.pretend(Microphone(recording: true, level: 0.55, speech: true))
             }
+        case "models", "models-running":
+            // Shot from its own page; see `modelsShown`.
+            return
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
             // Shot from their own pages; see `clipsShown`, `voicesShown` and
             // `speechShown`.
@@ -268,6 +274,37 @@ enum Snapshot {
             return
         default:
             fail("no scene is called \(scene)")
+        }
+        taken = true
+        Task { await take() }
+    }
+
+    /// The Models page showed `header`: shoot it once the daemon has said what
+    /// fills each stage, for `models`.
+    static func modelsShown(_ header: HeaderStatus) {
+        guard path != nil, !taken, scene.hasPrefix("models") else { return }
+        if scene == "models-running" {
+            var shown = header
+            shown.connected = true
+            shown.speechToText = .ready
+            shown.textToSpeech = .notLoaded
+            shown.pipeline = [
+                PipelineStep(
+                    stage: .transcription, readiness: .ready, backend: "Whisper",
+                    model: .running(name: "large-v3-turbo", device: "Metal")
+                ),
+                PipelineStep(
+                    stage: .postProcessing, readiness: .idle, backend: "S1-mini",
+                    model: .idle(name: "s1-mini-q4_k_m")
+                ),
+                PipelineStep(
+                    stage: .synthesis, readiness: .notLoaded, backend: "Kokoro",
+                    model: .notLoaded
+                ),
+            ]
+            HeaderModel.shared.pretend(shown)
+        } else if header.pipeline.isEmpty {
+            return
         }
         taken = true
         Task { await take() }

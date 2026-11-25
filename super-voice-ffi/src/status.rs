@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The window header's readouts: the GPU, and how ready each feature's model
-//! is. A store that reads them from the daemon every few seconds and tells the
-//! app when they change.
+//! is; and the Models page's pipeline, read with them. A store that reads them
+//! from the daemon every few seconds and tells the app when they change.
 
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use super_voice_app_core::daemon::client;
+use super_voice_app_core::rules::pipeline::{self, Step, StepModel};
 use super_voice_app_core::rules::{gpu, status};
+use super_voice_app_core::state::Stage;
 
 use crate::RUNTIME;
 
@@ -91,6 +93,76 @@ pub struct GpuReadout {
     pub level: Option<MeterLevel>,
 }
 
+/// A stage of a feature's pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum PipelineStage {
+    Transcription,
+    PostProcessing,
+    Synthesis,
+}
+
+impl From<PipelineStage> for Stage {
+    fn from(stage: PipelineStage) -> Self {
+        match stage {
+            PipelineStage::Transcription => Self::Transcription,
+            PipelineStage::PostProcessing => Self::PostProcessing,
+            PipelineStage::Synthesis => Self::Synthesis,
+        }
+    }
+}
+
+/// How a stage's model stands.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum StepModelPage {
+    /// It runs, on `device` (a framework's name, such as CUDA) when the
+    /// daemon says which.
+    Running {
+        name: String,
+        device: Option<String>,
+    },
+    /// It is out of memory until its next use, which loads it.
+    Idle { name: String },
+    /// Nothing is up.
+    NotLoaded,
+}
+
+/// A stage's step on the Models page.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PipelineStep {
+    pub stage: PipelineStage,
+    /// The colour of its dot.
+    pub readiness: Readiness,
+    /// The backend that fills it; `None` when none does.
+    pub backend: Option<String>,
+    /// How its model stands; `NotLoaded` when no backend fills it.
+    pub model: StepModelPage,
+}
+
+impl PipelineStep {
+    fn read(stage: PipelineStage, block: &client::StageState) -> Self {
+        let (backend, model) = match pipeline::step(stage.into(), block) {
+            Step::Empty => (None, StepModelPage::NotLoaded),
+            Step::Filled { backend, model } => (
+                Some(backend),
+                match model {
+                    StepModel::Running { name, device } => StepModelPage::Running {
+                        name,
+                        device: device.as_deref().map(gpu::accel_name),
+                    },
+                    StepModel::Idle { name } => StepModelPage::Idle { name },
+                    StepModel::NotLoaded => StepModelPage::NotLoaded,
+                },
+            ),
+        };
+        Self {
+            stage,
+            readiness: status::stage_block_status(stage.into(), block).into(),
+            backend,
+            model,
+        }
+    }
+}
+
 /// Everything the header shows.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct HeaderStatus {
@@ -100,6 +172,9 @@ pub struct HeaderStatus {
     pub gpus: Vec<GpuReadout>,
     pub speech_to_text: Readiness,
     pub text_to_speech: Readiness,
+    /// The Models page's steps: transcription, post-processing, synthesis.
+    /// Empty until the daemon answers.
+    pub pipeline: Vec<PipelineStep>,
 }
 
 impl HeaderStatus {
@@ -108,6 +183,7 @@ impl HeaderStatus {
         gpus: Vec::new(),
         speech_to_text: Readiness::None,
         text_to_speech: Readiness::None,
+        pipeline: Vec::new(),
     };
 }
 
@@ -167,12 +243,12 @@ impl StatusStore {
     }
 }
 
-/// Read the readouts from the daemon: each feature's first stage, as the
-/// settings app reads it, and the GPUs.
+/// Read the readouts from the daemon: each stage, as the settings app reads
+/// it, and the GPUs.
 async fn read() -> HeaderStatus {
-    use super_voice_app_core::state::Stage;
-    let (Ok(transcription), Ok(synthesis)) = (
+    let (Ok(transcription), Ok(post_processing), Ok(synthesis)) = (
         client::get_stage_view(Stage::Transcription).await,
+        client::get_stage_view(Stage::PostProcessing).await,
         client::get_stage_view(Stage::Synthesis).await,
     ) else {
         return HeaderStatus::DISCONNECTED;
@@ -184,6 +260,11 @@ async fn read() -> HeaderStatus {
         gpus: gpus.iter().map(readout).collect(),
         speech_to_text: status::stage_block_status(Stage::Transcription, &transcription).into(),
         text_to_speech: status::stage_block_status(Stage::Synthesis, &synthesis).into(),
+        pipeline: vec![
+            PipelineStep::read(PipelineStage::Transcription, &transcription),
+            PipelineStep::read(PipelineStage::PostProcessing, &post_processing),
+            PipelineStep::read(PipelineStage::Synthesis, &synthesis),
+        ],
     }
 }
 

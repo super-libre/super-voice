@@ -46,6 +46,9 @@ struct ContentView: View {
         if ["clips", "voices", "tts-behavior"].contains(where: Snapshot.scene.hasPrefix) {
             return .textToSpeech
         }
+        if Snapshot.scene.hasPrefix("models") {
+            return .models
+        }
         #endif
         return .speechToText
     }
@@ -70,6 +73,8 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
             switch selection {
+            case .models:
+                ModelsView()
             case .speechToText:
                 SpeechToTextView(notes: notes)
             case .textToSpeech:
@@ -109,8 +114,7 @@ struct GroupDivider: View {
     }
 }
 
-/// Speech to text's tabs, at the top of the page as in the settings app. Only
-/// Notes is here so far.
+/// Speech to text's tabs, at the top of the page as in the settings app.
 struct SpeechToTextView: View {
     @ObservedObject var notes: NotesModel
 
