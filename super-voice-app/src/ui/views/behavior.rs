@@ -38,18 +38,19 @@ fn banners<'a>(app: &'a AppModel, scopes: &[ErrorScope]) -> Vec<Element<'a, Mess
 /// section that records and types.
 pub fn speech_to_text(app: &AppModel) -> Element<'_, Message> {
     let mut blocks = banners(app, &[ErrorScope::Recording, ErrorScope::InputSimulation]);
+    let behavior = &app.behavior;
     blocks.push(super::recording::settings_section(
-        app.recording_stop_mode,
-        app.preview_typing_enabled,
+        behavior.stop_mode,
+        behavior.preview_typing,
     ));
     blocks.push(super::input_simulation::typing_section(
-        app.write_method,
-        app.resolved_write_method,
+        behavior.write_method,
+        behavior.typed_with,
     ));
     blocks.push(super::recording::sounds_section(
-        &app.audio_themes,
-        &app.selected_audio_theme,
-        app.volume,
+        &behavior.audio_themes,
+        &behavior.audio_theme,
+        behavior.volume,
     ));
     let mut rows = super::recording::test_rows(
         &app.recording_status,
@@ -60,8 +61,8 @@ pub fn speech_to_text(app: &AppModel) -> Element<'_, Message> {
         app.is_speech_detected,
     );
     rows.extend(super::input_simulation::test_rows(
-        &app.write_method_test_text,
-        app.write_method_test_countdown,
+        &behavior.typing_test_text,
+        behavior.typing_countdown,
     ));
     blocks.push(test_section(rows));
     settings::view_column(blocks).into()

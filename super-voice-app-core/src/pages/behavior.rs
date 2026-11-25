@@ -26,8 +26,9 @@ use crate::daemon::client::{
 use crate::state::AudioTheme;
 use crate::state::behavior::BehaviorState;
 
-/// How long the delayed typing test waits, so the user can move to another
-/// window first.
+/// How long the delayed typing test waits: long enough to move to the window
+/// it should type into, short enough that nobody wonders whether the button
+/// worked.
 pub const TYPING_COUNTDOWN_SECONDS: u8 = 3;
 
 /// What happened on the tab: something the user did, a value the daemon
@@ -93,7 +94,7 @@ pub enum Input {
 }
 
 /// Work [`update`] asks for.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Effect {
     /// Store the stop mode ([`run_save_stop_mode`]).
     SaveStopMode(RecordingStopMode),

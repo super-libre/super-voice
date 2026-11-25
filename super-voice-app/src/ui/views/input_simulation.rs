@@ -7,7 +7,9 @@ use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, Id, button, settings, text};
 use super_voice_shared::models::write_method::WriteMethod;
 
-use crate::ui::messages::{Message, WriteMethodMessage};
+use super_voice_app_core::pages::behavior::Input;
+
+use crate::ui::messages::{BehaviorMessage, Message};
 
 /// Id of the test field, so the Test button can focus it before the daemon
 /// types: `POST /write_method/test` types into whatever window holds keyboard
@@ -39,7 +41,11 @@ pub(super) fn typing_section(
             .control(widget::dropdown(
                 method_names,
                 selected_index,
-                move |index| Message::WriteMethod(WriteMethodMessage::Changed(methods[index])),
+                move |index| {
+                    Message::Behavior(BehaviorMessage::Page(Input::WriteMethodChanged(
+                        methods[index],
+                    )))
+                },
             )),
     );
 
@@ -62,10 +68,12 @@ pub(super) fn test_rows(test_text: &str, countdown: Option<u8>) -> Vec<Element<'
     let test_row = row![
         widget::text_input(crate::fl!("typed-text-lands-here-progress"), test_text)
             .id(test_field_id())
-            .on_input(|text| Message::WriteMethod(WriteMethodMessage::TestInput(text)))
+            .on_input(|text| Message::Behavior(BehaviorMessage::Page(
+                Input::TypingTestTextChanged(text)
+            )))
             .width(Length::Fill),
         button::suggested(crate::fl!("type-test-text"))
-            .on_press(Message::WriteMethod(WriteMethodMessage::Test)),
+            .on_press(Message::Behavior(BehaviorMessage::Page(Input::TestTyping))),
     ]
     .align_y(Alignment::Center)
     .spacing(10);
@@ -77,11 +85,15 @@ pub(super) fn test_rows(test_text: &str, countdown: Option<u8>) -> Vec<Element<'
             "cancel-typing-countdown",
             secs = (secs).to_string()
         ))
-        .on_press(Message::WriteMethod(WriteMethodMessage::TestCancel))
+        .on_press(Message::Behavior(BehaviorMessage::Page(
+            Input::CancelTypingTest,
+        )))
         .into()
     } else {
         button::standard(crate::fl!("start-countdown"))
-            .on_press(Message::WriteMethod(WriteMethodMessage::TestDelayed))
+            .on_press(Message::Behavior(BehaviorMessage::Page(
+                Input::TestTypingLater,
+            )))
             .into()
     };
 

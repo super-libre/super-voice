@@ -7,7 +7,7 @@ use crate::core::app::handlers::tasks::{build_load_settings_tasks, ping_task};
 use crate::core::app::{AppModel, DeviceState};
 use crate::daemon::client::app_id;
 use crate::daemon::client::test_daemon_connection;
-use crate::state::{AudioTheme, DaemonStatus};
+use crate::state::DaemonStatus;
 use crate::ui::messages::{DaemonMessage, Message, ModelMessage};
 use cosmic::prelude::*;
 use log::{info, warn};
@@ -40,10 +40,6 @@ impl AppModel {
             | DaemonMessage::RetryConnection
             | DaemonMessage::WidgetBlocked(_)
             | DaemonMessage::RetryAuthorization => self.handle_daemon_errors_retry(message),
-
-            DaemonMessage::CurrentAudioThemeLoaded(_) | DaemonMessage::VolumeLoaded(_) => {
-                self.handle_daemon_initial_loads(&message)
-            }
 
             DaemonMessage::DaemonEventsReceived(_) => self.handle_daemon_events(message),
         }
@@ -200,31 +196,6 @@ impl AppModel {
                 self.udp_restart_counter = self.udp_restart_counter.wrapping_add(1);
                 self.daemon_status = DaemonStatus::Connecting;
                 ping_task()
-            }
-
-            _ => Task::none(),
-        }
-    }
-
-    fn handle_daemon_initial_loads(
-        &mut self,
-        message: &DaemonMessage,
-    ) -> Task<cosmic::Action<Message>> {
-        match *message {
-            DaemonMessage::CurrentAudioThemeLoaded(theme) => {
-                self.selected_audio_theme = theme;
-                if theme != AudioTheme::Silent {
-                    self.last_non_silent_theme = theme;
-                }
-                Task::none()
-            }
-
-            DaemonMessage::VolumeLoaded(vol) => {
-                self.volume = vol;
-                // Keep the rollback target aligned with the daemon's value so a
-                // later failed commit rolls back to what's actually persisted.
-                self.last_committed_volume = vol;
-                Task::none()
             }
 
             _ => Task::none(),

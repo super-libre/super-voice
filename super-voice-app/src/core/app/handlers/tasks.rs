@@ -11,11 +11,13 @@ use crate::daemon::client::{
 use crate::state::AudioTheme;
 use crate::ui::messages::{
     BackendMessage, DaemonMessage, IdleUnloadMessage, Message, ModelsPageMessage,
-    NotificationMethodMessage, PreviewTypingMessage, ReadMethodMessage, RecordingStopModeMessage,
-    UpdateMessage, WriteMethodMessage,
+    NotificationMethodMessage, ReadMethodMessage, UpdateMessage,
 };
 use cosmic::prelude::*;
 use log::warn;
+use super_voice_app_core::pages::behavior;
+
+use super::behavior::page_action as behavior_action;
 
 /// Ping the daemon and map the result to `DaemonConnected` / `DaemonError`.
 /// Shared by the periodic keep-alive, the reconnect retries, and the startup
@@ -128,14 +130,10 @@ pub(in crate::core::app) fn build_load_settings_tasks() -> Task<cosmic::Action<M
 /// Fetch the sound theme.
 pub(in crate::core::app) fn load_audio_theme() -> Task<cosmic::Action<Message>> {
     Task::perform(get_current_audio_theme(), |result| match result {
-        Ok(theme) => cosmic::Action::App(Message::Daemon(DaemonMessage::CurrentAudioThemeLoaded(
-            theme,
-        ))),
+        Ok(theme) => behavior_action(behavior::Input::ThemeLoaded(theme)),
         Err(e) => {
             warn!("Failed to load audio theme: {e}");
-            cosmic::Action::App(Message::Daemon(DaemonMessage::CurrentAudioThemeLoaded(
-                AudioTheme::default(),
-            )))
+            behavior_action(behavior::Input::ThemeLoaded(AudioTheme::default()))
         }
     })
 }
@@ -143,10 +141,10 @@ pub(in crate::core::app) fn load_audio_theme() -> Task<cosmic::Action<Message>> 
 /// Fetch the sound volume.
 pub(in crate::core::app) fn load_volume() -> Task<cosmic::Action<Message>> {
     Task::perform(get_volume(), |result| match result {
-        Ok(vol) => cosmic::Action::App(Message::Daemon(DaemonMessage::VolumeLoaded(vol))),
+        Ok(vol) => behavior_action(behavior::Input::VolumeLoaded(vol)),
         Err(e) => {
             warn!("Failed to load volume: {e}");
-            cosmic::Action::App(Message::Daemon(DaemonMessage::VolumeLoaded(100)))
+            behavior_action(behavior::Input::VolumeLoaded(100))
         }
     })
 }
@@ -154,14 +152,10 @@ pub(in crate::core::app) fn load_volume() -> Task<cosmic::Action<Message>> {
 /// Fetch whether previews are typed.
 pub(in crate::core::app) fn load_preview_typing() -> Task<cosmic::Action<Message>> {
     Task::perform(get_preview_typing(), |result| match result {
-        Ok(enabled) => cosmic::Action::App(Message::PreviewTyping(
-            PreviewTypingMessage::SettingLoaded(enabled),
-        )),
+        Ok(enabled) => behavior_action(behavior::Input::PreviewTypingLoaded(enabled)),
         Err(e) => {
             log::warn!("Failed to load preview typing setting: {e}");
-            cosmic::Action::App(Message::PreviewTyping(PreviewTypingMessage::SettingLoaded(
-                false,
-            )))
+            behavior_action(behavior::Input::PreviewTypingLoaded(false))
         }
     })
 }
@@ -173,15 +167,11 @@ pub(in crate::core::app) fn load_recording_stop_mode() -> Task<cosmic::Action<Me
         match result {
             Ok(mode_str) => {
                 let mode = mode_str.parse::<RecordingStopMode>().unwrap_or_default();
-                cosmic::Action::App(Message::RecordingStopMode(
-                    RecordingStopModeMessage::Loaded(mode),
-                ))
+                behavior_action(behavior::Input::StopModeLoaded(mode))
             }
             Err(e) => {
                 log::warn!("Failed to load recording stop mode: {e}");
-                cosmic::Action::App(Message::RecordingStopMode(
-                    RecordingStopModeMessage::Loaded(RecordingStopMode::default()),
-                ))
+                behavior_action(behavior::Input::StopModeLoaded(RecordingStopMode::default()))
             }
         }
     })
@@ -209,13 +199,11 @@ pub(in crate::core::app) fn load_write_method() -> Task<cosmic::Action<Message>>
         match result {
             Ok(method_str) => {
                 let method = method_str.parse::<WriteMethod>().unwrap_or_default();
-                cosmic::Action::App(Message::WriteMethod(WriteMethodMessage::Loaded(method)))
+                behavior_action(behavior::Input::WriteMethodLoaded(method))
             }
             Err(e) => {
                 log::warn!("Failed to load write method: {e}");
-                cosmic::Action::App(Message::WriteMethod(WriteMethodMessage::Loaded(
-                    WriteMethod::default(),
-                )))
+                behavior_action(behavior::Input::WriteMethodLoaded(WriteMethod::default()))
             }
         }
     })
