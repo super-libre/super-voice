@@ -7283,6 +7283,8 @@ version = "0.3.0-beta.7"
 dependencies = [
  "anyhow",
  "clap",
+ "dispatch2",
+ "futures-util",
  "global-hotkey",
  "log",
  "objc2 0.6.5",

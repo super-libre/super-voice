@@ -18,7 +18,7 @@
     super-voice-shared = { path = "../super-voice-shared" }
     tokio = {
         workspace = true,
-        features = ["io-util", "macros", "net", "rt-multi-thread"]
+        features = ["io-util", "macros", "net", "rt-multi-thread", "time"]
     }
 
 # `voice hotkey` (src/hotkey.rs). macOS only: on Linux the desktop environment
@@ -26,6 +26,10 @@
 # objc2 / objc2-app-kit are the versions global-hotkey already pulls in, named
 # here only for NSApplication, whose event loop delivers the shortcut.
 [target.'cfg(target_os = "macos")'.dependencies]
+    # Runs the listener's shortcut swaps on the main thread, which Carbon's
+    # hotkey calls need.
+    dispatch2 = "0.3"
+    futures-util.workspace = true
     global-hotkey = "0.10"
     log.workspace = true
     objc2 = "0.6"
@@ -36,6 +40,10 @@
     }
 
 [dev-dependencies]
+    # Its parser, which `voice hotkey` registers bindings with, is what the
+    # shared binding grammar is tested against, on every platform. Only the
+    # parser is used: nothing is registered.
+    global-hotkey = "0.10"
     # Spawns the daemon for the integration tests, in a home of its own.
     super-engine-test-daemon.workspace = true
     tempfile = "3.27.0"

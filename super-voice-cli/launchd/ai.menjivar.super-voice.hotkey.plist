@@ -10,22 +10,21 @@
   super-voice-cli/src/hotkey.rs.
 
   Its own agent rather than a thread in the daemon: the daemon stays headless
-  and knows nothing about input, and the shortcut can be stopped, rebound or
-  left uninstalled without touching transcription.
+  and knows nothing about input, and the shortcut can be stopped or left
+  uninstalled without touching transcription.
 
   It needs no Accessibility or Input Monitoring grant — ordinary shortcuts are
   registered through Carbon's RegisterEventHotKey, which asks for neither.
 
   Like the daemon's agent it ships inside the app bundle and is registered
   with SMAppService; see super-voice-daemon/launchd/ for what that means for
-  this file. One placeholder is substituted by `just bundle-macos` before the
-  bundle is signed:
+  this file.
 
-    __BINDING__   the shortcut: $SUPER_VOICE_HOTKEY, else ctrl+alt+space. The
-                  recipe validates it with the listener's own check mode
-                  first, since a binding the listener rejects would otherwise
-                  be restarted every ThrottleInterval, failing the same way
-                  each time.
+  It names no keys. The listener reads them from the daemon (its `hotkey`
+  setting, which the app's Shortcuts page changes) and follows a change at
+  once, so nothing here has to be rewritten, and the signed bundle never
+  changes. Until the daemon first answers it listens for its own default,
+  ctrl+alt+space (⌃⌥Space).
 -->
 <plist version="1.0">
 <dict>
@@ -53,8 +52,6 @@
     <array>
         <string>super-voice-cli</string>
         <string>hotkey</string>
-        <string>--key</string>
-        <string>__BINDING__</string>
     </array>
 
     <key>RunAtLoad</key>

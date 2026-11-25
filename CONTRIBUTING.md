@@ -145,9 +145,17 @@ just run-cli hotkey --key ctrl+alt+shift+F19
 Pick a binding the installed listener is not already holding, or stop it
 first with `launchctl bootout gui/$(id -u)/ai.menjivar.super-voice.hotkey`.
 
+`--key` holds only until the daemon answers. The keys are the daemon's
+`hotkey` setting (`/v1/settings/hotkey`, which the app's Shortcuts page
+changes): the listener reads it at start and again whenever
+`settings_changed` names it, and swaps the shortcut it holds on the main
+thread. Against a running daemon it therefore listens for the daemon's keys,
+not the ones given here. The bundle's agent passes no `--key` at all.
+
 Two constraints shape that module. The crate's macOS backend needs an event
 loop on the main thread, so `hotkey` is dispatched before `main` builds a
-tokio runtime, and the runtime lives on worker threads instead. And presses
+tokio runtime, and the runtime lives on worker threads instead; a swap of
+the keys is sent to the main thread with `dispatch2::run_on_main`. And presses
 are handled strictly one at a time: `cmd_record` decides start-or-stop from
 the daemon's `busy` flag, so two presses in flight together would both see
 "idle" and both try to start.

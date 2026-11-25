@@ -406,9 +406,8 @@ linux-only-gui:
 # signature is ad hoc: enough to run on this Mac, and nothing more. See
 # `codesign-macos`. Notarizing for other Macs is not done here.
 #
-# SUPER_VOICE_HOTKEY picks the shortcut (default ctrl+alt+space). It is written
-# into the shortcut agent's plist before signing, since nothing inside a
-# signed bundle can be changed afterwards.
+# The shortcut's keys are not part of the bundle: the listener reads them from
+# the daemon, and the app's Shortcuts page changes them (default ⌃⌥Space).
 #
 # Usage: just bundle-macos
 bundle-macos:
@@ -424,16 +423,6 @@ bundle-macos:
     just macos-swift-build release
     cargo build --release {{ daemon_select }}
     cargo build --release {{ cli_select }}
-
-    # Checked with the listener's own parser before it goes anywhere. Written
-    # into the agent unchecked, a binding it rejects would have launchd
-    # restart it every few seconds, failing identically, and the only symptom
-    # would be a key that does nothing.
-    binding="${SUPER_VOICE_HOTKEY:-ctrl+alt+space}"
-    if ! target/release/{{ cli_name }} hotkey --key "$binding" --check; then
-        echo "❌ SUPER_VOICE_HOTKEY='$binding' is not a shortcut the listener accepts" >&2
-        exit 1
-    fi
 
     bundle="{{ macos_bundle_src }}"
     contents="$bundle/Contents"
@@ -453,9 +442,7 @@ bundle-macos:
     # Contents/MacOS; see super-voice-cli/launchd/.
     cp target/release/{{ cli_name }} "$contents/Helpers/"
 
-    cp {{ launchd_plist_src }} "$contents/Library/LaunchAgents/"
-    sed "s|__BINDING__|$binding|g" {{ hotkey_plist_src }} \
-        > "$contents/Library/LaunchAgents/{{ hotkey_plist_file }}"
+    cp {{ launchd_plist_src }} {{ hotkey_plist_src }} "$contents/Library/LaunchAgents/"
     # launchd rejects a malformed plist with a bare "Input/output error", so
     # lint here, where the message can still say what is wrong.
     plutil -lint -s "$contents/Info.plist" "$contents"/Library/LaunchAgents/*.plist
@@ -1277,13 +1264,12 @@ install-macos:
         fi
     done
 
-    binding="${SUPER_VOICE_HOTKEY:-ctrl+alt+space}"
     echo ""
     echo "✓ Super Voice installed: {{ macos_bundle_dst }}"
     echo "✓ The daemon and the shortcut run in the background, and at every login."
     echo "  They are listed under System Settings › General › Login Items."
-    echo "✓ Shortcut: $binding starts and stops a recording"
-    echo "  Change it with SUPER_VOICE_HOTKEY=... just install"
+    echo "✓ Shortcut: ⌃⌥Space starts and stops a recording, unless you changed it."
+    echo "  Change it on the app's Shortcuts page."
     echo ""
     echo "Open Super Voice once, and allow its notifications when asked. Two more"
     echo "macOS permissions are needed, and neither can be granted from here:"

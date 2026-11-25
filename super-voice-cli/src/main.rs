@@ -46,6 +46,17 @@ const SCOPES: &[&str] = &["transcribe", "speak", "status"];
 /// daemon asks the user for `settings` only when it needs it. The token it
 /// gets covers the other commands as well.
 const ASSISTANT_KEY_SCOPES: &[&str] = &["transcribe", "speak", "status", "settings"];
+/// What the shortcut listener (`voice hotkey`) asks for, under its own
+/// identity: to record (`transcribe`, and `status` to know whether a
+/// recording is running), to read its keys (`settings`), and to hear when
+/// they change (`daemon_status`, which [`HOTKEY_TOPICS`] needs). It is an
+/// official client in the app bundle, so the daemon grants these without a
+/// dialog.
+#[cfg(any(target_os = "macos", test))]
+const HOTKEY_SCOPES: &[&str] = &["transcribe", "status", "settings", "daemon_status"];
+/// The events the shortcut listener follows: `settings_changed` is one.
+#[cfg(any(target_os = "macos", test))]
+const HOTKEY_TOPICS: &[&str] = &["daemon_status_changed"];
 
 fn main() -> Result<()> {
     // The CLI previously had no logging at all; initialize it like the other
@@ -287,13 +298,15 @@ where
     F: Fn(String) -> Fut,
     Fut: std::future::Future<Output = super_voice_shared::daemon::http_client::HttpResult<T>>,
 {
-    run_with_token_as(APP_ID, APP_NAME, socket_path, op).await
+    run_with_token_as(APP_ID, APP_NAME, SCOPES, socket_path, op).await
 }
 
-/// [`run_with_token`] under another app identity. See `hotkey::APP_ID`.
+/// [`run_with_token`] under another app identity, asking for `scopes`. See
+/// `hotkey::APP_ID`.
 async fn run_with_token_as<F, Fut, T>(
     app_id: AppId,
     app_name: &str,
+    scopes: &[&str],
     socket_path: PathBuf,
     op: F,
 ) -> Result<T>
@@ -301,7 +314,7 @@ where
     F: Fn(String) -> Fut,
     Fut: std::future::Future<Output = super_voice_shared::daemon::http_client::HttpResult<T>>,
 {
-    session::with_token(socket_path, app_id, app_name, SCOPES, op)
+    session::with_token(socket_path, app_id, app_name, scopes, op)
         .await
         .map_err(|e| anyhow!(e))
 }
@@ -658,7 +671,11 @@ mod tests {
     /// the consent binary's `scope_conformance` guard (audit 2 Tier 3 #33).
     #[test]
     fn requested_scopes_are_known() {
-        for scope in SCOPES.iter().chain(super::ASSISTANT_KEY_SCOPES) {
+        for scope in SCOPES
+            .iter()
+            .chain(super::ASSISTANT_KEY_SCOPES)
+            .chain(super::HOTKEY_SCOPES)
+        {
             assert!(
                 is_known_scope(scope),
                 "CLI requests scope `{scope}` that is not in scopes::known_scopes"
@@ -799,19 +816,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn hotkey_launch_agent_arguments_parse() {
-        let plist = include_str!("../launchd/ai.menjivar.super-voice.hotkey.plist");
-        let array = plist
-            .split("<key>ProgramArguments</key>")
-            .nth(1)
-            .and_then(|rest| rest.split("</array>").next())
-            .expect("the plist has a ProgramArguments array");
-        let args: Vec<String> = array
-            .split("<string>")
-            .skip(1)
-            .filter_map(|s| s.split("</string>").next())
-            .map(|s| s.replace("__BINDING__", super::hotkey::DEFAULT_BINDING))
-            .collect();
-
+        let args = hotkey_launch_agent_arguments();
         assert_eq!(args.get(1).map(String::as_str), Some("hotkey"));
         let matches = super::build_cli()
             .try_get_matches_from(&args)
@@ -819,5 +824,124 @@ mod tests {
         let (_, sub) = matches.subcommand().expect("a subcommand");
         let binding = sub.get_one::<String>("key").expect("--key has a value");
         super::hotkey::check(binding).expect("the default binding must be valid");
+    }
+
+    /// The `ProgramArguments` of the hotkey `LaunchAgent`.
+    fn hotkey_launch_agent_arguments() -> Vec<String> {
+        let plist = include_str!("../launchd/ai.menjivar.super-voice.hotkey.plist");
+        let array = plist
+            .split("<key>ProgramArguments</key>")
+            .nth(1)
+            .and_then(|rest| rest.split("</array>").next())
+            .expect("the plist has a ProgramArguments array");
+        array
+            .split("<string>")
+            .skip(1)
+            .filter_map(|s| s.split("</string>").next())
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// The agent names no keys: the listener reads them from the daemon, and
+    /// a binding baked in at bundle time could not be changed from the app.
+    #[test]
+    fn the_hotkey_agent_takes_its_keys_from_the_daemon() {
+        assert_eq!(
+            hotkey_launch_agent_arguments(),
+            ["super-voice-cli", "hotkey"]
+        );
+    }
+
+    /// The listener's token covers the events it follows.
+    #[test]
+    fn the_listener_may_follow_its_events() {
+        use super_voice_shared::daemon::widget_subscription::uncovered_topic;
+        assert_eq!(
+            uncovered_topic(super::HOTKEY_SCOPES, super::HOTKEY_TOPICS),
+            None
+        );
+    }
+
+    /// The shared binding grammar, which the daemon and the apps check a
+    /// binding with, reads every binding as `global-hotkey`'s parser does,
+    /// which the listener registers it with: the same bindings accepted, with
+    /// the same modifiers and key, and the same refused.
+    #[test]
+    fn the_shared_binding_grammar_is_global_hotkeys() {
+        use global_hotkey::hotkey::{HotKey, Modifiers};
+        use super_voice_shared::models::hotkey::{self, Binding};
+
+        let mut samples: Vec<String> = [
+            "",
+            " ",
+            "+",
+            "ctrl+",
+            "+space",
+            "ctrl++space",
+            "ctrl+alt+space",
+            "Ctrl + Alt + Space",
+            " space",
+            "space ",
+            "shift+ctrl",
+            "ctrl",
+            "shift+KeyQ+alt",
+            "ctrl+a+b",
+            "super",
+            "super+space",
+            "meta+r",
+            "command+option+control+shift+F5",
+            "OPTION+digit1",
+            "ctrl+banana",
+            "ctrl+ ",
+            "ctrl+Super",
+            "alt+Fn",
+            "cmd+shift+KeyR",
+            "ctrl+f35",
+            "ctrl+F36",
+            "ctrl+ß",
+            "hyper+space",
+            "ctrl+\\",
+            "cmd+,",
+        ]
+        .map(str::to_string)
+        .to_vec();
+        // `cmdorctrl` is `cmd` only on a Mac; `global-hotkey` reads it as
+        // `ctrl` elsewhere.
+        if cfg!(target_os = "macos") {
+            samples.push("CmdOrCtrl+Space".to_string());
+        }
+        for spelling in Binding::key_spellings() {
+            samples.push(spelling.to_string());
+            samples.push(spelling.to_lowercase());
+            samples.push(format!("ctrl+shift+{spelling}"));
+            samples.push(format!("alt + {}", spelling.to_lowercase()));
+            samples.push(format!("{spelling}+ctrl"));
+        }
+
+        for sample in &samples {
+            let ours = Binding::parse(sample);
+            let theirs = sample.parse::<HotKey>();
+            match (&ours, &theirs) {
+                (Ok(ours), Ok(theirs)) => {
+                    assert_eq!(ours.key(), theirs.key.to_string(), "key of `{sample}`");
+                    let mods = ours.modifiers();
+                    for (shared, global) in [
+                        (hotkey::Modifiers::CONTROL, Modifiers::CONTROL),
+                        (hotkey::Modifiers::OPTION, Modifiers::ALT),
+                        (hotkey::Modifiers::SHIFT, Modifiers::SHIFT),
+                        (hotkey::Modifiers::COMMAND, Modifiers::META),
+                    ] {
+                        assert_eq!(
+                            mods.contains(shared),
+                            theirs.mods.contains(global),
+                            "modifiers of `{sample}`"
+                        );
+                    }
+                }
+                (Err(_), Err(_)) => {}
+                _ => panic!("`{sample}`: ours {ours:?}, global-hotkey's {theirs:?}"),
+            }
+        }
+        assert!(samples.len() > 1000, "every key is tried");
     }
 }
