@@ -271,6 +271,53 @@ pub fn voice_label(voice: &VoiceState, source: &str, model: &str) -> Option<Stri
     )
 }
 
+/// When a clip was made, as its row says it: "Today, 09:40", "Yesterday,
+/// 17:12", or the date and time.
+#[must_use]
+pub fn when(created: chrono::NaiveDateTime, today: chrono::NaiveDate) -> String {
+    let time = created.format("%H:%M").to_string();
+    let day = created.date();
+    if day == today {
+        crate::i18n::text("today-at", &[("time", &time)])
+    } else if today.pred_opt() == Some(day) {
+        crate::i18n::text("yesterday-at", &[("time", &time)])
+    } else {
+        created.format("%Y-%m-%d %H:%M").to_string()
+    }
+    .replace(['\u{2068}', '\u{2069}'], "")
+}
+
+/// `length` as minutes and seconds: "0:06", "1:42".
+#[must_use]
+pub fn clock(length: Duration) -> String {
+    let seconds = length.as_secs();
+    format!("{}:{:02}", seconds / 60, seconds % 60)
+}
+
+/// A clip's first line with words on it, cut to `max_chars` with an
+/// ellipsis, at the last whole word: its name in a list or a question.
+#[must_use]
+pub fn first_line(text: &str, max_chars: usize) -> String {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or_default();
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() <= max_chars {
+        return line.to_string();
+    }
+    let mut end = max_chars;
+    if !chars[end].is_whitespace()
+        && let Some(space) = chars[..end].iter().rposition(|c| c.is_whitespace())
+    {
+        end = space;
+    }
+    let cut: String = chars[..end].iter().collect();
+    let cut = cut.trim_end_matches(|c: char| c.is_whitespace() || ".,;:!?-".contains(c));
+    format!("{cut}\u{2026}")
+}
+
 /// Roughly how fast speech goes, for the estimate of how long a clip will
 /// play: about 150 words a minute.
 const SECONDS_PER_WORD: f32 = 0.4;
@@ -557,5 +604,30 @@ mod tests {
         assert_eq!(estimated_seconds(0), 0);
         assert_eq!(estimated_seconds(1), 1);
         assert_eq!(estimated_seconds(10), 4);
+    }
+
+    #[test]
+    fn a_clip_is_named_by_its_first_words() {
+        assert_eq!(first_line("\n  Hello there.\nMore", 40), "Hello there.");
+        assert_eq!(
+            first_line("Stand-up moves to 10:30 tomorrow, in the small room.", 20),
+            "Stand-up moves to\u{2026}"
+        );
+    }
+
+    #[test]
+    fn a_clock_is_minutes_and_seconds() {
+        assert_eq!(clock(Duration::from_secs(6)), "0:06");
+        assert_eq!(clock(Duration::from_secs(102)), "1:42");
+    }
+
+    #[test]
+    fn when_says_today_yesterday_or_the_date() {
+        let at =
+            |s: &str| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").expect("a time");
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 11, 25).expect("a day");
+        assert_eq!(when(at("2026-11-25 09:40"), today), "Today, 09:40");
+        assert_eq!(when(at("2026-11-24 17:12"), today), "Yesterday, 17:12");
+        assert_eq!(when(at("2026-11-20 08:05"), today), "2026-11-20 08:05");
     }
 }
