@@ -871,3 +871,50 @@ daemon-connecting = Connexion au service…
 daemon-not-answering = Le service ne répond pas : { $reason }
 daemon-access-refused = L’accès a été refusé : { $reason }
 page-not-built = Cette page n’est pas encore faite.
+
+# The window: each feature's readiness, the command palette, the drawer
+readiness-unknown = Inconnu
+readiness-no-backend = Aucun moteur
+go-to-or-run = Aller à ou lancer…
+palette-commands = Commandes
+palette-go-to = Aller à
+palette-nothing-matches = Rien ne correspond.
+palette-to-move = pour se déplacer
+palette-to-run = pour lancer
+show-pages = Afficher les pages
+hide-pages = Masquer les pages
+back-to = Retour à { $page }
+unload-all-models = Décharger tous les modèles
+palette-load-model = Charger { $model }
+
+# The Connection page, in place of the pages while the daemon can't be reached
+status-access-refused = Accès refusé
+status-daemon-not-running = Service arrêté
+connection-refused-title = L’accès a été refusé
+connection-refused-body = L’app a demandé l’accès au service, qui a répondu non. Le service garde cette réponse jusqu’à son redémarrage.
+connection-restart-the-daemon = Redémarrez le service
+connection-ask-again = Redemandez, puis acceptez dans la fenêtre qui s’ouvre
+connection-not-running-title = Le service ne tourne pas
+connection-not-running-body = Le service fait tourner les modèles de chaque fonction. L’app continue d’essayer de le joindre.
+connection-start-the-daemon = Démarrez le service
+connection-try-now = Ou réessayez maintenant
+connection-switched-off-title = Le service est désactivé
+connection-not-registered-title = Le service n’est pas enregistré
+socket = Socket
+copy-command = Copier la commande
+
+# The About page
+about-tagline = Dictez dans n’importe quelle app, et écoutez n’importe quel texte lu à voix haute.
+about-app = App
+about-daemon = Service
+about-daemon-reading = Lecture…
+about-daemon-unknown = Inconnue
+about-commit = Commit
+about-system = Système
+about-license-body = Super Voice est un logiciel libre, sous la licence publique générale GNU, version 3.
+about-source-code = Code source
+about-report-a-problem = Signaler un problème
+about-read-the-license = Lire la licence
+about-notices = Mentions des logiciels tiers
+about-copied = Les détails de version sont dans le presse-papiers.
+about-copy-details = Copier les détails

@@ -1,0 +1,423 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//! The window: its title bar, the pages (a sidebar of them, a rail of icons
+//! or a drawer, by the window's width), the page shown, and a status bar.
+//!
+//! The shell owns what the pages share: the connection, each feature's
+//! readiness, the daemon's events, which it hands to every page; the command
+//! palette (Ctrl+K, Cmd+K on macOS); Alt+Left, which goes back from a detail.
+//! While the daemon is down, the Connection page takes the place of the
+//! pages that need it.
+
+mod connection_page;
+mod palette;
+mod sidebar;
+mod status_bar;
+mod title_bar;
+
+use gpui_kit::component::{ActiveTheme as _, Placement, Theme, WindowExt as _, h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{
+    AnyElement, App, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
+    KeyBinding, ParentElement as _, Render, Styled as _, Subscription, Window, actions, div, px,
+};
+use super_voice_app_core::events::Event;
+use super_voice_app_core::pages::connection::Input as ConnectionInput;
+use super_voice_app_core::pages::readiness::Input as ReadinessInput;
+
+use crate::connection::{Connection, ConnectionEvent};
+use crate::daemon_events::{DaemonEvent, DaemonEvents};
+use crate::pages::{self, Page, PageHandle};
+use crate::readiness::Readiness;
+use crate::shared::{Navigator, Shared};
+use crate::ui::width::{self, WindowSize};
+
+actions!(
+    super_voice,
+    [
+        /// Open the command palette.
+        OpenPalette,
+        /// Go back from a detail shown alone to its list.
+        Back,
+    ]
+);
+
+/// The palette's keys: Cmd+K on macOS, Ctrl+K elsewhere.
+pub const PALETTE_KEYS: &str = if cfg!(target_os = "macos") {
+    "cmd-k"
+} else {
+    "ctrl-k"
+};
+
+/// The shell's keys: Ctrl+K (Cmd+K on macOS) for the palette, Alt+Left for
+/// back.
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new(PALETTE_KEYS, OpenPalette, None),
+        KeyBinding::new("alt-left", Back, None),
+    ]);
+}
+
+/// The message keys the shell shows besides the pages' and headings' names.
+#[cfg(test)]
+pub const KEYS: &[&str] = &[
+    "app-title",
+    "daemon-connected",
+    "daemon-connecting",
+    "daemon-not-answering",
+    "daemon-access-refused",
+    "page-not-built",
+    "go-to-or-run",
+    "palette-commands",
+    "palette-go-to",
+    "palette-nothing-matches",
+    "palette-to-move",
+    "palette-to-run",
+    "palette-load-model",
+    "unload-all-models",
+    "new-note",
+    "back-to",
+    "transcription",
+    "synthesis",
+    "show-pages",
+    "hide-pages",
+    "status-access-refused",
+    "status-daemon-not-running",
+    "connection-refused-title",
+    "connection-refused-body",
+    "connection-restart-the-daemon",
+    "connection-ask-again",
+    "connection-not-running-title",
+    "connection-not-running-body",
+    "connection-start-the-daemon",
+    "connection-try-now",
+    "connection-switched-off-title",
+    "connection-not-registered-title",
+    "super-voice-s-background-service-is-switched",
+    "super-voice-s-background-service-is-not",
+    "open-login-items",
+    "register",
+    "retry",
+    "retry-authorization",
+    "status",
+    "socket",
+    "copy",
+    "copy-command",
+];
+
+/// The services the window runs on: whether the daemon answers, how ready
+/// each feature is, and the daemon's events.
+pub struct Services {
+    pub connection: Entity<Connection>,
+    pub readiness: Entity<Readiness>,
+    pub events: Entity<DaemonEvents>,
+}
+
+/// The window's content.
+pub struct Shell {
+    /// The page picked. While the daemon is down and it needs the daemon,
+    /// the Connection page shows in its place.
+    page: Page,
+    /// Every page, built when the window opens.
+    pages: Vec<(Page, PageHandle)>,
+    shared: Shared,
+    events: Entity<DaemonEvents>,
+    palette: palette::Palette,
+    /// The drawer is open (narrow windows).
+    drawer_open: bool,
+    focus: FocusHandle,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl Shell {
+    /// The window, showing `page`. With `follow_system`, light or dark
+    /// follows the system's appearance as it changes.
+    pub fn new(
+        page: Page,
+        services: Services,
+        follow_system: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let Services {
+            connection,
+            readiness,
+            events,
+        } = services;
+        let shared = Shared {
+            connection: connection.clone(),
+            readiness: readiness.clone(),
+            nav: Navigator(cx.weak_entity()),
+        };
+        let pages: Vec<(Page, PageHandle)> = Page::ALL
+            .into_iter()
+            .map(|page| (page, pages::build(page, &shared, window, cx)))
+            .collect();
+
+        let mut subscriptions = vec![
+            cx.observe(&connection, |_, _, cx| cx.notify()),
+            cx.observe(&readiness, |_, _, cx| cx.notify()),
+            cx.subscribe_in(&connection, window, Self::on_connection),
+            cx.subscribe_in(&events, window, Self::on_daemon_event),
+        ];
+        subscriptions.extend(pages.iter().map(|(_, handle)| handle.observe_by(cx)));
+        if follow_system {
+            crate::theme::follow_system(window, cx);
+            subscriptions.push(cx.observe_window_appearance(window, |_, window, cx| {
+                crate::theme::follow_system(window, cx);
+            }));
+        }
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
+        Self {
+            page,
+            pages,
+            shared,
+            events,
+            palette: palette::Palette::new(window, cx),
+            drawer_open: false,
+            focus,
+            _subscriptions: subscriptions,
+        }
+    }
+
+    /// Show `page`.
+    pub fn go(&mut self, page: Page, window: &mut Window, cx: &mut Context<Self>) {
+        self.page = page;
+        if self.drawer_open {
+            self.drawer_open = false;
+            window.close_sheet(cx);
+        }
+        self.handle(page).shown(window, cx);
+        cx.notify();
+    }
+
+    fn handle(&self, page: Page) -> &PageHandle {
+        &self
+            .pages
+            .iter()
+            .find(|(p, _)| *p == page)
+            .expect("every page is built")
+            .1
+    }
+
+    /// Whether the Connection page shows in place of the page picked.
+    fn shows_connection(&self, cx: &App) -> bool {
+        self.page.needs_daemon() && self.shared.connection.read(cx).is_down()
+    }
+
+    /// The page the window shows, `None` while the Connection page does.
+    fn page_shown(&self, cx: &App) -> Option<Page> {
+        (!self.shows_connection(cx)).then_some(self.page)
+    }
+
+    fn on_connection(
+        &mut self,
+        _: &Entity<Connection>,
+        event: &ConnectionEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ConnectionEvent::Reached => {
+                self.events.update(cx, DaemonEvents::start);
+                self.shared.readiness.update(cx, |readiness, cx| {
+                    readiness.send(ReadinessInput::Reached, cx);
+                });
+                for (_, handle) in &self.pages {
+                    handle.reached(window, cx);
+                }
+            }
+            ConnectionEvent::Lost => {
+                self.shared
+                    .readiness
+                    .update(cx, |readiness, cx| readiness.send(ReadinessInput::Lost, cx));
+            }
+            ConnectionEvent::Resubscribe => self.events.update(cx, DaemonEvents::restart),
+        }
+    }
+
+    fn on_daemon_event(
+        &mut self,
+        _: &Entity<DaemonEvents>,
+        DaemonEvent(event): &DaemonEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let connection = match event {
+            Event::Connected => Some(ConnectionInput::Reached),
+            Event::Blocked(reason) => Some(ConnectionInput::Refused(reason.clone())),
+            _ => None,
+        };
+        if let Some(input) = connection {
+            self.shared
+                .connection
+                .update(cx, |connection, cx| connection.send(input, cx));
+        }
+        if let Event::Status(status) = event {
+            let status = status.clone();
+            self.shared.readiness.update(cx, |readiness, cx| {
+                readiness.send(ReadinessInput::Heard(status), cx);
+            });
+        }
+        for (_, handle) in &self.pages {
+            handle.heard(event, window, cx);
+        }
+    }
+
+    fn on_open_palette(&mut self, _: &OpenPalette, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_palette(window, cx);
+    }
+
+    /// Open the command palette.
+    pub fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.drawer_open {
+            self.drawer_open = false;
+            window.close_sheet(cx);
+        }
+        let groups = palette::entries(&self.pages, cx);
+        self.palette.open(groups, window, cx);
+    }
+
+    /// Run what the palette's pick says: show a page, then run its command.
+    fn run_pick(&mut self, pick: palette::Pick, window: &mut Window, cx: &mut Context<Self>) {
+        match pick {
+            palette::Pick::GoTo(page) => self.go(page, window, cx),
+            palette::Pick::Run(page, id) => {
+                self.go(page, window, cx);
+                self.handle(page).clone().run(&id, window, cx);
+            }
+        }
+    }
+
+    fn on_back(&mut self, _: &Back, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(page) = self.page_shown(cx) {
+            self.handle(page).clone().back(window, cx);
+        }
+    }
+
+    /// Open or close the drawer of pages (narrow windows).
+    fn toggle_drawer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.drawer_open {
+            self.drawer_open = false;
+            window.close_sheet(cx);
+            cx.notify();
+            return;
+        }
+        self.drawer_open = true;
+        let shell = cx.weak_entity();
+        window.open_sheet_at(Placement::Left, cx, move |sheet, _, cx| {
+            let Some(this) = shell.upgrade() else {
+                return sheet;
+            };
+            let on_close = shell.clone();
+            let nav = sidebar::Nav::read(this.read(cx), cx);
+            sheet
+                .size(width::DRAWER)
+                // The sidebar fills it to its edges, in its own colour.
+                .px_0()
+                .bg(cx.theme().sidebar)
+                .title(sidebar::brand(cx))
+                .on_close(move |_, _, cx| {
+                    _ = on_close.update(cx, |shell, cx| {
+                        shell.drawer_open = false;
+                        cx.notify();
+                    });
+                })
+                .child(sidebar::drawer(&nav, shell.clone(), cx))
+        });
+        cx.notify();
+    }
+
+    /// Keep the window's overlays in step with its width: the drawer closes
+    /// when the window grows out of narrow, and a toast takes a narrow
+    /// window's width less 16 px a side.
+    fn fit_overlays(&mut self, size: WindowSize, window: &mut Window, cx: &mut Context<Self>) {
+        if size != WindowSize::Narrow && self.drawer_open {
+            self.drawer_open = false;
+            let weak = cx.weak_entity();
+            window.defer(cx, move |window, cx| {
+                window.close_sheet(cx);
+                _ = weak.update(cx, |_, cx| cx.notify());
+            });
+        }
+        let toast = (width::window_width(window) - px(32.)).min(px(382.));
+        if cx.theme().notification.width != toast {
+            window.defer(cx, move |_, cx| {
+                Theme::global_mut(cx).notification.width = toast;
+            });
+        }
+    }
+}
+
+impl Render for Shell {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Through the hot-patch table, so a patch reaches everything drawn
+        // from here (`just app-watch`).
+        crate::hot::call(|| self.frame(window, cx))
+    }
+}
+
+impl Shell {
+    fn frame(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let size = WindowSize::of(window);
+        self.fit_overlays(size, window, cx);
+        let content = if self.shows_connection(cx) {
+            connection_page::render(&self.shared.connection, window, cx).into_any_element()
+        } else {
+            self.handle(self.page).view().into_any_element()
+        };
+        v_flex()
+            .id("shell")
+            .key_context("Shell")
+            .track_focus(&self.focus)
+            .on_action(cx.listener(Self::on_open_palette))
+            .on_action(cx.listener(Self::on_back))
+            .size_full()
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
+            .child(title_bar::render(self, size, cx))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .w_full()
+                    .when(size != WindowSize::Narrow, |row| {
+                        row.child(sidebar::sidebar(self, size, cx))
+                    })
+                    .child(
+                        div()
+                            .id("content")
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .bg(cx.theme().background)
+                            .child(content),
+                    ),
+            )
+            .child(status_bar::render(self, size, cx))
+            .into_any_element()
+    }
+}
+
+/// The app's version, as the sidebar and the status bar show it.
+#[must_use]
+pub fn version() -> gpui_kit::SharedString {
+    concat!("v", env!("CARGO_PKG_VERSION")).into()
+}
+
+#[cfg(feature = "screenshot")]
+impl Shell {
+    /// Made-up state for `just app-shot`: each page's own, then the scenes
+    /// the shell draws itself (`palette`, `drawer`).
+    pub fn pretend(&mut self, scenes: &[&str], window: &mut Window, cx: &mut Context<Self>) {
+        for (_, handle) in &self.pages {
+            handle.pretend(scenes, window, cx);
+        }
+        if scenes.contains(&"palette") {
+            self.open_palette(window, cx);
+        }
+        if scenes.contains(&"drawer") && WindowSize::of(window) == WindowSize::Narrow {
+            self.toggle_drawer(window, cx);
+        }
+    }
+}

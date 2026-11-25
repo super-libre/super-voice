@@ -9,23 +9,31 @@
 
 mod assets;
 mod connection;
+mod daemon_events;
+mod effects;
 mod hot;
 #[cfg(target_os = "macos")]
 mod macos;
 mod pages;
+mod readiness;
 mod runtime;
+mod shared;
 mod shell;
 #[cfg(feature = "screenshot")]
 mod shot;
 mod theme;
+mod ui;
 
 use gpui_kit::component::TitleBar;
 use gpui_kit::{App, AppContext as _, Bounds, SharedString, WindowBounds, WindowOptions, px, size};
 use super_voice_app_core::i18n;
 
 use crate::connection::Connection;
+use crate::daemon_events::DaemonEvents;
 use crate::pages::Page;
-use crate::shell::Shell;
+use crate::readiness::Readiness;
+pub use crate::shell::version;
+use crate::shell::{Services, Shell};
 
 /// The window's id with the desktop: its Wayland app id, which the desktop
 /// entry's `StartupWMClass` names.
@@ -42,7 +50,8 @@ fn main() {
         macos::notifier::run();
     }
 
-    // `--shot <out.png> [page] [light|dark]`, with the `screenshot` feature
+    // `--shot <out.png> [page] [light|dark] [width] [scenes]`, with the
+    // `screenshot` feature
     // (`just app-shot`).
     #[cfg(feature = "screenshot")]
     if std::env::args().nth(1).as_deref() == Some(shot::FLAG) {
@@ -68,9 +77,13 @@ fn run() {
             hot::connect(cx);
             #[cfg(target_os = "macos")]
             macos::on_launch();
-            let connection = cx.new(Connection::new);
+            let services = Services {
+                connection: cx.new(Connection::new),
+                readiness: cx.new(|_| Readiness::new()),
+                events: cx.new(|_| DaemonEvents::new()),
+            };
             let opened = gpui_kit::open_window(window_options(cx), cx, |window, cx| {
-                cx.new(|cx| Shell::new(Page::SttModels, connection, true, window, cx))
+                cx.new(|cx| Shell::new(Page::SttModels, services, true, window, cx))
             });
             if let Err(e) = opened {
                 log::error!("could not open the window: {e:#}");
@@ -80,9 +93,10 @@ fn run() {
 }
 
 /// What the app sets up before its first window: the kit, the words in the
-/// desktop's language, and the theme.
+/// desktop's language, the theme, and the window's keys.
 pub fn setup(cx: &mut App) {
     gpui_kit::init(cx);
+    shell::bind_keys(cx);
     i18n::select(&i18n_embed::DesktopLanguageRequester::requested_languages());
     theme::install(cx);
 }
@@ -100,7 +114,10 @@ pub fn window_options(cx: &App) -> WindowOptions {
             size(px(WINDOW_SIZE.0), px(WINDOW_SIZE.1)),
             cx,
         ))),
-        window_min_size: Some(size(px(720.), px(480.))),
+        window_min_size: Some(size(
+            px(ui::width::MIN_WINDOW.0),
+            px(ui::width::MIN_WINDOW.1),
+        )),
         // The kit's title bar draws the window's own controls (Linux) or
         // leaves room for the traffic lights (macOS).
         #[cfg(target_os = "linux")]

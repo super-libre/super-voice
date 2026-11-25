@@ -23,6 +23,15 @@ pub fn short_name(name: &str) -> &str {
     name
 }
 
+/// A byte count in GiB with one decimal, as memory is shown: `6.1`. The
+/// unit is the words' (`memory-size`, `memory-pair`).
+// reason: display-only; the imprecision is cosmetic
+#[allow(clippy::cast_precision_loss)]
+#[must_use]
+pub fn gib(bytes: u64) -> String {
+    format!("{:.1}", bytes as f64 / f64::from(1u32 << 30))
+}
+
 /// A framework as people name it, from the id the daemon uses: `cuda` is
 /// CUDA, `vulkan` Vulkan. An id the app doesn't know is shown as it is.
 #[must_use]
@@ -75,6 +84,13 @@ pub fn meter_level(used: u64, total: u64) -> MeterLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn memory_shows_in_gib_with_one_decimal() {
+        assert_eq!(gib(0), "0.0");
+        assert_eq!(gib(24 << 30), "24.0");
+        assert_eq!(gib(6_550_000_000), "6.1");
+    }
 
     #[test]
     fn frameworks_go_by_their_names() {

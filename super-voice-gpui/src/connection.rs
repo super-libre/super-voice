@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Whether the daemon answers: the core's Connection page
 //! (`pages::connection`) run for the window, which shows it in its status
-//! bar.
+//! bar, and shows the Connection page in place of the pages that need the
+//! daemon while it is down.
 //!
-//! The pattern every page follows: the model owns the core's state, an input
-//! goes through the core's `update`, and each effect it returns is either
-//! done here at once or run on the core's runtime, whose answer comes back as
-//! the next input. The tasks it starts are kept in the model, so dropping the
-//! model cancels them.
+//! The pattern every model follows: it owns the core's state, an input goes
+//! through the core's `update`, and each effect it returns is either done
+//! here at once or run on the core's runtime, whose answer comes back as the
+//! next input. What the window must hear of (the daemon answering again,
+//! going down, the event stream to start again) it emits as a
+//! [`ConnectionEvent`].
 
 use std::time::Duration;
 
-use gpui_kit::{AsyncApp, Context, Task, WeakEntity};
-use super_voice_app_core::pages::connection::{self as page, Effect, Input};
+use gpui_kit::{AsyncApp, Context, EventEmitter, Task, WeakEntity};
+use super_voice_app_core::pages::connection::{self as page, Effect, Fix, Input};
 use super_voice_app_core::state::connection::{ConnectionState, DaemonStatus};
 use super_voice_shared::daemon::http_client::HttpError;
 
@@ -20,6 +22,18 @@ use crate::runtime;
 
 /// How often a connected daemon is pinged, so a daemon that stops is noticed.
 const KEEP_ALIVE: Duration = Duration::from_secs(5);
+
+/// What the window hears from the connection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConnectionEvent {
+    /// The daemon answers, first or again: read what it shows.
+    Reached,
+    /// The daemon stopped answering, or refused the app.
+    Lost,
+    /// Start the daemon's event stream again: it ended when the user refused
+    /// the app.
+    Resubscribe,
+}
 
 /// The connection, as a GPUI model.
 pub struct Connection {
@@ -30,6 +44,8 @@ pub struct Connection {
     /// The keep-alive timer, while the daemon answers.
     keep_alive: Option<Task<()>>,
 }
+
+impl EventEmitter<ConnectionEvent> for Connection {}
 
 impl Connection {
     /// Start asking the daemon.
@@ -42,12 +58,15 @@ impl Connection {
     /// A connection that stays as `status` and asks the daemon nothing: for a
     /// screenshot, which must not reach the daemon on the desktop it is taken
     /// on (a new binary asking for a token brings up the consent dialog
-    /// there).
+    /// there). An error or a refusal is down, as after a failed ping.
     #[must_use]
     pub fn fixed(status: DaemonStatus) -> Self {
+        let failure = matches!(status, DaemonStatus::Error(_) | DaemonStatus::Blocked(_))
+            .then(|| status.clone());
         Self {
             state: ConnectionState {
                 status,
+                failure,
                 ..ConnectionState::default()
             },
             pending: None,
@@ -60,11 +79,50 @@ impl Connection {
         &self.state.status
     }
 
+    /// Whether the window shows the Connection page in place of the pages
+    /// that need the daemon.
+    #[must_use]
+    pub fn is_down(&self) -> bool {
+        self.state.is_down()
+    }
+
+    /// Why the daemon is down, while it is: the failure, even while the app
+    /// tries again.
+    #[must_use]
+    pub fn failure(&self) -> Option<&DaemonStatus> {
+        self.state.failure.as_ref()
+    }
+
+    /// What the Connection page offers to fix it.
+    #[must_use]
+    pub fn fix(&self) -> Option<Fix> {
+        page::fix(&self.state)
+    }
+
     /// Take in `input`: the core decides, this does what it says.
     pub fn send(&mut self, input: Input, cx: &mut Context<Self>) {
+        let was_down = self.state.is_down();
         let outcome = page::update(&mut self.state, input);
         for effect in outcome.effects {
             self.run(&effect, cx);
+        }
+        if outcome.reconnected {
+            cx.emit(ConnectionEvent::Reached);
+        }
+        if self.state.is_down() && !was_down {
+            cx.emit(ConnectionEvent::Lost);
+            // On macOS launchd runs the daemon only while its agent is
+            // registered and switched on: read which, for the fix to offer.
+            #[cfg(target_os = "macos")]
+            cx.spawn(async move |this, cx| {
+                let read =
+                    runtime::spawn(async { tokio::task::spawn_blocking(page::read_agent).await })
+                        .await;
+                if let Ok(Ok(agent)) = read {
+                    answer(&this, Input::AgentRead(agent), cx);
+                }
+            })
+            .detach();
         }
         if self.state.is_connected() {
             if self.keep_alive.is_none() {
@@ -93,10 +151,29 @@ impl Connection {
                 }));
             }
             Effect::ForgetSession => page::forget_session(),
-            // The event stream and the macOS agent come with the pages that
-            // use them.
-            Effect::Resubscribe | Effect::RegisterAgents | Effect::OpenLoginItems => {
-                log::debug!("not handled yet: {effect:?}");
+            Effect::Resubscribe => cx.emit(ConnectionEvent::Resubscribe),
+            #[cfg(target_os = "macos")]
+            Effect::RegisterAgents => {
+                cx.spawn(async move |this, cx| {
+                    let read = runtime::spawn(async {
+                        tokio::task::spawn_blocking(|| {
+                            page::register_agents();
+                            page::read_agent()
+                        })
+                        .await
+                    })
+                    .await;
+                    if let Ok(Ok(agent)) = read {
+                        answer(&this, Input::AgentRead(agent), cx);
+                    }
+                })
+                .detach();
+            }
+            #[cfg(target_os = "macos")]
+            Effect::OpenLoginItems => page::open_login_items(),
+            #[cfg(not(target_os = "macos"))]
+            Effect::RegisterAgents | Effect::OpenLoginItems => {
+                log::debug!("only macOS has the daemon's agent: {effect:?}");
             }
         }
     }

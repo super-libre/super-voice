@@ -10428,6 +10428,7 @@ dependencies = [
  "anyhow",
  "block2 0.6.2",
  "dioxus-devtools",
+ "futures-util",
  "gpui-kit",
  "i18n-embed",
  "image",
