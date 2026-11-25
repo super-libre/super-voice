@@ -27,6 +27,7 @@ mod shortcuts;
 mod stt_behavior;
 mod take;
 mod updates;
+mod tts_behavior;
 
 use std::rc::Rc;
 
@@ -55,6 +56,9 @@ pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> 
         Page::Contexts => PageHandle::new::<contexts::ContextsPage>(page, shared, window, cx),
         Page::SttBehavior => {
             PageHandle::new::<stt_behavior::BehaviorPage>(page, shared, window, cx)
+        }
+        Page::TtsBehavior => {
+            PageHandle::new::<tts_behavior::TtsBehaviorPage>(page, shared, window, cx)
         }
         _ => PageHandle::new::<placeholder::Placeholder>(page, shared, window, cx),
     }
