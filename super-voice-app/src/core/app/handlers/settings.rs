@@ -65,7 +65,7 @@ impl AppModel {
                 log::warn!("Preview typing error: {err}");
                 self.set_action_error(
                     crate::state::ErrorScope::Recording,
-                    format!("Couldn't save preview typing: {err}"),
+                    crate::fl!("preview-typing-could-not-save", error = err),
                 );
                 Task::none()
             }
@@ -152,7 +152,7 @@ impl AppModel {
                 log::warn!("Recording stop mode error: {err}");
                 self.set_action_error(
                     crate::state::ErrorScope::Recording,
-                    format!("Couldn't save recording stop mode: {err}"),
+                    crate::fl!("stop-mode-could-not-save", error = err),
                 );
                 Task::none()
             }
@@ -174,7 +174,7 @@ impl AppModel {
                         WriteMethodMessage::Loaded(method),
                     )),
                     Err(e) => cosmic::Action::App(Message::WriteMethod(WriteMethodMessage::Error(
-                        format!("couldn't save: {e}"),
+                        crate::fl!("write-method-could-not-save", error = e.to_string()),
                     ))),
                 })
             }
@@ -243,10 +243,7 @@ impl AppModel {
             WriteMethodMessage::Error(err) => {
                 log::warn!("Write method error: {err}");
                 self.write_method_test_countdown = None;
-                self.set_action_error(
-                    crate::state::ErrorScope::InputSimulation,
-                    format!("Write method: {err}"),
-                );
+                self.set_action_error(crate::state::ErrorScope::InputSimulation, err);
                 Task::none()
             }
         }
@@ -344,8 +341,9 @@ fn write_method_test_task() -> Task<cosmic::Action<Message>> {
         Ok(resolved) => {
             cosmic::Action::App(Message::WriteMethod(WriteMethodMessage::Tested(resolved)))
         }
-        Err(e) => cosmic::Action::App(Message::WriteMethod(WriteMethodMessage::Error(format!(
-            "test failed: {e}"
+        Err(e) => cosmic::Action::App(Message::WriteMethod(WriteMethodMessage::Error(crate::fl!(
+            "typing-test-failed",
+            error = e.to_string()
         )))),
     })
 }

@@ -77,15 +77,18 @@ impl AppModel {
                     // failure: the test says so in words rather than leaving
                     // an empty box.
                     RecordEvent::Final(Ok(text)) if text.trim().is_empty() => cosmic::Action::App(
-                        Message::Recording(RecordingMessage::TranscriptionReceived(
-                            "No speech detected".to_string(),
-                        )),
+                        Message::Recording(RecordingMessage::TranscriptionReceived(crate::fl!(
+                            "no-speech-detected"
+                        ))),
                     ),
                     RecordEvent::Final(Ok(text)) => cosmic::Action::App(Message::Recording(
                         RecordingMessage::TranscriptionReceived(text),
                     )),
                     RecordEvent::Final(Err(e)) => cosmic::Action::App(Message::Recording(
-                        RecordingMessage::TranscriptionReceived(format!("Error: {e}")),
+                        RecordingMessage::TranscriptionReceived(crate::fl!(
+                            "the-recording-failed",
+                            error = e
+                        )),
                     )),
                 }))
             }
