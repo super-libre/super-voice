@@ -1026,3 +1026,36 @@ configure-required = Required
 configure-options = Options
 chip-gpu = GPU
 chip-cpu = CPU
+
+# The Library page
+library-all-features = All features
+library-all-kinds = All kinds
+library-local-or-cloud = Local or cloud
+library-more = More
+library-configure = Configure…
+library-uninstall = Uninstall…
+library-runs = Runs
+library-state = State
+library-available = Available
+library-update-ready = Update ready
+library-cannot-run-here = Can't run here
+library-version = Version { $version }
+library-count = { $count ->
+    [one] 1 backend.
+   *[other] { $count } backends.
+}
+library-filters = Filters
+library-filters-count = Filters ({ $count })
+library-clear-filters = Clear filters
+library-no-match-title = No backends match
+library-empty-title = No backends yet
+library-empty-body = None are installed, and the catalog lists none. Install one from a repository or a folder.
+library-nothing-picked = No backend picked
+library-nothing-picked-body = Pick one in the table to see what it runs as, what it reaches and its models.
+library-installed = { $backend } is installed.
+library-install-failed = Couldn't install { $backend }
+library-update-backend = Update { $backend } to { $version }
+library-configure-backend = Configure { $backend }…
+library-folder-path = A folder that holds a backend.toml
+library-install-manually-body = Install a backend that isn't in the catalog, from a git repository's latest release or from a folder on this computer.
+library-check-failed = Couldn't read it

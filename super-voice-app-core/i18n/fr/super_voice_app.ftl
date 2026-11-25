@@ -1026,3 +1026,36 @@ configure-required = Obligatoire
 configure-options = Options
 chip-gpu = GPU
 chip-cpu = CPU
+
+# The Library page
+library-all-features = Toutes les fonctions
+library-all-kinds = Tous les types
+library-local-or-cloud = Local ou en ligne
+library-more = Plus
+library-configure = Configurer…
+library-uninstall = Désinstaller…
+library-runs = Fonctionne
+library-state = État
+library-available = Disponibles
+library-update-ready = Mise à jour prête
+library-cannot-run-here = Ne fonctionne pas ici
+library-version = Version { $version }
+library-count = { $count ->
+    [one] 1 moteur.
+   *[other] { $count } moteurs.
+}
+library-filters = Filtres
+library-filters-count = Filtres ({ $count })
+library-clear-filters = Effacer les filtres
+library-no-match-title = Aucun moteur ne correspond
+library-empty-title = Aucun moteur pour l'instant
+library-empty-body = Aucun n'est installé, et le catalogue n'en liste aucun. Installez-en un depuis un dépôt ou un dossier.
+library-nothing-picked = Aucun moteur choisi
+library-nothing-picked-body = Choisissez-en un dans le tableau pour voir comment il fonctionne, ce qu'il contacte et ses modèles.
+library-installed = { $backend } est installé.
+library-install-failed = Impossible d'installer { $backend }
+library-update-backend = Mettre à jour { $backend } vers { $version }
+library-configure-backend = Configurer { $backend }…
+library-folder-path = Un dossier qui contient un backend.toml
+library-install-manually-body = Installez un moteur absent du catalogue, depuis la dernière version d'un dépôt git ou depuis un dossier de cet ordinateur.
+library-check-failed = Impossible de le lire

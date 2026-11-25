@@ -43,12 +43,6 @@ impl Readiness {
         page::readiness(&self.state, feature)
     }
 
-    /// The model `feature` would load: set, and not up.
-    #[must_use]
-    pub fn model_to_load(&self, feature: Feature) -> Option<&str> {
-        page::model_to_load(&self.state, feature)
-    }
-
     /// `feature`'s stage as the daemon last reported it: its backend and
     /// model. What the Clips page names a clip's voice for.
     #[must_use]
