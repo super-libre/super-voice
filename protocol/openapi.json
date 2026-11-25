@@ -2631,6 +2631,199 @@
         ]
       }
     },
+    "/v1/settings/hotkey": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Read the macOS shortcut's keys (scope: settings)",
+        "description": "Answers with the binding the macOS shortcut listener listens for: the one set, or `ctrl+alt+space` (⌃⌥Space) when none is.",
+        "operationId": "get_hotkey",
+        "responses": {
+          "200": {
+            "description": "Done.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotkeyState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Set the macOS shortcut's keys (scope: settings)",
+        "description": "Sets the binding the macOS shortcut listener listens for, which starts and stops dictation. The listener follows the change at once.\n\nA binding is modifiers and one key joined by `+`, modifiers first: `ctrl`, `alt`, `shift`, `cmd`, then a key by its `keyboard-types` `Code` name (`Space`, `KeyR`, `Digit1`, `F5`) or its short form (`r`, `1`). One the listener could not register is refused with `400 invalid_value` and the reason: a key a Mac has no key code for, a media key, or a key that types something held with no modifier (only an F key may go alone). The answer is the binding as stored, written the one way the daemon writes it (`shift+cmd+KeyR`).",
+        "operationId": "set_hotkey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetHotkeyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Applied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotkeyState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The value was rejected — out of range, or not one of the accepted tokens.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Reset the macOS shortcut's keys (scope: settings)",
+        "description": "Goes back to the default binding, `ctrl+alt+space` (⌃⌥Space).",
+        "operationId": "clear_hotkey",
+        "responses": {
+          "200": {
+            "description": "Done.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotkeyState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token unknown, expired, or its binary changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReasonEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the `settings` scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-client rate limit hit; back off and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_token": [
+              "settings"
+            ]
+          }
+        ]
+      }
+    },
     "/v1/settings/idle_unload": {
       "get": {
         "tags": [
@@ -11718,6 +11911,25 @@
           }
         }
       },
+      "HotkeyState": {
+        "type": "object",
+        "description": "The keys the macOS shortcut listener listens for.",
+        "required": [
+          "status",
+          "hotkey"
+        ],
+        "properties": {
+          "hotkey": {
+            "type": "string",
+            "description": "The binding: the one set, or `ctrl+alt+space` when none is.",
+            "example": "ctrl+alt+space"
+          },
+          "status": {
+            "type": "string",
+            "example": "success"
+          }
+        }
+      },
       "IdleUnloadState": {
         "type": "object",
         "description": "How long a model may sit unused before it is unloaded.",
@@ -13017,6 +13229,19 @@
             "type": "string",
             "description": "An accelerator token from the stage's or model's device list — `cpu`,\n`cuda`, `vulkan`, or the generic `gpu`.",
             "example": "cuda"
+          }
+        }
+      },
+      "SetHotkeyBody": {
+        "type": "object",
+        "description": "Set the macOS shortcut's keys",
+        "required": [
+          "hotkey"
+        ],
+        "properties": {
+          "hotkey": {
+            "type": "string",
+            "description": "The binding, such as `ctrl+alt+space` or `cmd+shift+KeyR`."
           }
         }
       },
