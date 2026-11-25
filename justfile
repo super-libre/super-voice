@@ -570,14 +570,14 @@ macos-swift-app config="release":
 # the Updates page; `shortcuts`, the Shortcuts page; `library` and
 # `library-browse`, the Library page's two tabs; `library-sample` and
 # `library-sample-browse`, those with made-up backends, for the layout;
-# `library-add`, the "Install manually" sheet previewing a made-up backend; and
-# `notes-take` and
-# `note-take`, a made-up take recording a new note or adding to the open one,
+# `library-add`, the "Install manually" sheet previewing a made-up backend;
+# `configure`, a made-up backend's Configure sheet over the Library page; and
+# `notes-take` and `note-take`, a made-up take recording a new note or adding to the open one,
 # for the layout. It reads a copy of the sample notes and clips in
 # super-voice-macos/Fixtures, never yours, so `edited` changes only the copy.
 # The voices are the daemon's.
 #
-# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved|stt-behavior|stt-behavior-recorded|models|models-running|models-download|models-staged|model-language|model-voice|settings|settings-languages|assistants|assistants-key|assistants-connected|updates|shortcuts|library|library-browse|library-sample|library-sample-browse|library-add|notes-take|note-take]
+# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved|stt-behavior|stt-behavior-recorded|models|models-running|models-download|models-staged|model-language|model-voice|settings|settings-languages|assistants|assistants-key|assistants-connected|updates|shortcuts|library|library-browse|library-sample|library-sample-browse|library-add|configure|notes-take|note-take]
 macos-swift-shot out scene="notes": (macos-swift-app "debug")
     #!/usr/bin/env bash
     set -euo pipefail

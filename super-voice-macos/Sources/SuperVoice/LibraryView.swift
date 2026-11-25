@@ -276,6 +276,7 @@ struct InstalledRowView: View {
                 .buttonStyle(.borderedProminent)
             }
             RepositoryButton(url: backend.repository)
+            ConfigureButton(source: backend.source)
             Button(t("uninstall")) { model.send(.askUninstall(source: backend.source)) }
                 .disabled(backend.isUpdating)
         }

@@ -844,3 +844,7 @@ progress-loading-on-gpu = Loading { $model } on the GPU…
 backend = Backend
 stage-could-not-change = Couldn't change { $stage }: { $error }
 stage-could-not-read = Couldn't read { $stage }: { $error }
+
+# A backend's Configure sheet
+backend-setting-could-not-save = Couldn't save that setting: { $error }
+backends-could-not-load = Couldn't read the backends: { $error }

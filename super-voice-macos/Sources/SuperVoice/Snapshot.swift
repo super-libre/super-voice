@@ -36,7 +36,9 @@
 // its Browse tab once the catalog is read (or why not); `library-sample` and
 // `library-sample-browse`, both tabs with made-up backends, for the layout;
 // `library-add`, the "Install manually" sheet over them, previewing a
-// made-up backend; `notes-take`, the list with a made-up take recording a new note; or
+// made-up backend; `configure`, a made-up API-key backend's Configure sheet
+// over the Library page, for the layout;
+// `notes-take`, the list with a made-up take recording a new note; or
 // `note-take`, the newest note open with a made-up take adding to it. A take
 // scene's take, level and words are made up in the app, for the layout: a
 // real one needs a microphone and a model.
@@ -129,7 +131,7 @@ enum Snapshot {
         case "models", "models-running", "models-download", "models-staged", "settings", "settings-languages", "assistants", "assistants-key",
              "assistants-connected", "updates", "shortcuts", "library", "library-browse",
              "library-sample", "library-sample-browse", "model-language", "model-voice",
-             "library-add":
+             "library-add", "configure":
             // Shot from its own page; see `modelsShown`.
             return
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
@@ -375,7 +377,18 @@ enum Snapshot {
     /// "Install manually" sheet up over them, previewing one, for
     /// `library-add`.
     static func libraryShown(_ page: LibraryPage) {
-        guard path != nil, !taken, scene.hasPrefix("library"), page.catalogLoaded else { return }
+        guard path != nil, !taken, scene.hasPrefix("library") || scene == "configure", page.catalogLoaded
+        else { return }
+        if scene == "configure" {
+            pretendConfigure(page)
+            taken = true
+            Task {
+                // The sheet slides in.
+                try? await Task.sleep(for: .milliseconds(600))
+                await take()
+            }
+            return
+        }
         if scene.hasPrefix("library-sample") || scene == "library-add" {
             var shown = page
             shown.catalogError = nil
@@ -455,6 +468,61 @@ enum Snapshot {
             }
             await take()
         }
+    }
+
+    /// The `configure` scene: an online backend with an API key not set yet,
+    /// a switch, a pick from a list, a text option set away from its default,
+    /// and the context picker, its sheet up over the Library page.
+    private static func pretendConfigure(_ page: LibraryPage) {
+        let source = "github.com/super-libre/super-stt-openai"
+        var shown = page
+        shown.catalogError = nil
+        shown.installedTotal = 2
+        shown.installed = [
+            InstalledRow(source: source, name: "OpenAI", version: "0.3.0",
+                         description: "OpenAI's speech to text, online.", online: true,
+                         capabilities: [.cloud(hosts: ["api.openai.com"], userUrl: false)],
+                         modelGroups: [LibraryModelGroup(kind: .transcription, names: ["whisper-1", "gpt-4o-transcribe"])],
+                         repository: "https://\(source)",
+                         updateTo: nil, update: .idle, uninstallError: nil),
+            InstalledRow(source: "github.com/super-libre/super-stt-whisper", name: "Whisper", version: "0.2.1",
+                         description: "Local Whisper speech to text.", online: false,
+                         capabilities: [.gpu, .cpu],
+                         modelGroups: [LibraryModelGroup(kind: .transcription, names: ["base", "small", "large-v3-turbo"])],
+                         repository: "https://github.com/super-libre/super-stt-whisper",
+                         updateTo: nil, update: .idle, uninstallError: nil),
+        ]
+        LibraryModel.shared.pretend(shown)
+        ConfigureModel.shared.pretend(ConfigureSheet(
+            source: source, name: "OpenAI", loaded: true,
+            context: ContextPicker(
+                options: [
+                    ContextOption(choice: .followActive, name: t("follow-active-context", ["value0": "Coding"])),
+                    ContextOption(choice: .nothing, name: t("no-context")),
+                    ContextOption(choice: .pinned(id: "coding"), name: "Coding"),
+                    ContextOption(choice: .pinned(id: "email"), name: "Email"),
+                ],
+                selected: .followActive,
+                hint: t("sending-context", ["value0": "Coding"])
+            ),
+            rows: [
+                ConfigureRow(name: "api_key", label: "API key", hint: "Your OpenAI API key.", required: true,
+                             control: .secret(configured: false, input: "")),
+                ConfigureRow(name: "stream", label: "Stream", hint: "Send audio as it is recorded.",
+                             required: false, control: .bool(on: true)),
+                ConfigureRow(name: "model_size", label: "Speed", hint: "Faster, or more accurate.",
+                             required: false,
+                             control: .choice(choices: ["fast", "balanced", "accurate"], selected: "balanced")),
+                ConfigureRow(name: "base_url", label: "Base URL",
+                             hint: t("setting-hint-default", ["hint": "Where requests go.",
+                                                              "default": "https://api.openai.com/v1"]),
+                             required: false,
+                             control: .text(input: "https://gateway.example.com/v1",
+                                            value: "https://gateway.example.com/v1", overridden: true)),
+            ],
+            unmet: ["API key"],
+            notice: nil
+        ))
     }
 
     /// The Models page showed `header`: shoot it once the daemon has said what

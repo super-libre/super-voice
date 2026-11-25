@@ -61,7 +61,7 @@ struct ContentView: View {
         if Snapshot.scene.hasPrefix("shortcuts") {
             return .shortcuts
         }
-        if Snapshot.scene.hasPrefix("library") {
+        if Snapshot.scene.hasPrefix("library") || Snapshot.scene == "configure" {
             return .library
         }
         #endif

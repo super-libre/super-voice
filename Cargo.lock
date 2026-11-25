@@ -7426,6 +7426,7 @@ version = "0.3.0-beta.7"
 dependencies = [
  "chrono",
  "futures-util",
+ "serde_json",
  "super-voice-app-core",
  "super-voice-shared",
  "tokio",
