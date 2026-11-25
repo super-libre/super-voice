@@ -6,8 +6,10 @@
 // shoot: `notes`, the list (the default); `note`, the newest note open;
 // `edited`, the newest note open with a sentence added through its editor and
 // saved, which writes to the notes it reads, so point it at a copy; or
-// `clips`, the Clips page with its clips read; or `clips-playing`, the newest
-// clip partway through playing, out loud.
+// `clips`, the Clips page with its clips read; `clips-playing`, the newest
+// clip partway through playing, out loud; `voices`, the Voices page with its
+// library read; or `voices-pending`, a WAV file imported there, waiting to be
+// saved.
 // Once the page is in that state, the window is drawn into the file at one
 // size and the app quits. The app draws its own window rather than a screen
 // capture taking it: that needs no Screen Recording permission, so it works
@@ -71,8 +73,8 @@ enum Snapshot {
             guard open.saved, open.text.hasSuffix(addition) else { return }
         case "notes":
             guard page.open == nil else { return }
-        case "clips":
-            // Shot from the Clips page; see `clipsShown`.
+        case _ where scene.hasPrefix("clips") || scene.hasPrefix("voices"):
+            // Shot from their own pages; see `clipsShown` and `voicesShown`.
             return
         default:
             fail("no scene is called \(scene)")
@@ -105,6 +107,31 @@ enum Snapshot {
                 }
                 return
             }
+        }
+        taken = true
+        Task { await take() }
+    }
+
+    /// The Voices page showed `page`: shoot it once its library is read, for
+    /// the `voices` scene, or once a WAV file is imported, for
+    /// `voices-pending`. The file is `import/Grace_Hopper.wav` in the data
+    /// folder.
+    static func voicesShown(_ page: VoicesPage) {
+        guard path != nil, !taken, scene.hasPrefix("voices"), page.loaded else { return }
+        if let notice = page.notice {
+            fail("the Voices page says: \(notice.words)")
+        }
+        if scene == "voices-pending" {
+            guard page.pending != nil else {
+                if !opened {
+                    opened = true
+                    let data = ProcessInfo.processInfo.environment["XDG_DATA_HOME"] ?? NSTemporaryDirectory()
+                    VoicesModel.shared.store.filePicked(path: data + "/import/Grace_Hopper.wav")
+                }
+                return
+            }
+        } else if scene != "voices" {
+            fail("no scene is called \(scene)")
         }
         taken = true
         Task { await take() }

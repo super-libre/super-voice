@@ -43,7 +43,7 @@ struct ContentView: View {
     /// of another was asked for.
     private static var firstPage: Destination {
         #if DEBUG
-        if Snapshot.scene.hasPrefix("clips") {
+        if Snapshot.scene.hasPrefix("clips") || Snapshot.scene.hasPrefix("voices") {
             return .textToSpeech
         }
         #endif
@@ -73,7 +73,7 @@ struct ContentView: View {
             case .speechToText:
                 SpeechToTextView(notes: notes)
             case .textToSpeech:
-                TextToSpeechView(clips: ClipsModel.shared)
+                TextToSpeechView(clips: ClipsModel.shared, voices: VoicesModel.shared)
             case let other?:
                 NotYetView(title: other.title, icon: other.icon)
             case nil:
@@ -140,13 +140,25 @@ struct SpeechToTextView: View {
     }
 }
 
-/// Text to speech's tabs, at the top of the page as in the settings app. Only
-/// Clips is here so far.
+/// Text to speech's tabs, at the top of the page as in the settings app.
+/// Behavior isn't here yet.
 struct TextToSpeechView: View {
     @ObservedObject var clips: ClipsModel
+    @ObservedObject var voices: VoicesModel
 
     enum Tab: Hashable { case clips, voices, behavior }
-    @State private var tab: Tab = .clips
+    @State private var tab: Tab = Self.firstTab
+
+    /// The tab the page opens on: Clips, unless a screenshot of Voices was
+    /// asked for.
+    private static var firstTab: Tab {
+        #if DEBUG
+        if Snapshot.scene.hasPrefix("voices") {
+            return .voices
+        }
+        #endif
+        return .clips
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -162,7 +174,7 @@ struct TextToSpeechView: View {
             .padding(.horizontal, 28)
             switch tab {
             case .clips: ClipsView(model: clips)
-            case .voices: NotYetView(title: t("voices"), icon: .speakerHigh)
+            case .voices: VoicesView(model: voices)
             case .behavior: NotYetView(title: t("behavior"), icon: .speakerHigh)
             }
         }

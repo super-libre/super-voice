@@ -549,12 +549,14 @@ macos-swift-app config="release":
 # XDG_STATE_HOME keeping its token apart), and the shot waits for the header.
 # SUPER_VOICE_LANGUAGE=fr shoots it in French.
 # Scenes: `notes`, the list; `note`, the newest note open; `edited`, that
-# note with a sentence typed into it and saved; `clips`, the Clips page; and
-# `clips-playing`, its newest clip partway through playing, out loud. It
-# reads a copy of the sample notes and clips in super-voice-macos/Fixtures,
-# never yours, so `edited` changes only the copy.
+# note with a sentence typed into it and saved; `clips`, the Clips page;
+# `clips-playing`, its newest clip partway through playing, out loud;
+# `voices`, the Voices page; and `voices-pending`, a recording imported there,
+# waiting to be saved. It reads a copy of the sample notes and clips in
+# super-voice-macos/Fixtures, never yours, so `edited` changes only the copy.
+# The voices are the daemon's.
 #
-# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing]
+# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending]
 macos-swift-shot out scene="notes": (macos-swift-app "debug")
     #!/usr/bin/env bash
     set -euo pipefail
@@ -573,6 +575,10 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
         say -o "${about%.json}.wav" --data-format=LEI16@24000 \
             "$(plutil -extract text raw "$about")"
     done
+    # The recording `voices-pending` imports, in the Mac's own voice.
+    mkdir -p "$data/import"
+    say -o "$data/import/Grace_Hopper.wav" --data-format=LEI16@24000 \
+        "A ship in port is safe, but that is not what ships are built for."
     # The user is active, as far as macOS knows, for the next few seconds:
     # wakes a display that is off and dismisses a screen saver, either of
     # which keeps the app from coming to the front. The display takes a moment

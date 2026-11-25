@@ -14,6 +14,7 @@ use super_voice_app_core::state::TextBuffer;
 pub mod clips;
 pub mod notes;
 pub mod status;
+pub mod voices;
 
 uniffi::setup_scaffolding!();
 
