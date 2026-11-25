@@ -115,7 +115,18 @@ struct SpeechToTextView: View {
     @ObservedObject var notes: NotesModel
 
     enum Tab: Hashable { case notes, contexts, behavior }
-    @State private var tab: Tab = .notes
+    @State private var tab: Tab = Self.firstTab
+
+    /// The tab the page opens on: Notes, unless a screenshot of Contexts was
+    /// asked for.
+    private static var firstTab: Tab {
+        #if DEBUG
+        if Snapshot.scene.hasPrefix("contexts") {
+            return .contexts
+        }
+        #endif
+        return .notes
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -132,7 +143,7 @@ struct SpeechToTextView: View {
             .padding(.horizontal, 28)
             switch tab {
             case .notes: NotesView(model: notes)
-            case .contexts: NotYetView(title: t("contexts"), icon: .microphone)
+            case .contexts: ContextsView(model: ContextsModel.shared)
             case .behavior: NotYetView(title: t("behavior"), icon: .microphone)
             }
         }

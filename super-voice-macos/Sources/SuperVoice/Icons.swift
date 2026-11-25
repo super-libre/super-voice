@@ -20,6 +20,7 @@ enum Icon: String {
     case robot
     case speakerHigh = "speaker-high"
     case warning
+    case x
 
     /// The icon's image, drawn only as a mask (see [`IconView`]). `nil`
     /// outside the bundle, as under `swift run`.

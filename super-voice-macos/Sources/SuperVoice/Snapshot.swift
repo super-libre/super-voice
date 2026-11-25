@@ -11,7 +11,10 @@
 // library read; `voices-pending`, a WAV file imported there, waiting to be
 // saved; `tts-behavior`, text to speech's Behavior tab; or
 // `tts-behavior-spoken`, a sentence typed there and Speak pressed, shot once
-// the daemon has answered (speaking, or why not).
+// the daemon has answered (speaking, or why not); `contexts`, speech to
+// text's Contexts tab; `contexts-edit`, a new context typed into its editor;
+// or `contexts-saved`, that context saved, which writes to the daemon the app
+// is pointed at.
 // Once the page is in that state, the window is drawn into the file at one
 // size and the app quits. The app draws its own window rather than a screen
 // capture taking it: that needs no Screen Recording permission, so it works
@@ -75,7 +78,7 @@ enum Snapshot {
             guard open.saved, open.text.hasSuffix(addition) else { return }
         case "notes":
             guard page.open == nil else { return }
-        case _ where ["clips", "voices", "tts-behavior"].contains(where: scene.hasPrefix):
+        case _ where ["clips", "voices", "tts-behavior", "contexts"].contains(where: scene.hasPrefix):
             // Shot from their own pages; see `clipsShown`, `voicesShown` and
             // `speechShown`.
             return
@@ -170,6 +173,56 @@ enum Snapshot {
         Task { await take() }
     }
 
+    /// The Contexts page showed `page`: shoot it once its list is read, for
+    /// `contexts`; with a new context typed into the editor, for
+    /// `contexts-edit`; or once that context is saved, for `contexts-saved`.
+    static func contextsShown(_ page: ContextsPage) {
+        guard path != nil, !taken, scene.hasPrefix("contexts"), page.loaded else { return }
+        let model = ContextsModel.shared
+        switch scene {
+        case "contexts":
+            break
+        case "contexts-edit", "contexts-saved":
+            if !opened {
+                opened = true
+                model.send(.create)
+                // As typing would, through the fields, once the sheet is up.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(600))
+                    model.name = "Coding"
+                    model.prompt = "Be terse."
+                    model.terms[0].text = "kubectl"
+                    model.send(.termChanged(index: 0, value: "kubectl"))
+                    model.send(.termSubmitted(index: 0))
+                    try? await Task.sleep(for: .milliseconds(300))
+                    model.terms[1].text = "rebase"
+                    model.send(.termChanged(index: 1, value: "rebase"))
+                    try? await Task.sleep(for: .milliseconds(300))
+                    edited = true
+                    if scene == "contexts-saved" {
+                        model.send(.save)
+                    } else {
+                        taken = true
+                        await take()
+                    }
+                }
+                return
+            }
+            guard scene == "contexts-saved", edited, page.editor == nil,
+                  page.contexts.contains(where: { $0.name == "Coding" })
+            else {
+                if let error = page.editor?.error {
+                    fail("the context wasn't saved: \(error)")
+                }
+                return
+            }
+        default:
+            fail("no scene is called \(scene)")
+        }
+        taken = true
+        Task { await take() }
+    }
+
     private static func take() async {
         guard let path else { return }
         guard let window = NSApp.windows.first(where: \.isVisible) else {
@@ -197,7 +250,9 @@ enum Snapshot {
         // Not in front, the window draws without its accent colours: a shot
         // of that is not what the app looks like, so it is refused, unless
         // the run asked for one anyway (`SUPER_VOICE_SNAPSHOT_INACTIVE=1`).
-        if !(NSApp.isActive && window.isKeyWindow),
+        // With a sheet up, the sheet is the key window.
+        let key = window.isKeyWindow || window.attachedSheet?.isKeyWindow == true
+        if !(NSApp.isActive && key),
            ProcessInfo.processInfo.environment["SUPER_VOICE_SNAPSHOT_INACTIVE"] != "1"
         {
             fail("the app isn't in front (a screen saver, a locked screen, or another app in the way), so the window would draw without its accent colours")
@@ -208,6 +263,22 @@ enum Snapshot {
             fail("the window has nothing to draw")
         }
         view.cacheDisplay(in: view.bounds, to: rep)
+        // A sheet is a window of its own, over this one: drawn on top, where
+        // it sits.
+        if let sheet = window.attachedSheet,
+           let sheetView = sheet.contentView?.superview ?? sheet.contentView,
+           let sheetRep = sheetView.bitmapImageRepForCachingDisplay(in: sheetView.bounds)
+        {
+            sheetView.cacheDisplay(in: sheetView.bounds, to: sheetRep)
+            let at = NSPoint(
+                x: sheet.frame.minX - window.frame.minX,
+                y: sheet.frame.minY - window.frame.minY
+            )
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            sheetRep.draw(in: NSRect(origin: at, size: sheet.frame.size))
+            NSGraphicsContext.restoreGraphicsState()
+        }
         guard let png = rep.representation(using: .png, properties: [:]) else {
             fail("the window could not be encoded as a PNG")
         }
@@ -217,6 +288,10 @@ enum Snapshot {
             fail("\(path) could not be written: \(error)")
         }
         NSApp.terminate(nil)
+        // An open sheet holds termination off, and the shot is all this run
+        // was for.
+        try? await Task.sleep(for: .seconds(2))
+        exit(0)
     }
 
     private static func fail(_ why: String) -> Never {
