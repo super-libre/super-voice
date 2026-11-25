@@ -271,6 +271,66 @@ pub const fn reach_of(accepting: usize, total: usize) -> Option<Reach> {
     }
 }
 
+/// What a [`Reach`] says, in the app's language.
+#[must_use]
+pub fn reach_text(reach: Reach) -> String {
+    match reach {
+        Reach::Nothing => crate::i18n::text("none-of-your-installed-backends-can-use", &[]),
+        Reach::Partly { accepting, total } => crate::i18n::text(
+            "context-supported-count",
+            &[
+                ("accepting", &accepting.to_string()),
+                ("value0", &total.to_string()),
+            ],
+        )
+        .replace(['\u{2068}', '\u{2069}'], ""),
+    }
+}
+
+/// How many of a context's words its row in the list shows.
+const ROW_TERMS: usize = 3;
+
+/// A context's row in the list, under its name: its first words, or that it
+/// has only a prompt, or nothing at all.
+#[must_use]
+pub fn row_summary(context: &DictationContext) -> String {
+    if !context.vocabulary.is_empty() {
+        let head = context
+            .vocabulary
+            .iter()
+            .take(ROW_TERMS)
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
+        return match context.vocabulary.len().saturating_sub(ROW_TERMS) {
+            0 => head,
+            rest => crate::i18n::text(
+                "context-more-terms",
+                &[("head", &head), ("rest", &rest.to_string())],
+            )
+            .replace(['\u{2068}', '\u{2069}'], ""),
+        };
+    }
+    if context.prompt.trim().is_empty() {
+        crate::i18n::text("context-sends-nothing", &[])
+    } else {
+        crate::i18n::text("context-prompt-only", &[])
+    }
+}
+
+/// How far a context reaches among the installed backends, read from the
+/// daemon: `None` when there is nothing to say.
+///
+/// # Errors
+///
+/// When the daemon can't list its backends.
+pub async fn run_read_reach() -> Result<Option<Reach>, String> {
+    crate::daemon::client::v1::backends::list_backends()
+        .await
+        .map(|backends| reach(&backends))
+        .map_err(|e| e.to_string())
+}
+
 /// Read the list.
 pub async fn run_list() -> Input {
     Input::Loaded(list_contexts().await.map_err(|e| e.to_string()))
@@ -311,6 +371,38 @@ mod tests {
                 accepting: 1,
                 total: 3
             })
+        );
+    }
+
+    #[test]
+    fn a_row_names_its_first_words_or_what_it_holds() {
+        let context = |prompt: &str, words: &[&str]| DictationContext {
+            id: "coding".into(),
+            name: "Coding".into(),
+            prompt: prompt.into(),
+            vocabulary: words.iter().map(|w| (*w).to_string()).collect(),
+        };
+        assert_eq!(
+            row_summary(&context("", &["Rust", "GPUI", "cargo"])),
+            "Rust, GPUI, cargo"
+        );
+        let more = row_summary(&context("", &["Rust", "GPUI", "cargo", "tokio", "serde"]));
+        assert!(
+            more.starts_with("Rust, GPUI, cargo") && more.contains('2'),
+            "{more}"
+        );
+        assert!(!more.contains('\u{2068}'), "no isolation marks");
+        assert_ne!(
+            row_summary(&context("Be terse.", &[])),
+            row_summary(&context("  ", &[])),
+            "a prompt alone is not nothing"
+        );
+        assert!(
+            !reach_text(Reach::Partly {
+                accepting: 1,
+                total: 3
+            })
+            .contains('\u{2068}')
         );
     }
 

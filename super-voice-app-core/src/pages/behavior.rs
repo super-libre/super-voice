@@ -335,6 +335,84 @@ fn sounds_work(state: &mut BehaviorState, input: Input, out: &mut Outcome) {
     }
 }
 
+// The choices the tab offers, and their names, for any app that draws it.
+
+/// What can stop a recording, in the order the tab offers them.
+pub const STOP_MODES: [RecordingStopMode; 3] = [
+    RecordingStopMode::SilenceAndManual,
+    RecordingStopMode::SilenceOnly,
+    RecordingStopMode::ManualOnly,
+];
+
+/// A stop mode's name, as a message key.
+#[must_use]
+pub const fn stop_mode_key(mode: RecordingStopMode) -> &'static str {
+    match mode {
+        RecordingStopMode::SilenceOnly => "stop-silence",
+        RecordingStopMode::SilenceAndManual => "stop-silence-manual",
+        RecordingStopMode::ManualOnly => "stop-manual",
+    }
+}
+
+/// The write methods this build can drive, in the order the tab offers
+/// them: one the daemon has no backend for here could never work.
+#[must_use]
+pub fn write_methods() -> Vec<WriteMethod> {
+    WriteMethod::supported_on_this_platform()
+}
+
+/// A write method's name. ydotool is a program's own name, the same in every
+/// language.
+#[must_use]
+pub fn write_method_name(method: WriteMethod) -> String {
+    match method {
+        WriteMethod::Auto => crate::i18n::text("auto-recommended", &[]),
+        WriteMethod::XdgDesktopPortal => crate::i18n::text("xdg-desktop-portal", &[]),
+        WriteMethod::Ydotool => "ydotool".to_string(),
+        WriteMethod::BuiltIn => crate::i18n::text("built-in", &[]),
+    }
+}
+
+/// A sound theme's name, as a message key.
+#[must_use]
+pub const fn theme_key(theme: AudioTheme) -> &'static str {
+    match theme {
+        AudioTheme::Classic => "theme-classic",
+        AudioTheme::Gentle => "theme-gentle",
+        AudioTheme::Minimal => "theme-minimal",
+        AudioTheme::SciFi => "theme-scifi",
+        AudioTheme::Musical => "theme-musical",
+        AudioTheme::Nature => "theme-nature",
+        AudioTheme::Retro => "theme-retro",
+        AudioTheme::Silent => "theme-silent",
+    }
+}
+
+/// The themes the Theme picker offers: every one that makes a sound. Silent
+/// is the sounds' switch turned off, not a theme to pick.
+#[must_use]
+pub fn sounding_themes(state: &BehaviorState) -> Vec<AudioTheme> {
+    state
+        .audio_themes
+        .iter()
+        .copied()
+        .filter(|theme| *theme != AudioTheme::Silent)
+        .collect()
+}
+
+/// The words of a notice, in the app's language.
+#[must_use]
+pub fn notice_text(notice: &Notice) -> String {
+    let (key, error) = match notice {
+        Notice::CouldNotSaveStopMode(e) => ("stop-mode-could-not-save", e),
+        Notice::CouldNotSavePreviewTyping(e) => ("preview-typing-could-not-save", e),
+        Notice::CouldNotSaveWriteMethod(e) => ("write-method-could-not-save", e),
+        Notice::TypingTestFailed(e) => ("typing-test-failed", e),
+        Notice::CouldNotSaveSounds(e) => ("sounds-could-not-save", e),
+    };
+    crate::i18n::text(key, &[("error", error)]).replace(['\u{2068}', '\u{2069}'], "")
+}
+
 /// Store the stop mode.
 pub async fn run_save_stop_mode(mode: RecordingStopMode) -> Input {
     match set_recording_stop_mode(mode.to_string()).await {
@@ -569,6 +647,27 @@ mod tests {
         update(&mut state, Input::SoundsToggled(false));
         update(&mut state, Input::SoundsToggled(true));
         assert_eq!(state.audio_theme, before);
+    }
+
+    #[test]
+    fn every_choice_has_its_words_and_silent_is_not_a_theme_to_pick() {
+        for mode in STOP_MODES {
+            assert!(crate::i18n::LANGUAGE_LOADER.has(stop_mode_key(mode)));
+        }
+        for theme in [AudioTheme::Classic, AudioTheme::Retro, AudioTheme::Silent] {
+            assert!(crate::i18n::LANGUAGE_LOADER.has(theme_key(theme)));
+        }
+        assert!(write_methods().contains(&WriteMethod::Auto));
+        let state = BehaviorState {
+            audio_themes: vec![AudioTheme::Classic, AudioTheme::Silent],
+            ..BehaviorState::default()
+        };
+        assert_eq!(sounding_themes(&state), [AudioTheme::Classic]);
+        let words = notice_text(&Notice::CouldNotSaveSounds("down".into()));
+        assert!(
+            words.contains("down") && !words.contains('\u{2068}'),
+            "{words}"
+        );
     }
 
     #[test]
