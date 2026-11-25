@@ -119,15 +119,6 @@ impl BlockStage {
             Self::Synthesis => Stage::Synthesis,
         }
     }
-
-    /// What a message calls the thing the stage runs.
-    #[must_use]
-    pub const fn noun(self) -> &'static str {
-        match self {
-            Self::PostProcessing => "post-processor",
-            Self::Synthesis => "speech model",
-        }
-    }
 }
 
 /// How logs name a stage.

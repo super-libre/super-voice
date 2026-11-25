@@ -244,10 +244,10 @@ fn control_row<'a>(
 
     // An idle model shows as a running one: the next use loads it.
     if block.enabled || idle {
-        let model = block
-            .model
-            .clone()
-            .unwrap_or_else(|| stage.noun().to_string());
+        let model = block.model.clone().unwrap_or_else(|| match stage {
+            BlockStage::PostProcessing => crate::fl!("post-processor"),
+            BlockStage::Synthesis => crate::fl!("speech-model"),
+        });
         let running = text::body(model.clone()).class(cosmic::theme::Text::Accent);
         let mut rows: Vec<super::surface::ControlRow<'a>> =
             vec![(crate::fl!("model"), None, running.into())];

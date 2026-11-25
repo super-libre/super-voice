@@ -50,7 +50,7 @@ impl AppModel {
                 log::warn!("Read method error: {err}");
                 self.set_action_error(
                     crate::state::ErrorScope::ReadAloud,
-                    format!("Couldn't save what the shortcut reads: {err}"),
+                    crate::fl!("read-method-could-not-save", error = err),
                 );
                 Task::none()
             }
@@ -106,7 +106,7 @@ impl AppModel {
                 log::warn!("Notification method error: {err}");
                 self.set_action_error(
                     crate::state::ErrorScope::Customization,
-                    format!("Couldn't save notification method: {err}"),
+                    crate::fl!("notification-method-could-not-save", error = err),
                 );
                 Task::none()
             }
@@ -141,7 +141,7 @@ impl AppModel {
                 log::warn!("Idle unload error: {err}");
                 self.set_action_error(
                     crate::state::ErrorScope::Customization,
-                    format!("Couldn't save the idle unload setting: {err}"),
+                    crate::fl!("idle-unload-could-not-save", error = err),
                 );
                 Task::none()
             }

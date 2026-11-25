@@ -133,7 +133,7 @@ impl AppModel {
                 let message = progress
                     .error
                     .clone()
-                    .unwrap_or_else(|| "Model switch failed".to_string());
+                    .unwrap_or_else(|| crate::fl!("model-switch-failed"));
                 self.model_operations
                     .set(stage, ModelOperationState::Error { message });
                 // A failed switch leaves that stage idle — clear the selection
