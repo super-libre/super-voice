@@ -439,9 +439,9 @@ fn stage_card(cards: &ModelsState, card: &Card<'_>) -> StageCard {
         },
         progress: progress(card.operation),
         can_load: card.can_load,
-        // A reload is a model brought back up where it runs: the cards with
-        // one in the settings app.
-        reloadable: stage != Stage::Transcription
+        // A reload is a model brought back up where it runs: synthesis's
+        // card has one, as in the settings app.
+        reloadable: stage == Stage::Synthesis
             && matches!(card.shown, Shown::Running { idle: false, .. }),
         busy: card.busy,
     }
