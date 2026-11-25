@@ -922,3 +922,7 @@ about-copied = The version details are on the clipboard.
 # The General pages: Shortcuts, Assistants, Settings and Updates
 shortcuts-description = Keys that dictate or read aloud, from any app.
 shortcut-change-keys = Change the shortcut's keys
+update-ready-to-install = Super Voice { $tag } is ready to install.
+open-updates = Open Updates
+update-no-installer-caption = No installer was published for this computer. To install it from a terminal, run:
+install-command-caption = To install it outside the app, run:
