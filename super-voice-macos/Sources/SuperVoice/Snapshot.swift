@@ -81,6 +81,16 @@ enum Snapshot {
         guard let window = NSApp.windows.first(where: \.isVisible) else {
             fail("no window is open")
         }
+        // A run pointed at a daemon waits for it, so the header's pills are in
+        // the shot.
+        if let socket = ProcessInfo.processInfo.environment["SUPER_VOICE_HTTP_SOCKET"] {
+            for _ in 0..<50 where !HeaderModel.shared.header.connected {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            if !HeaderModel.shared.header.connected {
+                fail("the daemon at \(socket) didn't answer")
+            }
+        }
         window.setContentSize(size)
         // In front and key, as the app is in use: an app opened from a shell
         // starts behind, and macOS draws a window that isn't key without its

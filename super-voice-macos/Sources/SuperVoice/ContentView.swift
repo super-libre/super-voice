@@ -36,6 +36,7 @@ enum Destination: Hashable, CaseIterable {
 
 struct ContentView: View {
     @ObservedObject var notes: NotesModel
+    @ObservedObject var header = HeaderModel.shared
     @State private var selection: Destination? = .speechToText
 
     var body: some View {
@@ -67,6 +68,12 @@ struct ContentView: View {
                 NotYetView(title: "Super Voice", icon: .microphone)
             }
         }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                HeaderPills(model: header)
+            }
+            .withoutGlass()
+        }
     }
 
     private func row(_ destination: Destination) -> some View {
@@ -79,7 +86,8 @@ struct ContentView: View {
     }
 }
 
-/// Speech to text's tabs. Only Notes is here so far.
+/// Speech to text's tabs, at the top of the page as in the settings app. Only
+/// Notes is here so far.
 struct SpeechToTextView: View {
     @ObservedObject var notes: NotesModel
 
@@ -87,7 +95,16 @@ struct SpeechToTextView: View {
     @State private var tab: Tab = .notes
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
+            Picker("Tab", selection: $tab) {
+                Text("Notes").tag(Tab.notes)
+                Text("Contexts").tag(Tab.contexts)
+                Text("Behavior").tag(Tab.behavior)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .padding([.horizontal, .top])
             switch tab {
             case .notes: NotesView(model: notes)
             case .contexts: NotYetView(title: "Contexts", icon: .microphone)
@@ -95,16 +112,18 @@ struct SpeechToTextView: View {
             }
         }
         .navigationTitle("Speech to text")
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("Tab", selection: $tab) {
-                    Text("Notes").tag(Tab.notes)
-                    Text("Contexts").tag(Tab.contexts)
-                    Text("Behavior").tag(Tab.behavior)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            }
+    }
+}
+
+extension ToolbarContent {
+    /// Without the glass macOS 26 puts behind toolbar items, which would draw
+    /// a second outline around the header's own pills.
+    @ToolbarContentBuilder
+    func withoutGlass() -> some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            sharedBackgroundVisibility(.hidden)
+        } else {
+            self
         }
     }
 }

@@ -22,6 +22,7 @@
     chrono.workspace = true
     futures-util.workspace = true
     super-voice-app-core = { path = "../super-voice-app-core" }
+    super-voice-shared = { path = "../super-voice-shared" }
     # The stores run their work on a runtime of their own.
     tokio.workspace = true
     # `cli`: the bindgen binary.

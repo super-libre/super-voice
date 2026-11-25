@@ -7,9 +7,30 @@
 //! pages that app has: plain records and functions, with the core's own types
 //! kept behind them, so the core needs no `UniFFI` of its own.
 
+use std::sync::LazyLock;
+
 pub mod notes;
+pub mod status;
 
 uniffi::setup_scaffolding!();
+
+/// The runtime the stores' work runs on. One for every store: the work is
+/// small, and the core's calls expect tokio under them.
+pub(crate) static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .thread_name("super-voice-store")
+        .enable_all()
+        .build()
+        .expect("the stores' tokio runtime starts")
+});
+
+/// Make this app a client of its own to the daemon, before its first call:
+/// its token kept apart from the settings app's, which shares the machine
+/// while both exist.
+pub(crate) fn identify() {
+    super_voice_app_core::daemon::client::set_identity("super-voice-macos", "Super Voice");
+}
 
 /// The folder the notes are kept in.
 #[must_use]

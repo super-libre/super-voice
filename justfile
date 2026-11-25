@@ -545,6 +545,8 @@ macos-swift-app config="release":
 # The app has to come to the front for its accent colours; a run where it
 # can't fails rather than shooting a grey window; set
 # SUPER_VOICE_SNAPSHOT_INACTIVE=1 to take it anyway, for layout alone.
+# SUPER_VOICE_HTTP_SOCKET points it at a daemon (a test one, with
+# XDG_STATE_HOME keeping its token apart), and the shot waits for the header.
 # Scenes: `notes`, the list; `note`, the newest note open; and `edited`, that
 # note with a sentence typed into it and saved. It reads a copy of the sample
 # notes in super-voice-macos/Fixtures, never yours, so `edited` changes only
@@ -558,6 +560,9 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
     rm -f "$out"
     data=$(mktemp -d)
     trap 'rm -rf "$data"' EXIT
+    # What the app says on stderr, such as why it refused a shot: `open`
+    # doesn't hand it back.
+    said="$data/stderr.log"
     cp -R super-voice-macos/Fixtures/super-voice "$data/"
     # The user is active, as far as macOS knows: wakes a sleeping display and
     # dismisses a screen saver, either of which would keep the app from
@@ -565,13 +570,16 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
     caffeinate -u -t 1
     # A new instance (-n), so a copy already open can't take the request and
     # ignore the environment; -W waits for it to quit.
-    open -n -W \
+    open -n -W --stderr "$said" \
         --env SUPER_VOICE_SNAPSHOT="$out" \
         --env SUPER_VOICE_SCENE="{{ scene }}" \
         ${SUPER_VOICE_SNAPSHOT_INACTIVE:+--env SUPER_VOICE_SNAPSHOT_INACTIVE=1} \
+        ${SUPER_VOICE_HTTP_SOCKET:+--env SUPER_VOICE_HTTP_SOCKET="$SUPER_VOICE_HTTP_SOCKET"} \
+        ${XDG_STATE_HOME:+--env XDG_STATE_HOME="$XDG_STATE_HOME"} \
         --env XDG_DATA_HOME="$data" \
         "target/debug/Super Voice (SwiftUI).app"
     if [ ! -s "$out" ]; then
+        cat "$said" >&2 2>/dev/null || true
         echo "❌ no screenshot at $out" >&2
         exit 1
     fi
