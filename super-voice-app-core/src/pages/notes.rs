@@ -595,15 +595,6 @@ pub fn today() -> chrono::NaiveDate {
     chrono::Local::now().date_naive()
 }
 
-/// Where the export dialog opens: the Documents folder, or home. Left alone,
-/// a dialog opens wherever the app was started from.
-#[must_use]
-pub fn export_start() -> std::path::PathBuf {
-    let home = std::env::var_os("HOME").map_or_else(std::path::PathBuf::new, Into::into);
-    let documents = home.join("Documents");
-    if documents.is_dir() { documents } else { home }
-}
-
 /// Write the export to `chosen`, the file the user picked in the dialog
 /// ([`notes::export_path`] adds `.md` when they typed no extension).
 pub async fn run_export_to(chosen: std::path::PathBuf, text: String) -> Input {

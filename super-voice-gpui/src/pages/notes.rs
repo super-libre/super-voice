@@ -317,7 +317,8 @@ impl NotesPage {
 
     /// Ask where to export the note, then write it there.
     fn export(name: &str, text: String, window: &mut Window, cx: &mut Context<Self>) {
-        let chosen = cx.prompt_for_new_path(&page::export_start(), Some(name));
+        let chosen =
+            cx.prompt_for_new_path(&super_voice_app_core::pages::export_start(), Some(name));
         cx.spawn_in(window, async move |this, cx| {
             let input = match chosen.await {
                 Ok(Ok(Some(path))) => runtime::spawn(page::run_export_to(path, text))

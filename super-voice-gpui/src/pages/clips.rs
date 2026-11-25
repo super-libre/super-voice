@@ -295,9 +295,13 @@ impl CorePage for ClipsPage {
                 runner(async move { In::Clips(page::run_samples(id).await) })
             }
             Out::Clips(page::Effect::Export { id, name }) => {
-                // The dialog is the platform's, opened here; the copy runs
-                // once it answers.
-                let chosen = cx.prompt_for_new_path(&start_folder(), Some(&name));
+                // The dialog is the platform's, opened here, in Documents as
+                // a note's is; the copy runs once it answers. GPUI's dialog
+                // takes no file types, so it can't be limited to WAV; the
+                // name it suggests ends in .wav, and the core adds it to a
+                // name typed without.
+                let chosen = cx
+                    .prompt_for_new_path(&super_voice_app_core::pages::export_start(), Some(&name));
                 runner(async move {
                     let result = match chosen.await {
                         Ok(Ok(Some(path))) => page::export_to(&id, &path).await,
@@ -320,11 +324,6 @@ impl CorePage for ClipsPage {
             Out::Voice(model_voice::Effect::Save { .. }) => return None,
         })
     }
-}
-
-/// Where the export dialog opens: the home folder.
-fn start_folder() -> std::path::PathBuf {
-    std::env::var_os("HOME").map_or_else(|| "/".into(), Into::into)
 }
 
 /// What the page tells the user, in the app's words.
