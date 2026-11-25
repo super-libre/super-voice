@@ -13,8 +13,9 @@
 // `tts-behavior-spoken`, a sentence typed there and Speak pressed, shot once
 // the daemon has answered (speaking, or why not); `contexts`, speech to
 // text's Contexts tab; `contexts-edit`, a new context typed into its editor;
-// or `contexts-saved`, that context saved, which writes to the daemon the app
-// is pointed at.
+// `contexts-saved`, that context saved, which writes to the daemon the app is
+// pointed at; or `stt-behavior`, speech to text's Behavior tab with its
+// settings read.
 // Once the page is in that state, the window is drawn into the file at one
 // size and the app quits. The app draws its own window rather than a screen
 // capture taking it: that needs no Screen Recording permission, so it works
@@ -78,7 +79,7 @@ enum Snapshot {
             guard open.saved, open.text.hasSuffix(addition) else { return }
         case "notes":
             guard page.open == nil else { return }
-        case _ where ["clips", "voices", "tts-behavior", "contexts"].contains(where: scene.hasPrefix):
+        case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
             // Shot from their own pages; see `clipsShown`, `voicesShown` and
             // `speechShown`.
             return
@@ -217,6 +218,17 @@ enum Snapshot {
                 return
             }
         default:
+            fail("no scene is called \(scene)")
+        }
+        taken = true
+        Task { await take() }
+    }
+
+    /// Speech to text's Behavior tab showed `page`: shoot it once its
+    /// settings are read, for `stt-behavior`.
+    static func sttBehaviorShown(_ page: BehaviorPage) {
+        guard path != nil, !taken, scene.hasPrefix("stt-behavior"), page.loaded else { return }
+        guard scene == "stt-behavior" else {
             fail("no scene is called \(scene)")
         }
         taken = true

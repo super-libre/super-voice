@@ -117,12 +117,15 @@ struct SpeechToTextView: View {
     enum Tab: Hashable { case notes, contexts, behavior }
     @State private var tab: Tab = Self.firstTab
 
-    /// The tab the page opens on: Notes, unless a screenshot of Contexts was
+    /// The tab the page opens on: Notes, unless a screenshot of another was
     /// asked for.
     private static var firstTab: Tab {
         #if DEBUG
         if Snapshot.scene.hasPrefix("contexts") {
             return .contexts
+        }
+        if Snapshot.scene.hasPrefix("stt-behavior") {
+            return .behavior
         }
         #endif
         return .notes
@@ -144,7 +147,7 @@ struct SpeechToTextView: View {
             switch tab {
             case .notes: NotesView(model: notes)
             case .contexts: ContextsView(model: ContextsModel.shared)
-            case .behavior: NotYetView(title: t("behavior"), icon: .microphone)
+            case .behavior: SttBehaviorView(model: SttBehaviorModel.shared)
             }
         }
         .navigationTitle(t("speech-to-text"))
