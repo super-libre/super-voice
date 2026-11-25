@@ -19,16 +19,17 @@
 
 mod about;
 mod assistants;
+mod clips;
 mod contexts;
 mod notes;
-mod clips;
 mod placeholder;
 mod settings;
 mod shortcuts;
 mod stt_behavior;
 mod take;
-mod updates;
 mod tts_behavior;
+mod updates;
+mod voices;
 
 use std::rc::Rc;
 
@@ -59,6 +60,7 @@ pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> 
             PageHandle::new::<stt_behavior::BehaviorPage>(page, shared, window, cx)
         }
         Page::Clips => PageHandle::new::<clips::ClipsPage>(page, shared, window, cx),
+        Page::Voices => PageHandle::new::<voices::VoicesPage>(page, shared, window, cx),
         Page::TtsBehavior => {
             PageHandle::new::<tts_behavior::TtsBehaviorPage>(page, shared, window, cx)
         }
