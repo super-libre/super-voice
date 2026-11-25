@@ -10,8 +10,10 @@ use super_voice_shared::models::protocol::PreviewSource;
 use super_voice_shared::models::recording_stop_mode::RecordingStopMode;
 use super_voice_shared::theme::AudioTheme;
 
-use crate::state::RecordingStatus;
 use super_voice_app_core::pages::behavior::Input;
+use super_voice_app_core::pages::recording_test;
+use super_voice_app_core::state::Microphone;
+use super_voice_app_core::state::recording_test::{Heard, RecordingTest};
 
 use crate::ui::messages::{BehaviorMessage, Message, RecordingMessage};
 use crate::ui::press_guard::press_guard;
@@ -205,31 +207,21 @@ pub(super) fn live_row(preview: &str, source: Option<PreviewSource>) -> Element<
 /// The recording test's rows, for the Behavior tab's one Test section: the
 /// status with the button that starts and stops the take, the audio level,
 /// the live preview line, and the transcript.
-pub(super) fn test_rows<'a>(
-    recording_status: &'a RecordingStatus,
-    transcription_text: &'a str,
-    preview_text: &'a str,
-    preview_source: Option<PreviewSource>,
-    audio_level: f32,
-    is_speech_detected: bool,
-) -> Vec<Element<'a, Message>> {
-    let recording_text = match recording_status {
-        RecordingStatus::Recording => {
-            if is_speech_detected {
-                crate::fl!("speech")
-            } else {
-                crate::fl!("silence")
-            }
-        }
-        RecordingStatus::Idle => crate::fl!("not-recording"),
+pub(super) fn test_rows(test: &RecordingTest, microphone: Microphone) -> Vec<Element<'_, Message>> {
+    let recording_text = match (microphone.recording, microphone.speech) {
+        (true, true) => crate::fl!("speech"),
+        (true, false) => crate::fl!("silence"),
+        (false, _) => crate::fl!("not-recording"),
     };
 
-    let record_button = match recording_status {
-        RecordingStatus::Recording => button::destructive(crate::fl!("stop-recording"))
-            .on_press(Message::Recording(RecordingMessage::StopRecording)),
-        RecordingStatus::Idle => button::suggested(crate::fl!("test-recording"))
-            .on_press(Message::Recording(RecordingMessage::StartRecording)),
+    let record_button = if microphone.recording {
+        button::destructive(crate::fl!("stop-recording"))
+            .on_press(test_input(recording_test::Input::Stop))
+    } else {
+        button::suggested(crate::fl!("test-recording"))
+            .on_press(test_input(recording_test::Input::Start))
     };
+    let audio_level = microphone.level;
 
     // The button beside the state it changes, and the meter on a line of its
     // own, where a level reads as a level rather than as part of the button.
@@ -245,10 +237,11 @@ pub(super) fn test_rows<'a>(
     // label a flex slot of its own, which grew the row and left the text
     // sitting against the bottom of it with a gap above.
     let transcription_widget = {
-        let content = if transcription_text.is_empty() {
-            crate::fl!("transcriptions-will-appear-here-after-test-recordings")
-        } else {
-            transcription_text.to_string()
+        let content = match &test.heard {
+            None => crate::fl!("transcriptions-will-appear-here-after-test-recordings"),
+            Some(Heard::Words(words)) => words.clone(),
+            Some(Heard::Nothing) => crate::fl!("no-speech-detected"),
+            Some(Heard::Failed(e)) => crate::fl!("the-recording-failed", error = e.as_str()),
         };
 
         widget::scrollable(text::body(content).width(Length::Fill))
@@ -259,7 +252,11 @@ pub(super) fn test_rows<'a>(
     vec![
         settings::item(crate::fl!("status"), status_widget).into(),
         settings::item(crate::fl!("audio-level"), audio_meter).into(),
-        live_row(preview_text, preview_source),
+        live_row(&test.preview, test.preview_source),
         transcription_widget.into(),
     ]
+}
+
+fn test_input(input: recording_test::Input) -> Message {
+    Message::Recording(RecordingMessage::Test(input))
 }

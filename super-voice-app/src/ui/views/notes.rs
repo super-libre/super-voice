@@ -17,9 +17,9 @@ use super::common::{LEVEL_METER_WIDTH, error_banner, muted};
 use super::recording::live_row;
 use crate::core::app::AppModel;
 use crate::notes::{self, Note};
+use crate::state::ErrorScope;
 use crate::state::Stage;
 use crate::state::notes::{NoteTake, NotesState, OpenNote, TakeTarget};
-use crate::state::{ErrorScope, RecordingStatus};
 use crate::ui::messages::{Message, NotesMessage};
 
 /// How much of a note's first line its row shows.
@@ -75,7 +75,7 @@ fn recorder<'a>(app: &'a AppModel, take: Option<&'a NoteTake>) -> Element<'a, Me
     }
     // The Behavior tab's test, or the dictation shortcut, holds the
     // microphone; the daemon would refuse a second take.
-    let busy = app.recording_status == RecordingStatus::Recording;
+    let busy = app.microphone.recording;
     // A take with no model ready to transcribe it would record and then
     // fail, so Record stays off until speech to text is ready.
     let unready = super::models::not_ready_reason(app, Stage::Transcription);
@@ -120,7 +120,7 @@ fn take_section<'a>(app: &'a AppModel, take: &'a NoteTake) -> Element<'a, Messag
         elapsed = clock(take.started.elapsed()),
         limit = clock(limit)
     );
-    let heard = if app.is_speech_detected {
+    let heard = if app.microphone.speech {
         crate::fl!("speech")
     } else {
         crate::fl!("silence")
@@ -134,7 +134,7 @@ fn take_section<'a>(app: &'a AppModel, take: &'a NoteTake) -> Element<'a, Messag
         .spacing(spacing.space_s)
         .align_y(Alignment::Center);
 
-    let level = app.audio_level;
+    let level = app.microphone.level;
     let meter = widget::determinate_linear(level.max(if level > 0.0 { 0.1 } else { 0.0 }))
         .width(Length::Fixed(LEVEL_METER_WIDTH));
 
@@ -267,9 +267,7 @@ fn open_note<'a>(app: &'a AppModel, open: &'a OpenNote) -> Vec<Element<'a, Messa
 fn actions(app: &AppModel) -> Element<'_, Message> {
     let state = &app.notes;
     let unready = super::models::not_ready_reason(app, Stage::Transcription);
-    let free = !state.is_recording()
-        && app.recording_status != RecordingStatus::Recording
-        && unready.is_none();
+    let free = !state.is_recording() && !app.microphone.recording && unready.is_none();
     let spacing = cosmic::theme::spacing();
     let delete: Element<'_, Message> = if state.confirming_delete {
         row![

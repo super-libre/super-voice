@@ -15,7 +15,7 @@ use subscription::{UdpSubscriptionId, audio_events_subscription};
 pub(crate) mod macos;
 
 use crate::daemon::backends::BackendInfo;
-use crate::state::{ContextPage, DaemonStatus, MenuAction, RecordingStatus};
+use crate::state::{ContextPage, DaemonStatus, MenuAction};
 use crate::ui::messages::{DaemonMessage, Message, ModelsPageMessage, ShellMessage};
 use cosmic::app::context_drawer;
 use cosmic::iced::Subscription;
@@ -60,23 +60,11 @@ pub struct AppModel {
     /// Reconnect backoff (shared `RetryStrategy`: exponential + jitter),
     /// advanced on each failed reconnect and reset on a successful connection.
     pub reconnect_retry: super_voice_shared::daemon::retry::RetryStrategy,
-    /// Current recording status
-    pub recording_status: RecordingStatus,
-    /// Latest transcription text
-    pub transcription_text: String,
-    /// Latest incremental preview, shown on its own line above the final text.
-    /// Previews and finals used to share `transcription_text`, so a preview was
-    /// indistinguishable from a result; keeping them apart is what makes a
-    /// realtime model's incremental output visible as such.
-    pub preview_text: String,
-    /// What `preview_text` spans, as the daemon said: the whole take so far,
-    /// or only the last few seconds. `None` before the first frame, and when
-    /// the daemon did not say.
-    pub preview_source: Option<super_voice_shared::models::protocol::PreviewSource>,
-    /// Current audio level (0.0 to 1.0)
-    pub audio_level: f32,
-    /// Whether speech is currently detected
-    pub is_speech_detected: bool,
+    /// The daemon's microphone: open or not, its level, and whether that
+    /// sounds like speech. Every page that records reads it.
+    pub microphone: super_voice_app_core::state::Microphone,
+    /// Speech to text's recording test, on its Behavior tab.
+    pub recording_test: super_voice_app_core::state::recording_test::RecordingTest,
     /// Speech to text's Behavior tab: what stops a recording and how it is
     /// typed, the sounds around it, and the typing test.
     pub behavior: crate::state::behavior::BehaviorState,

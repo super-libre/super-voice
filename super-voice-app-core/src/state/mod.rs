@@ -10,8 +10,10 @@ pub mod clips;
 pub mod contexts;
 pub mod device_offers;
 pub mod language;
+pub mod microphone;
 pub mod model_operations;
 pub mod notes;
+pub mod recording_test;
 pub mod registry;
 pub mod scripts;
 pub mod shortcuts;
@@ -24,6 +26,7 @@ pub mod voice;
 pub mod voices;
 
 pub use language::LanguageResolution;
+pub use microphone::Microphone;
 pub use speech::{SpeakingStatus, SpeechState};
 pub use stage::{BlockStage, Stage};
 pub use super_voice_shared::models::theme::AudioTheme;

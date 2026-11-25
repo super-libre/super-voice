@@ -10,7 +10,6 @@
 
 use super_voice_shared::models::assistants::{AssistantId, AssistantList, NewKey};
 use super_voice_shared::models::notification_method::NotificationMethod;
-use super_voice_shared::models::protocol::PreviewSource;
 use super_voice_shared::models::read_method::ReadMethod;
 use super_voice_shared::models::shortcuts::{ShortcutId, ShortcutList};
 
@@ -745,28 +744,15 @@ pub enum BehaviorMessage {
     Page(super_voice_app_core::pages::behavior::Input),
 }
 
-/// Recording / audio / widget (SSE-driven meter + coarse recording state).
+/// Speech to text's recording test, and the microphone every page that
+/// records reads.
 #[derive(Debug, Clone)]
 pub enum RecordingMessage {
-    StartRecording,
-    StopRecording,
-    /// A preview frame from the test recording. `source` is what the daemon
-    /// said the text spans, when it said.
-    PreviewReceived {
-        text: String,
-        source: Option<PreviewSource>,
-    },
-    TranscriptionReceived(String),
-    /// `frequency_bands` event from the daemon's `/events` SSE stream
-    /// — already converted to (`display_level_percent`, `is_speech`) so
-    /// the settings UI can drive its meter unchanged.
-    WidgetAudioLevel {
-        level: f32,
-        is_speech: bool,
-    },
-    /// `recording_state` event from `/events` — coarse `is_recording`
-    /// flag the UI projects into a `RecordingStatus`.
-    WidgetRecordingState(bool),
+    /// Something the test's logic handles. See
+    /// `super_voice_app_core::pages::recording_test`.
+    Test(super_voice_app_core::pages::recording_test::Input),
+    /// The daemon's microphone opened or closed, or its level moved.
+    Microphone(super_voice_app_core::events::Event),
 }
 
 /// How a beta-opt-in toggle ended. Three cases because each leaves the UI

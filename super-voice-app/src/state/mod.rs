@@ -40,7 +40,7 @@ pub mod notes {
 pub use editor::Editor;
 pub use models::{
     ActionError, AudioTheme, ContextPage, DaemonStatus, ErrorScope, MenuAction, ModelsTab, Page,
-    RecordingStatus, Section,
+    Section,
 };
 pub use super_voice_app_core::state::{
     BlockStage, LanguageResolution, SpeakingStatus, SpeechState, Stage, VoiceChoice,
