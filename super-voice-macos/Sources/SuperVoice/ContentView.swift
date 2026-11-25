@@ -42,21 +42,20 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
-                Section {
-                    row(.models)
-                    row(.library)
-                }
-                Section {
-                    row(.speechToText)
-                    row(.textToSpeech)
-                }
-                Section {
-                    row(.shortcuts)
-                    row(.assistants)
-                    row(.settings)
-                    row(.updates)
-                }
+                row(.models)
+                row(.library)
+                GroupDivider()
+                row(.speechToText)
+                row(.textToSpeech)
+                GroupDivider()
+                row(.shortcuts)
+                row(.assistants)
+                row(.settings)
+                row(.updates)
             }
+            // Low enough for the group lines, which are thin; a page's row is
+            // still as tall as its icon and name.
+            .environment(\.defaultMinListRowHeight, 8)
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
             switch selection {
@@ -86,6 +85,17 @@ struct ContentView: View {
     }
 }
 
+/// The line between the sidebar's groups, as in the settings app: the models,
+/// the two features, then the rest.
+struct GroupDivider: View {
+    var body: some View {
+        Divider()
+            .frame(height: 9)
+            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+            .selectionDisabled()
+    }
+}
+
 /// Speech to text's tabs, at the top of the page as in the settings app. Only
 /// Notes is here so far.
 struct SpeechToTextView: View {
@@ -96,7 +106,7 @@ struct SpeechToTextView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Picker("Tab", selection: $tab) {
+            Picker(t("speech-to-text"), selection: $tab) {
                 Text(t("notes")).tag(Tab.notes)
                 Text(t("contexts")).tag(Tab.contexts)
                 Text(t("behavior")).tag(Tab.behavior)
