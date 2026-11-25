@@ -38,4 +38,13 @@ impl Navigator {
             _ = shell.update(cx, |shell, cx| shell.go(page, window, cx));
         });
     }
+
+    /// Show `page`, then run its command `id` (one of its palette commands'
+    /// ids), once the current update is done.
+    pub fn go_and_run(&self, page: Page, id: String, window: &mut Window, cx: &mut App) {
+        let shell = self.0.clone();
+        window.defer(cx, move |window, cx| {
+            _ = shell.update(cx, |shell, cx| shell.go_and_run(page, &id, window, cx));
+        });
+    }
 }
