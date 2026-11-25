@@ -21,6 +21,7 @@ mod about;
 mod assistants;
 mod clips;
 mod contexts;
+mod models;
 mod notes;
 mod placeholder;
 mod settings;
@@ -64,7 +65,10 @@ pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> 
         Page::TtsBehavior => {
             PageHandle::new::<tts_behavior::TtsBehaviorPage>(page, shared, window, cx)
         }
-        _ => PageHandle::new::<placeholder::Placeholder>(page, shared, window, cx),
+        Page::SttModels | Page::TtsModels => {
+            PageHandle::new::<models::ModelsPage>(page, shared, window, cx)
+        }
+        Page::Library => PageHandle::new::<placeholder::Placeholder>(page, shared, window, cx),
     }
 }
 
