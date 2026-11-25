@@ -21,9 +21,9 @@ mod about;
 mod assistants;
 mod clips;
 mod contexts;
+mod library;
 mod models;
 mod notes;
-mod placeholder;
 mod settings;
 mod shortcuts;
 mod stt_behavior;
@@ -68,7 +68,7 @@ pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> 
         Page::SttModels | Page::TtsModels => {
             PageHandle::new::<models::ModelsPage>(page, shared, window, cx)
         }
-        Page::Library => PageHandle::new::<placeholder::Placeholder>(page, shared, window, cx),
+        Page::Library => PageHandle::new::<library::LibraryPage>(page, shared, window, cx),
     }
 }
 
