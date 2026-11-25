@@ -67,18 +67,20 @@ pub enum Readiness {
     Ready,
     /// Its model is out of memory until its next use, which loads it.
     Idle,
-    /// Its model failed to come up, or its backend isn't set up.
+    /// Its backend needs a key or an option set before it can run.
+    NeedsSetup,
+    /// Its model failed to come up.
     Failed,
 }
 
 impl Readiness {
-    /// The colour of its dot: green ready or idle, yellow nothing up yet, red
-    /// failed, grey no backend or not known.
+    /// The colour of its dot: green ready or idle, yellow nothing up yet or
+    /// needs setting up, red failed, grey no backend or not known.
     #[must_use]
     pub const fn dot(self) -> Dot {
         match self {
             Self::Ready | Self::Idle => Dot::Green,
-            Self::NotLoaded | Self::Loading => Dot::Yellow,
+            Self::NotLoaded | Self::Loading | Self::NeedsSetup => Dot::Yellow,
             Self::Failed => Dot::Red,
             Self::NoBackend | Self::Unknown => Dot::Grey,
         }
@@ -94,6 +96,7 @@ impl Readiness {
             Self::Loading => "loading",
             Self::Ready => "ready",
             Self::Idle => "idle",
+            Self::NeedsSetup => "status-needs-setup",
             Self::Failed => "failed",
         }
     }
@@ -246,7 +249,8 @@ pub fn readiness(known: &ReadinessState, feature: Feature) -> Readiness {
         ModelStatus::NotLoaded => Readiness::NotLoaded,
         ModelStatus::Ready => Readiness::Ready,
         ModelStatus::Idle => Readiness::Idle,
-        ModelStatus::Blocked | ModelStatus::Failed | ModelStatus::NoVoice => Readiness::Failed,
+        ModelStatus::Blocked => Readiness::NeedsSetup,
+        ModelStatus::Failed | ModelStatus::NoVoice => Readiness::Failed,
     }
 }
 
@@ -530,6 +534,7 @@ mod tests {
             R::Loading,
             R::Ready,
             R::Idle,
+            R::NeedsSetup,
             R::Failed,
         ] {
             assert!(
@@ -540,7 +545,9 @@ mod tests {
         }
         assert_eq!(R::Idle.dot(), Dot::Green);
         assert_eq!(R::Loading.dot(), Dot::Yellow);
+        assert_eq!(R::NeedsSetup.dot(), Dot::Yellow);
         assert_eq!(R::Failed.dot(), Dot::Red);
         assert_eq!(R::NoBackend.dot(), Dot::Grey);
+        assert_eq!(ModelStatus::Blocked.dot(), Dot::Yellow);
     }
 }
