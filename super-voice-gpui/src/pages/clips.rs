@@ -41,6 +41,7 @@ use crate::effects::{self, CorePage, Runner, runner};
 use crate::pages::{Page, PageView, PaletteCommand, SidebarMark};
 use crate::shared::Shared;
 use crate::ui::empty_state::EmptyState;
+use crate::ui::key_list::{self, KeyList, KeyListState};
 use crate::ui::list_detail::ListDetail;
 use crate::ui::page_header::PageHeader;
 use crate::ui::toast::{self, Toast};
@@ -97,6 +98,8 @@ pub struct ClipsPage {
     dragging: bool,
     /// Moves the player's position and the making clock while either runs.
     ticker: Option<Task<()>>,
+    /// The list, as the keyboard reaches it.
+    keys: KeyListState,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -147,6 +150,7 @@ impl PageView for ClipsPage {
             slider,
             dragging: false,
             ticker: None,
+            keys: KeyListState::new(cx),
             _subscriptions: subscriptions,
         }
     }
@@ -228,6 +232,40 @@ impl PageView for ClipsPage {
     }
 }
 
+impl KeyList for ClipsPage {
+    fn key_list(&self) -> &KeyListState {
+        &self.keys
+    }
+
+    fn key_list_mut(&mut self) -> &mut KeyListState {
+        &mut self.keys
+    }
+
+    fn rows(&self, _: &App) -> Vec<String> {
+        self.state
+            .items
+            .iter()
+            .map(|clip| clip.id.clone())
+            .collect()
+    }
+
+    fn picked(&self) -> Option<String> {
+        match &self.pane {
+            Pane::Clip(id) => Some(id.clone()),
+            _ => None,
+        }
+    }
+
+    fn open_row(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.pick(id.to_string(), window, cx);
+    }
+
+    /// The count sits above the clips.
+    fn first_row(&self, _: &App) -> usize {
+        1
+    }
+}
+
 impl CorePage for ClipsPage {
     type Input = In;
     type Effect = Out;
@@ -295,9 +333,13 @@ impl CorePage for ClipsPage {
                 runner(async move { In::Clips(page::run_samples(id).await) })
             }
             Out::Clips(page::Effect::Export { id, name }) => {
-                // The dialog is the platform's, opened here; the copy runs
-                // once it answers.
-                let chosen = cx.prompt_for_new_path(&start_folder(), Some(&name));
+                // The dialog is the platform's, opened here, in Documents as
+                // a note's is; the copy runs once it answers. GPUI's dialog
+                // takes no file types, so it can't be limited to WAV; the
+                // name it suggests ends in .wav, and the core adds it to a
+                // name typed without.
+                let chosen = cx
+                    .prompt_for_new_path(&super_voice_app_core::pages::export_start(), Some(&name));
                 runner(async move {
                     let result = match chosen.await {
                         Ok(Ok(Some(path))) => page::export_to(&id, &path).await,
@@ -320,11 +362,6 @@ impl CorePage for ClipsPage {
             Out::Voice(model_voice::Effect::Save { .. }) => return None,
         })
     }
-}
-
-/// Where the export dialog opens: the home folder.
-fn start_folder() -> std::path::PathBuf {
-    std::env::var_os("HOME").map_or_else(|| "/".into(), Into::into)
 }
 
 /// What the page tells the user, in the app's words.
@@ -398,7 +435,8 @@ impl ClipsPage {
 
     /// Run the ticker while a clip plays or is made, and only then.
     fn keep_ticking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let busy = self.state.playing.is_some() || self.state.making.is_some();
+        let busy =
+            self.state.playing.as_ref().is_some_and(|p| !p.paused) || self.state.making.is_some();
         if !busy {
             self.ticker = None;
             return;
@@ -485,9 +523,14 @@ impl ClipsPage {
             parts.push(length);
             return parts.join(" · ").into();
         };
+        let key = if playing.paused {
+            "paused-position"
+        } else {
+            "playing-position"
+        };
         match (playing.position(), playing.length()) {
             (Some(at), Some(of)) => t_with(
-                "playing-position",
+                key,
                 &[("position", &page::clock(at)), ("length", &page::clock(of))],
             ),
             _ => t("starting"),
@@ -495,7 +538,7 @@ impl ClipsPage {
     }
 
     /// The clips, newest first.
-    fn list(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn list(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         if !self.state.loaded {
             return div()
                 .p_4()
@@ -522,79 +565,94 @@ impl ClipsPage {
             Pane::Clip(id) => Some(id.as_str()),
             _ => None,
         };
+        let ringed = key_list::ringed(self, window, cx);
         let rows = self.state.items.iter().map(|clip| {
-            let playing = self.state.is_playing(&clip.id);
-            let icon = if playing {
-                Lucide::Volume2
-            } else {
-                Lucide::FileVolume
-            };
-            let id = clip.id.clone();
-            ListItem::new(SharedString::from(format!("clip-{}", clip.id)))
-                .selected(picked == Some(clip.id.as_str()))
-                .accessibility_label(page::first_line(&clip.text, ROW_CHARS))
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.pick(id.clone(), window, cx);
-                }))
-                .child(
-                    h_flex()
-                        .w_full()
-                        .gap_2()
-                        .items_start()
-                        .child(
-                            div()
-                                .pt_0p5()
-                                .text_color(if playing {
-                                    cx.theme().primary
-                                } else {
-                                    cx.theme().muted_foreground
-                                })
-                                .child(gpui_kit::component::Icon::new(icon).small()),
-                        )
-                        .child(
-                            v_flex()
-                                .flex_1()
-                                .min_w_0()
-                                .gap_0p5()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .truncate()
-                                        .child(page::first_line(&clip.text, ROW_CHARS)),
-                                )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .truncate()
-                                        .child(self.about(clip, today)),
-                                ),
-                        ),
-                )
+            let row = self.clip_row(clip, picked == Some(clip.id.as_str()), today, cx);
+            key_list::row(row, ringed.as_deref() == Some(clip.id.as_str()), window, cx)
         });
-        div()
-            .id("clip-list")
+        let rows: Vec<_> = rows.collect();
+        // The rows are the list's own children, after the count, for the
+        // keyboard to scroll to.
+        key_list::wire(div().id("clip-list"), self, cx)
             .size_full()
             .overflow_y_scroll()
+            .flex()
+            .flex_col()
+            .p_2()
+            .gap_0p5()
             .child(
-                v_flex()
-                    .p_2()
-                    .gap_0p5()
+                div()
+                    .px_2()
+                    .pb_1()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t_with(
+                        "clips-count",
+                        &[("count", &self.state.items.len().to_string())],
+                    )),
+            )
+            .children(rows)
+            .into_any_element()
+    }
+
+    /// A clip in the list: how it starts, and when it was made, its voice
+    /// and length, or how far it has played.
+    fn clip_row(
+        &self,
+        clip: &Clip,
+        picked: bool,
+        today: chrono::NaiveDate,
+        cx: &mut Context<Self>,
+    ) -> ListItem {
+        let playing = self.state.is_playing_on(&clip.id);
+        let icon = if playing {
+            Lucide::Volume2
+        } else {
+            Lucide::FileVolume
+        };
+        let id = clip.id.clone();
+        ListItem::new(SharedString::from(format!("clip-{}", clip.id)))
+            .selected(picked)
+            .accessibility_label(page::first_line(&clip.text, ROW_CHARS))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.pick(id.clone(), window, cx);
+            }))
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_2()
+                    .items_start()
                     .child(
                         div()
-                            .px_2()
-                            .pb_1()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(t_with(
-                                "clips-count",
-                                &[("count", &self.state.items.len().to_string())],
-                            )),
+                            .pt_0p5()
+                            .text_color(if playing {
+                                cx.theme().primary
+                            } else {
+                                cx.theme().muted_foreground
+                            })
+                            .child(gpui_kit::component::Icon::new(icon).small()),
                     )
-                    .children(rows),
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_0p5()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .truncate()
+                                    .child(page::first_line(&clip.text, ROW_CHARS)),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .truncate()
+                                    .child(self.about(clip, today)),
+                            ),
+                    ),
             )
-            .into_any_element()
     }
 
     fn new_clip_button(cx: &mut Context<Self>) -> Button {
@@ -717,21 +775,33 @@ impl ClipsPage {
             )
     }
 
-    /// The player: Play or Stop, where it is, a slider to move it, and how
-    /// long the clip is. Built from a Button and a Slider over the core's
-    /// player: the kit has no audio player.
+    /// The player: Play or Pause, Stop while it plays or is paused, where
+    /// it is, a slider to move it (paused too), and how long the clip is.
+    /// Built from Buttons and a Slider over the core's player: the kit has no
+    /// audio player.
     fn player(&self, clip: &Clip, cx: &mut Context<Self>) -> impl IntoElement {
         let length = Duration::from_secs_f32(clip.seconds.max(0.));
         let playing = self.state.playing.as_ref().filter(|p| p.id == clip.id);
         let position = playing.and_then(Playing::position).unwrap_or_default();
-        let play = if playing.is_some() {
-            Button::new("stop-clip")
+        let play = if playing.is_some_and(|p| p.paused) {
+            Button::new("resume-clip")
                 .primary()
-                .icon(IconName::Square)
-                .accessibility_label(t("stop"))
-                .tooltip(t("stop"))
+                .icon(IconName::Play)
+                .accessibility_label(t("play"))
+                .tooltip(t("play"))
                 .on_click(cx.listener(|this, _, window, cx| {
-                    this.send(In::Clips(page::Input::Stop), window, cx);
+                    this.send(In::Clips(page::Input::Resume), window, cx);
+                }))
+        } else if playing.is_some() {
+            Button::new("pause-clip")
+                .primary()
+                .icon(IconName::Pause)
+                .accessibility_label(t("pause"))
+                .tooltip(t("pause"))
+                // Nothing to pause until its audio is read.
+                .disabled(playing.is_some_and(|p| p.audio.is_none()))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.send(In::Clips(page::Input::Pause), window, cx);
                 }))
         } else {
             let id = clip.id.clone();
@@ -744,17 +814,28 @@ impl ClipsPage {
                     this.send(In::Clips(page::Input::Play(id.clone())), window, cx);
                 }))
         };
+        // Back to the start, the speakers let go.
+        let stop = playing.is_some().then(|| {
+            Button::new("stop-clip")
+                .ghost()
+                .icon(IconName::Square)
+                .accessibility_label(t("stop"))
+                .tooltip(t("stop"))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.send(In::Clips(page::Input::Stop), window, cx);
+                }))
+        });
         let muted = cx.theme().muted_foreground;
         GroupBox::new().fill().child(
             h_flex()
                 .gap_3()
                 .items_center()
-                .child(play)
+                .child(h_flex().gap_1().child(play).children(stop))
                 .child(time(position, muted))
                 .child(
                     div().flex_1().min_w_0().child(
                         Slider::new(&self.slider)
-                            .disabled(playing.is_none_or(|p| p.player.is_none()))
+                            .disabled(playing.is_none_or(|p| p.audio.is_none()))
                             .accessibility_label(t("position-in-the-clip")),
                     ),
                 )
@@ -946,7 +1027,7 @@ impl Render for ClipsPage {
                 .border_t_1()
                 .border_color(cx.theme().border)
                 .child(
-                    ListDetail::new("clips", self.list(cx))
+                    ListDetail::new("clips", self.list(window, cx))
                         .detail(detail)
                         .placeholder(placeholder)
                         .back(
@@ -962,7 +1043,9 @@ impl Render for ClipsPage {
 
 /// Made-up clips for `just app-shot`: three, in Kokoro's and Qwen TTS's
 /// voices. Scenes: `clips-empty` (none yet), `clip-playing` (the first
-/// playing, two seconds in), `clip-new` (the composer, with words in it).
+/// playing, two seconds in), `clip-paused` (the first paused, nearly four
+/// seconds in), `clip-new` (the composer, with words in it), `clips-keys`
+/// (the list has the keyboard's focus).
 #[cfg(feature = "screenshot")]
 mod pretend {
     use super::*;
@@ -1028,15 +1111,23 @@ mod pretend {
             },
         ];
         let playing = scenes.contains(&"clip-playing");
-        if playing || width::content(window) >= width::TWO_PANES {
+        let paused = scenes.contains(&"clip-paused");
+        if playing || paused || width::content(window) >= width::TWO_PANES {
             page.pane = Pane::Clip("c3".into());
         }
-        if playing {
+        if playing || paused {
             let mut clip = Playing::new("c3".into());
-            clip.player = Some(Player::held_at(
-                Duration::from_secs_f32(6.4),
-                Duration::from_secs(2),
-            ));
+            // Silence, as long as the clip: what the slider measures.
+            clip.audio = Some((vec![0.0; 6_400].into(), 1_000));
+            if paused {
+                clip.from = Duration::from_millis(3_900);
+                clip.paused = true;
+            } else {
+                clip.player = Some(Player::held_at(
+                    Duration::from_secs_f32(6.4),
+                    Duration::from_secs(2),
+                ));
+            }
             page.state.playing = Some(clip);
         }
         if scenes.contains(&"clip-new") {
@@ -1045,6 +1136,9 @@ mod pretend {
             page.draft
                 .update(cx, |draft, cx| draft.set_value(words, window, cx));
             page.state.draft = words.to_string();
+        }
+        if scenes.contains(&"clips-keys") {
+            page.keys.focus(window, cx);
         }
         page.show_position(window, cx);
         cx.notify();
@@ -1078,6 +1172,8 @@ mod tests {
             "clip-actions",
             "new-clip",
             "no-clips-yet",
+            "pause",
+            "paused-position",
             "play",
             "playing-position",
             "position-in-the-clip",

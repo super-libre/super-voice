@@ -58,7 +58,18 @@ pub fn render(shell: &Shell, size: WindowSize, cx: &mut Context<Shell>) -> impl 
                 .into_any_element(),
         ),
     };
+    // The close button asks the pages first: one with work in flight holds
+    // the window until it is done (`Shell::close`).
+    let shell = cx.weak_entity();
     TitleBar::new()
+        .on_close_window(move |_, window, cx| {
+            let close = shell
+                .update(cx, |shell, cx| shell.close(window, cx))
+                .unwrap_or(true);
+            if close {
+                window.remove_window();
+            }
+        })
         .child(left)
         .child(h_flex().pr_1().gap_1().items_center().children(right))
 }

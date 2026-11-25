@@ -41,9 +41,14 @@ pub enum Input {
         id: String,
         result: Result<(Vec<f32>, u32), String>,
     },
-    /// Play the clip playing from this far into it, 0 to 1.
+    /// Play the clip playing from this far into it, 0 to 1. A paused clip
+    /// stays paused, there.
     Seek(f32),
-    /// Stop the clip playing.
+    /// Pause the clip playing, where it is.
+    Pause,
+    /// Play the paused clip on from where it was paused.
+    Resume,
+    /// Stop the clip playing, or paused.
     Stop,
     /// Export the clip with this id.
     Export(String),
@@ -136,6 +141,8 @@ pub fn update<B: TextBuffer>(state: &mut ClipsState<B>, input: Input) -> Outcome
         | Input::Play(_)
         | Input::Ready { .. }
         | Input::Seek(_)
+        | Input::Pause
+        | Input::Resume
         | Input::Stop) => {
             playing(state, play, &mut out);
         }
@@ -225,6 +232,7 @@ fn playing<B>(state: &mut ClipsState<B>, input: Input, out: &mut Outcome) {
             }
         }
         // A new player from there: the one playing stops when it is let go.
+        // Paused, it only moves where it resumes from.
         Input::Seek(fraction) => {
             let Some(playing) = state.playing.as_mut() else {
                 return;
@@ -244,12 +252,47 @@ fn playing<B>(state: &mut ClipsState<B>, input: Input, out: &mut Outcome) {
             let frame = frame.min(audio.len());
             #[allow(clippy::cast_precision_loss)]
             let from = Duration::from_secs_f64(frame as f64 / f64::from(rate));
-            playing.player = Some(Player::start(audio[frame..].to_vec(), rate));
             playing.from = from;
+            if !playing.paused {
+                playing.player = Some(Player::start(audio[frame..].to_vec(), rate));
+            }
+        }
+        // Letting the player go closes the speakers; where it was is kept.
+        Input::Pause => {
+            let Some(playing) = state.playing.as_mut() else {
+                return;
+            };
+            if playing.paused || playing.audio.is_none() {
+                return;
+            }
+            let Some(at) = playing.position() else {
+                return;
+            };
+            playing.player = None;
+            playing.from = at;
+            playing.paused = true;
+        }
+        Input::Resume => {
+            let Some(playing) = state.playing.as_mut().filter(|p| p.paused) else {
+                return;
+            };
+            let Some((audio, rate)) = playing.audio.clone() else {
+                return;
+            };
+            playing.paused = false;
+            let frame = frame_at(audio.len(), rate, playing.from);
+            playing.player = Some(Player::start(audio[frame..].to_vec(), rate));
         }
         Input::Stop => state.playing = None,
         _ => {}
     }
+}
+
+/// The frame `at` into audio `len` frames long at `rate`, within it.
+fn frame_at(len: usize, rate: u32, at: Duration) -> usize {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let frame = (at.as_secs_f64() * f64::from(rate)).round() as usize;
+    frame.min(len)
 }
 
 /// The voice a clip made now is spoken in, as the user knows it: the voice
@@ -575,6 +618,65 @@ mod tests {
         update(&mut state, Input::Stop);
         update(&mut state, Input::Seek(0.5));
         assert!(state.playing.is_none());
+    }
+
+    /// A clip playing, with its audio read: four seconds at 1 kHz, its
+    /// player held two seconds in (no speakers are opened).
+    fn playing_two_seconds_in() -> State {
+        let mut state = State::default();
+        let mut playing = Playing::new("a".into());
+        playing.audio = Some((vec![0.0; 4_000].into(), 1_000));
+        playing.player = Some(Player::held_at(
+            Duration::from_secs(4),
+            Duration::from_secs(2),
+        ));
+        state.playing = Some(playing);
+        state
+    }
+
+    #[test]
+    fn a_pause_keeps_where_the_clip_was_and_lets_the_speakers_go() {
+        let mut state = playing_two_seconds_in();
+        update(&mut state, Input::Pause);
+        let playing = state.playing.as_ref().expect("still there");
+        assert!(playing.paused);
+        assert!(playing.player.is_none());
+        assert_eq!(playing.position(), Some(Duration::from_secs(2)));
+        // A tick leaves a paused clip alone.
+        update(&mut state, Input::Tick);
+        assert!(state.playing.is_some());
+        // Stop lets it go.
+        update(&mut state, Input::Stop);
+        assert!(state.playing.is_none());
+    }
+
+    #[test]
+    fn a_seek_while_paused_moves_where_it_resumes_and_stays_paused() {
+        let mut state = playing_two_seconds_in();
+        update(&mut state, Input::Pause);
+        update(&mut state, Input::Seek(0.75));
+        let playing = state.playing.as_ref().expect("still there");
+        assert!(playing.paused && playing.player.is_none());
+        assert_eq!(playing.position(), Some(Duration::from_secs(3)));
+    }
+
+    #[test]
+    fn resume_needs_a_paused_clip_and_pause_one_that_plays() {
+        let mut state = State::default();
+        update(&mut state, Input::Play("a".into()));
+        // Its audio isn't read yet: nothing to pause.
+        update(&mut state, Input::Pause);
+        assert!(!state.playing.as_ref().expect("asked for").paused);
+        // Not paused: nothing to resume.
+        update(&mut state, Input::Resume);
+        assert!(state.playing.as_ref().expect("asked for").player.is_none());
+    }
+
+    #[test]
+    fn a_resume_starts_where_the_clip_was_paused() {
+        assert_eq!(frame_at(4_000, 1_000, Duration::from_secs(2)), 2_000);
+        assert_eq!(frame_at(4_000, 1_000, Duration::from_secs(9)), 4_000);
+        assert_eq!(frame_at(4_000, 24_000, Duration::ZERO), 0);
     }
 
     #[test]

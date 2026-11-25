@@ -100,6 +100,16 @@ pub trait PageView: Render + Sized + 'static {
         false
     }
 
+    /// The window is asked to close (its close button, or the desktop's).
+    /// `true` when the page has work in flight it must finish first, such as
+    /// a take recording: it finishes, then says so with
+    /// [`crate::shared::Navigator::finished_closing`], and the window closes
+    /// once every page that waited has. The shell closes it anyway after a
+    /// short wait, so a stuck daemon can't keep it open.
+    fn closing(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> bool {
+        false
+    }
+
     /// The commands the page offers the palette (Ctrl+K), whatever page is
     /// shown. The palette lists them under their group, then shows this page
     /// and calls [`Self::run`] with the id of the one picked.
@@ -125,12 +135,19 @@ pub trait PageView: Render + Sized + 'static {
     fn pretend(&mut self, _scenes: &[&str], _window: &mut Window, _cx: &mut Context<Self>) {}
 }
 
+/// The Notes page's command that records a new note, which Ctrl+R (Cmd+R
+/// on macOS) runs from anywhere in the window.
+pub const NEW_NOTE: &str = "new-note";
+
 /// A command in the palette.
 #[derive(Clone)]
 pub struct PaletteCommand {
     pub id: SharedString,
     pub label: SharedString,
     pub icon: Icon,
+    /// The window's keys that run it too, as a key binding names them
+    /// ("ctrl-r"), shown on its row.
+    pub keys: Option<&'static str>,
     /// Where it acts, on the right of its row: "Speech to text · Transcription".
     pub detail: Option<SharedString>,
     /// The palette's group it is listed under; `None` is Commands.
@@ -153,10 +170,18 @@ impl PaletteCommand {
             id: id.into(),
             label: label.into(),
             icon: icon.into(),
+            keys: None,
             detail: None,
             group: None,
             keywords: Vec::new(),
         }
+    }
+
+    /// The window's keys that run it too: `.keys(shell::NEW_NOTE_KEYS)`.
+    #[must_use]
+    pub fn keys(mut self, keys: &'static str) -> Self {
+        self.keys = Some(keys);
+        self
     }
 
     #[must_use]
@@ -234,6 +259,10 @@ impl PageHandle {
         self.calls.back(window, cx)
     }
 
+    pub fn closing(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.calls.closing(window, cx)
+    }
+
     #[must_use]
     pub fn commands(&self, cx: &App) -> Vec<PaletteCommand> {
         self.calls.commands(cx)
@@ -265,6 +294,7 @@ trait PageCalls {
     fn heard(&self, event: &Event, window: &mut Window, cx: &mut App);
     fn shown(&self, window: &mut Window, cx: &mut App);
     fn back(&self, window: &mut Window, cx: &mut App) -> bool;
+    fn closing(&self, window: &mut Window, cx: &mut App) -> bool;
     fn commands(&self, cx: &App) -> Vec<PaletteCommand>;
     fn run(&self, id: &str, window: &mut Window, cx: &mut App);
     fn sidebar_mark(&self, cx: &App) -> Option<SidebarMark>;
@@ -288,6 +318,10 @@ impl<T: PageView> PageCalls for Entity<T> {
 
     fn back(&self, window: &mut Window, cx: &mut App) -> bool {
         self.update(cx, |page, cx| page.back(window, cx))
+    }
+
+    fn closing(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.update(cx, |page, cx| page.closing(window, cx))
     }
 
     fn commands(&self, cx: &App) -> Vec<PaletteCommand> {

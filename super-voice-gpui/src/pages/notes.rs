@@ -42,6 +42,7 @@ use crate::effects::{self, CorePage, Runner, runner};
 use crate::pages::{Page, PageView, PaletteCommand, SidebarMark, take};
 use crate::shared::Shared;
 use crate::ui::empty_state::EmptyState;
+use crate::ui::key_list::{self, KeyList, KeyListState};
 use crate::ui::list_detail::ListDetail;
 use crate::ui::toast::{self, Toast};
 use crate::ui::waveform::{Levels, Waveform};
@@ -76,6 +77,8 @@ pub struct NotesPage {
     take: Option<take::Take>,
     /// Moves the take's clock.
     ticker: Option<Task<()>>,
+    /// The list, as the keyboard reaches it.
+    keys: KeyListState,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -119,6 +122,7 @@ impl PageView for NotesPage {
             editor_holds: None,
             take: None,
             ticker: None,
+            keys: KeyListState::new(cx),
             _subscriptions: subscriptions,
         }
     }
@@ -152,13 +156,22 @@ impl PageView for NotesPage {
         true
     }
 
+    // A take recording holds the window: it stops, its words are written,
+    // then the window closes (the core's `FinishBeforeExit`).
+    fn closing(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.state.take.is_none() {
+            return false;
+        }
+        self.send(Input::FinishBeforeExit, window, cx);
+        true
+    }
+
     fn commands(&self, _: &App) -> Vec<PaletteCommand> {
         let notes = t("notes");
-        std::iter::once(PaletteCommand::new(
-            "new-note",
-            t("new-note"),
-            IconName::Mic,
-        ))
+        std::iter::once(
+            PaletteCommand::new(crate::pages::NEW_NOTE, t("new-note"), IconName::Mic)
+                .keys(crate::shell::NEW_NOTE_KEYS),
+        )
         .chain(self.state.items.iter().map(|note| {
             PaletteCommand::new(
                 format!("open:{}", note.id),
@@ -171,7 +184,7 @@ impl PageView for NotesPage {
     }
 
     fn run(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        if id == "new-note" {
+        if id == crate::pages::NEW_NOTE {
             if self.can_record(cx) {
                 self.send(Input::Record, window, cx);
             }
@@ -190,6 +203,43 @@ impl PageView for NotesPage {
     }
 }
 
+impl KeyList for NotesPage {
+    fn key_list(&self) -> &KeyListState {
+        &self.keys
+    }
+
+    fn key_list_mut(&mut self) -> &mut KeyListState {
+        &mut self.keys
+    }
+
+    /// The notes the search matches, as the list shows them.
+    fn rows(&self, cx: &App) -> Vec<String> {
+        let query = self.search.read(cx).value();
+        page::matching(&self.state.items, &query)
+            .into_iter()
+            .map(|note| note.id.clone())
+            .collect()
+    }
+
+    fn picked(&self) -> Option<String> {
+        self.state.open.as_ref().map(|open| open.id.clone())
+    }
+
+    fn open_row(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.send(Input::Open(id.to_string()), window, cx);
+    }
+
+    /// The row of a take recording a new note sits above the notes.
+    fn first_row(&self, _: &App) -> usize {
+        usize::from(
+            self.state
+                .take
+                .as_ref()
+                .is_some_and(|take| take.target == TakeTarget::New),
+        )
+    }
+}
+
 impl CorePage for NotesPage {
     type Input = Input;
     type Effect = Effect;
@@ -202,9 +252,7 @@ impl CorePage for NotesPage {
         let outcome = page::update(&mut self.state, input);
         self.sync_editor(window, cx);
         effects::run_effects(self, outcome.effects, window, cx);
-        let notice = outcome
-            .notice
-            .map(|notice| Toast::error(notice_text(&notice)));
+        let notice = outcome.notice.map(|notice| toast_for(&notice));
         let notice = notice.or_else(|| {
             exported.map(|path| {
                 Toast::success(t_with("exported-to", &[("path", &path)])).title(t("note-exported"))
@@ -256,10 +304,26 @@ impl CorePage for NotesPage {
                 None
             }
             Effect::Exit => {
-                window.remove_window();
+                self.shared.nav.finished_closing(Page::Notes, window, cx);
                 None
             }
         }
+    }
+}
+
+/// A notice as a toast: a failure as an error; a take that heard nothing
+/// as information, since nothing failed; a take refused because another
+/// recording holds the microphone as a warning.
+fn toast_for(notice: &Notice) -> Toast {
+    let text = notice_text(notice);
+    match notice {
+        Notice::NoSpeech => Toast::info(text),
+        Notice::AnotherRecording => Toast::warning(text),
+        Notice::CouldNotRead(_)
+        | Notice::CouldNotSave(_)
+        | Notice::CouldNotDelete(_)
+        | Notice::CouldNotExport(_)
+        | Notice::RecordingFailed(_) => Toast::error(text),
     }
 }
 
@@ -294,7 +358,8 @@ impl NotesPage {
 
     /// Ask where to export the note, then write it there.
     fn export(name: &str, text: String, window: &mut Window, cx: &mut Context<Self>) {
-        let chosen = cx.prompt_for_new_path(&page::export_start(), Some(name));
+        let chosen =
+            cx.prompt_for_new_path(&super_voice_app_core::pages::export_start(), Some(name));
         cx.spawn_in(window, async move |this, cx| {
             let input = match chosen.await {
                 Ok(Ok(Some(path))) => runtime::spawn(page::run_export_to(path, text))
@@ -433,7 +498,7 @@ impl Render for NotesPage {
         } else {
             content
         };
-        let list = self.list(two_panes, cx);
+        let list = self.list(two_panes, window, cx);
         let (detail, back_actions) = self.detail(pane, two_panes, cx);
         let placeholder = self.placeholder(cx);
         let mut panes = ListDetail::new("notes", list)
@@ -471,7 +536,7 @@ impl NotesPage {
             .on_click(Self::press(Input::Record, cx))
     }
 
-    fn list(&self, two_panes: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn list(&self, two_panes: bool, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
         let search = TextInput::new(&self.search)
             .prefix(gpui_kit::component::Icon::new(IconName::Search).small())
@@ -516,6 +581,21 @@ impl NotesPage {
             .as_ref()
             .filter(|take| take.target == TakeTarget::New)
             .map(|take| Self::take_row(take, cx));
+        let has_take = new_take.is_some();
+        let ringed = key_list::ringed(self, window, cx);
+        let rows: Option<Vec<AnyElement>> = (self.state.loaded && (has_take || !notes.is_empty()))
+            .then(|| {
+                new_take
+                    .into_iter()
+                    .map(IntoElement::into_any_element)
+                    .chain(notes.iter().map(|note| {
+                        let about = page::row_about(note, today);
+                        let row = Self::note_row(note, about, open == Some(note.id.as_str()), cx);
+                        key_list::row(row, ringed.as_deref() == Some(note.id.as_str()), window, cx)
+                            .into_any_element()
+                    }))
+                    .collect()
+            });
         let body: AnyElement = if !self.state.loaded {
             div()
                 .px_4()
@@ -524,14 +604,14 @@ impl NotesPage {
                 .text_color(muted)
                 .child(t("loading-progress"))
                 .into_any_element()
-        } else if self.state.items.is_empty() && new_take.is_none() {
+        } else if self.state.items.is_empty() && !has_take {
             // Beside the list, the empty pane says it; alone, the list does.
             if two_panes {
                 div().into_any_element()
             } else {
                 self.empty(cx).into_any_element()
             }
-        } else if notes.is_empty() && new_take.is_none() {
+        } else if notes.is_empty() && !has_take {
             div()
                 .px_4()
                 .py_2()
@@ -540,28 +620,25 @@ impl NotesPage {
                 .child(t("no-notes-match"))
                 .into_any_element()
         } else {
-            v_flex()
-                .gap_0p5()
-                .children(new_take)
-                .children(notes.into_iter().map(|note| {
-                    let about = page::row_about(note, today);
-                    Self::note_row(note, about, open == Some(note.id.as_str()), cx)
-                }))
-                .into_any_element()
+            div().into_any_element()
+        };
+        // The rows are the list's own children, for the keyboard to scroll
+        // to; room above them for the focus ring.
+        let list = key_list::wire(div().id("notes-list"), self, cx)
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .px_2()
+            .pt_1()
+            .pb_2();
+        let list = match rows {
+            Some(rows) => list.flex().flex_col().gap_0p5().children(rows),
+            None => list.child(body),
         };
         v_flex()
             .size_full()
             .child(header)
-            .child(
-                div()
-                    .id("notes-list")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .px_2()
-                    .pb_2()
-                    .child(body),
-            )
+            .child(list)
             .into_any_element()
     }
 

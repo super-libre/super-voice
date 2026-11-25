@@ -1058,3 +1058,7 @@ library-configure-backend = Configure { $backend }…
 library-folder-path = A folder that holds a backend.toml
 library-install-manually-body = Install a backend that isn't in the catalog, from a git repository's latest release or from a folder on this computer.
 library-check-failed = Couldn't read it
+
+# Clips: the player
+pause = Pause
+paused-position = Paused · { $position } of { $length }

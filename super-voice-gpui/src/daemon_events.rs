@@ -6,7 +6,9 @@
 //! The window starts it once the daemon answers and hands each event to
 //! every page (`PageView::heard`), so a page never subscribes itself. The
 //! stream heals itself; it ends only when the user refuses the app, and
-//! [`DaemonEvents::restart`] starts it again after Retry authorization.
+//! [`DaemonEvents::restart`] starts it again after Retry authorization. A
+//! stream that drops says so ([`Event::Disconnected`]), as does one that ends
+//! any other way, so the window asks the daemon at once whether it is gone.
 
 use futures_util::StreamExt as _;
 use gpui_kit::{Context, EventEmitter, Task};
@@ -63,19 +65,27 @@ impl DaemonEvents {
         });
         self.reader = Some(reader.abort_handle());
         self.forward = Some(cx.spawn(async move |this, cx| {
+            let mut refused = false;
             while let Some(event) = rx.recv().await {
-                let ended = matches!(event, Event::Blocked(_));
+                refused = matches!(event, Event::Blocked(_));
                 if this
                     .update(cx, |_, cx| cx.emit(DaemonEvent(event)))
                     .is_err()
                 {
                     return;
                 }
-                if ended {
+                if refused {
                     break;
                 }
             }
-            _ = this.update(cx, |events, _| events.reader = None);
+            _ = this.update(cx, |events, cx| {
+                events.reader = None;
+                // Ended without the user refusing the app: the reading
+                // failed, and the daemon may be gone.
+                if !refused {
+                    cx.emit(DaemonEvent(Event::Disconnected));
+                }
+            });
         }));
     }
 

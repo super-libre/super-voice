@@ -61,6 +61,10 @@ pub(super) fn fill(
         take(notes, TakeTarget::New);
     }
     notes.sync_editor(window, cx);
+    // The list has the keyboard's focus; the shot presses Down.
+    if scenes.contains(&"notes-keys") {
+        notes.keys.focus(window, cx);
+    }
     cx.notify();
 }
 

@@ -6,6 +6,10 @@
 //! ```ignore
 //! toast::notice::<Self>(window, cx, outcome.clear_notice, outcome.notice.map(|n| Toast::error(words(n))));
 //! ```
+//!
+//! An error that says the daemon can't be reached is not shown while the
+//! Connection page says so, and goes when the page comes up: the page's
+//! words are enough.
 
 use std::rc::Rc;
 
@@ -13,6 +17,7 @@ use gpui_kit::component::button::Button;
 use gpui_kit::component::notification::{Notification, NotificationType};
 use gpui_kit::component::{Sizable as _, WindowExt as _};
 use gpui_kit::{App, SharedString, Window};
+use super_voice_app_core::pages::connection::says_unreachable;
 
 /// What a toast says, and what it offers.
 #[derive(Clone)]
@@ -78,12 +83,22 @@ impl Toast {
         self
     }
 
-    /// The kit's notification, keyed on `P`.
+    /// Whether it is an error that says the daemon can't be reached.
+    fn says_unreachable(&self) -> bool {
+        matches!(self.kind, NotificationType::Error) && says_unreachable(&self.message)
+    }
+
+    /// The kit's notification, keyed on `P`; one that says the daemon can't
+    /// be reached is keyed on [`Unreachable`] too, so they can all go at once.
     fn notification<P: 'static>(self) -> Notification {
-        let mut note = Notification::new()
+        let note = Notification::new()
             .with_type(self.kind)
-            .message(self.message)
-            .id::<P>();
+            .message(self.message.clone());
+        let mut note = if self.says_unreachable() {
+            note.id1::<Unreachable>(std::any::type_name::<P>())
+        } else {
+            note.id::<P>()
+        };
         if let Some(title) = self.title {
             note = note.title(title);
         }
@@ -100,16 +115,39 @@ impl Toast {
     }
 }
 
-/// Show `toast` as page `P`'s, replacing the one it showed before.
+/// What the toasts that say the daemon can't be reached are keyed on, besides
+/// their page.
+pub struct Unreachable;
+
+/// Show `toast` as page `P`'s, replacing the one it showed before. One that
+/// says the daemon can't be reached is dropped while the Connection page
+/// says so.
 ///
 /// `toast::show::<Self>(window, cx, Toast::success(t("about-copied")));`
 pub fn show<P: 'static>(window: &mut Window, cx: &mut App, toast: Toast) {
+    // One toast a page: this one replaces the one before in place, whichever
+    // key that one had.
+    if toast.says_unreachable() {
+        if crate::connection::is_down(cx) {
+            return;
+        }
+        window.remove_notification::<P>(cx);
+    } else {
+        window.remove_notification1::<Unreachable>(std::any::type_name::<P>(), cx);
+    }
     window.push_notification(toast.notification::<P>(), cx);
 }
 
 /// Take page `P`'s toast down.
 pub fn clear<P: 'static>(window: &mut Window, cx: &mut App) {
     window.remove_notification::<P>(cx);
+    window.remove_notification1::<Unreachable>(std::any::type_name::<P>(), cx);
+}
+
+/// Take down every toast that says the daemon can't be reached: the
+/// Connection page says it now.
+pub fn drop_unreachable(window: &mut Window, cx: &mut App) {
+    window.remove_notification::<Unreachable>(cx);
 }
 
 /// Do what a core `Outcome` says of page `P`'s toast: take it down when

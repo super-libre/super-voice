@@ -64,6 +64,10 @@ pub(super) fn fill(
         page::update(&mut contexts.state, input);
     }
     contexts.sync_editor(window, cx);
+    // The list has the keyboard's focus; the shot presses Down.
+    if scenes.contains(&"contexts-keys") {
+        contexts.keys.focus(window, cx);
+    }
     cx.notify();
 }
 

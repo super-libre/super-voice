@@ -6,11 +6,15 @@
 //!
 //! The daemon is never asked: a new binary asking the daemon for a token
 //! would bring up the consent dialog on the desktop the shot is taken on.
+//! The window's connection is fixed, but a page's input can still reach for
+//! the daemon (a key press that starts a recording), so `just app-shot` runs
+//! the shot against a socket where no daemon listens, with folders of its own.
 //! Everything the window shows is made up instead ("pretend"): the shell's
 //! here (the daemon connected, each feature's readiness, the GPU), each
 //! page's in its `PageView::pretend`. `scenes`, comma-separated, pick
 //! states: the shell's (`palette`, `drawer`, `refused`, `stopped`) and any a
-//! page draws (`dictating`). `just app-shot` runs this.
+//! page draws (`dictating`). A page's `<page>-keys` scene gives its list the
+//! keyboard's focus, and the shot presses Down once. `just app-shot` runs this.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -164,6 +168,12 @@ fn shoot(shot: &Shot) -> anyhow::Result<()> {
     cx.update_window(handle, |_, window, cx| {
         shell.update(cx, |shell, cx| shell.pretend(&scenes, window, cx));
     })?;
+    // A page's list has the keyboard's focus (its `<page>-keys` scene):
+    // press Down once, which moves the keyboard's row and makes the last
+    // input a key, as its focus ring wants.
+    if scenes.iter().any(|scene| scene.ends_with("-keys")) {
+        cx.update_window(handle, |_, window, cx| window.press("down", cx))?;
+    }
     // More frames, with the background work and some time between: a frame
     // asks for the images, which load off the UI thread, and the next draws
     // them; what a scene opens (the drawer, the palette) slides or fades in

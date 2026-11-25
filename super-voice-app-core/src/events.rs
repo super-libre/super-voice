@@ -3,8 +3,9 @@
 //! [`Event`]s.
 //!
 //! The stream heals itself: a dropped connection, an idle one, or a revoked
-//! token is reconnected with backoff, so an app only hears that the stream is
-//! live again ([`Event::Connected`]) or that the user refused it for good
+//! token is reconnected with backoff. An app hears that the stream dropped
+//! ([`Event::Disconnected`]: the daemon may be gone), that it is live again
+//! ([`Event::Connected`]), or that the user refused it for good
 //! ([`Event::Blocked`]).
 
 use futures_util::{Stream, StreamExt};
@@ -44,6 +45,9 @@ pub enum Event {
     /// The stream is live, first or again. What happened while it was down
     /// was missed, so anything shown from it is read again.
     Connected,
+    /// The stream dropped, and is being reconnected. The daemon may have
+    /// stopped: an app asks it at once rather than at its next keep-alive.
+    Disconnected,
     /// The user refused this app; the stream has ended.
     Blocked(String),
     /// The microphone opened or closed.
@@ -77,24 +81,28 @@ pub fn subscribe() -> impl Stream<Item = Event> + Send + 'static {
         SETTINGS_SCOPES,
         TOPICS,
     );
-    run_widget_subscription(get_http_socket_path(), config).filter_map(|update| async move {
-        match update {
-            WidgetSubscriptionUpdate::Connected => Some(Event::Connected),
-            WidgetSubscriptionUpdate::Event(event) => parse(&event),
-            WidgetSubscriptionUpdate::Disconnected { reason } => {
-                warn!("/events disconnected ({reason}); reconnecting");
-                None
-            }
-            WidgetSubscriptionUpdate::NeedsReauth { reason } => {
-                warn!("/events needs a new token ({reason}); asking again on the next attempt");
-                None
-            }
-            WidgetSubscriptionUpdate::Blocked { reason } => {
-                warn!("/events refused by the user ({reason}); the stream has ended");
-                Some(Event::Blocked(reason))
-            }
+    run_widget_subscription(get_http_socket_path(), config)
+        .filter_map(|update| async move { from_update(update) })
+}
+
+/// What the stream's `update` tells an app, or `None` for one it needn't hear.
+fn from_update(update: WidgetSubscriptionUpdate) -> Option<Event> {
+    match update {
+        WidgetSubscriptionUpdate::Connected => Some(Event::Connected),
+        WidgetSubscriptionUpdate::Event(event) => parse(&event),
+        WidgetSubscriptionUpdate::Disconnected { reason } => {
+            warn!("/events disconnected ({reason}); reconnecting");
+            Some(Event::Disconnected)
         }
-    })
+        WidgetSubscriptionUpdate::NeedsReauth { reason } => {
+            warn!("/events needs a new token ({reason}); asking again on the next attempt");
+            None
+        }
+        WidgetSubscriptionUpdate::Blocked { reason } => {
+            warn!("/events refused by the user ({reason}); the stream has ended");
+            Some(Event::Blocked(reason))
+        }
+    }
 }
 
 /// The event `event` is, or `None` for one an app doesn't show.

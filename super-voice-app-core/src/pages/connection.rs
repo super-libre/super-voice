@@ -21,6 +21,9 @@ pub enum Input {
     Failed(HttpError),
     /// The keep-alive timer: ping again while connected.
     Tick,
+    /// The event stream dropped: the daemon may have stopped. Ping now,
+    /// while connected, rather than at the next keep-alive.
+    StreamDropped,
     /// The wait after a failure is over: try again.
     Retry,
     /// The status was asked for again (the Settings page's refresh), and this
@@ -103,8 +106,10 @@ pub fn update(state: &mut ConnectionState, input: Input) -> Outcome {
             state.retry.should_retry();
             Outcome::effects(vec![Effect::RetryAfter(delay)])
         }
-        Input::Tick if state.is_connected() => Outcome::effects(vec![Effect::Ping]),
-        Input::Tick => Outcome::default(),
+        Input::Tick | Input::StreamDropped if state.is_connected() => {
+            Outcome::effects(vec![Effect::Ping])
+        }
+        Input::Tick | Input::StreamDropped => Outcome::default(),
         Input::Retry => {
             state.status = DaemonStatus::Connecting;
             Outcome::effects(vec![Effect::Ping])
@@ -158,6 +163,21 @@ pub fn classify(error: HttpError) -> DaemonStatus {
     } else {
         DaemonStatus::Error(error.into())
     }
+}
+
+/// Whether `text`, a failure's words, says the daemon could not be reached:
+/// its socket missing or refusing, or the connection dropped mid-call. While
+/// the Connection page says so, an app needn't say it again for each call.
+#[must_use]
+pub fn says_unreachable(text: &str) -> bool {
+    // The client's own words for each (super-engine-client's transport).
+    const UNREACHABLE: [&str; 4] = [
+        "Daemon HTTP listener not running",
+        "Connection failed: ",
+        "HTTP handshake failed: ",
+        "Request failed: ",
+    ];
+    UNREACHABLE.iter().any(|words| text.contains(words))
 }
 
 /// What the page offers to fix the connection.
@@ -371,6 +391,31 @@ mod tests {
             "Daemon HTTP listener not running. Start the daemon first.".to_string(),
         ));
         assert!(matches!(next, DaemonStatus::Error(_)));
+    }
+
+    #[test]
+    fn a_dropped_stream_pings_at_once_while_connected() {
+        let mut state = ConnectionState::default();
+        update(&mut state, Input::Reached);
+        assert_eq!(
+            update(&mut state, Input::StreamDropped).effects,
+            [Effect::Ping]
+        );
+        state.status = DaemonStatus::Error("gone".into());
+        assert!(update(&mut state, Input::StreamDropped).effects.is_empty());
+    }
+
+    #[test]
+    fn a_failure_that_says_the_daemon_is_gone_is_told_apart() {
+        assert!(says_unreachable(
+            "The clip could not be made: Daemon HTTP listener not running. Start the daemon first."
+        ));
+        assert!(says_unreachable(
+            "Connection failed: connection reset by peer"
+        ));
+        assert!(says_unreachable("Request failed: connection closed"));
+        assert!(!says_unreachable("The note could not be saved: disk full"));
+        assert!(!says_unreachable("Unknown voice"));
     }
 
     #[test]

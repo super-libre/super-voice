@@ -11,6 +11,7 @@ pub mod connection;
 pub mod contexts;
 pub mod device_offers;
 pub mod language;
+pub mod list_cursor;
 pub mod microphone;
 pub mod model_operations;
 pub mod notes;
@@ -29,6 +30,7 @@ pub mod voice;
 pub mod voices;
 
 pub use language::LanguageResolution;
+pub use list_cursor::ListCursor;
 pub use microphone::Microphone;
 pub use speech::{SpeakingStatus, SpeechState};
 pub use stage::{BlockStage, Stage};
