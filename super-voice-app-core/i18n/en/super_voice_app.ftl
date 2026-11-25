@@ -814,6 +814,31 @@ write-method-could-not-save = Couldn't save the write method: { $error }
 typing-test-failed = The typing test failed: { $error }
 no-speech-detected = No speech was heard.
 
+# Errors and progress the app used to say in English only
+language-could-not-save = Couldn't change the language: { $error }
+read-method-could-not-save = Couldn't save what the shortcut reads: { $error }
+notification-method-could-not-save = Couldn't save how failures are reported: { $error }
+idle-unload-could-not-save = Couldn't save Sleep When Idle: { $error }
+post-processor-could-not-save = Couldn't save the post-processor: { $error }
+speech-model-could-not-save = Couldn't save the speech model: { $error }
+voice-could-not-save = Couldn't set the voice: { $error }
+update-status-could-not-read = Couldn't read the update status: { $error }
+update-setting-could-not-save = Couldn't change that setting: { $error }
+build-download-failed = Couldn't download the { $framework } build: { $error }
+device-switch-failed = Couldn't switch the device: { $error }
+model-download-failed = The download failed: { $error }
+model-switch-failed = The model switch failed.
+post-processor = Post-processor
+speech-model = Speech model
+progress-loading-model = Loading the model…
+progress-reloading-model = Reloading the model…
+progress-starting-switch = Starting the switch…
+progress-switching-device = Switching the device…
+progress-switching-to = Switching to { $device }…
+progress-loading-on = Loading on { $device }…
+progress-loading-on-cpu = Loading { $model } on the CPU…
+progress-loading-on-gpu = Loading { $model } on the GPU…
+
 # The macOS app, while its pages arrive
 page-not-in-this-app-yet = This page is in the Linux app, and not here yet.
 recording-not-in-this-app-yet = Recording isn't in this app yet. Use the Linux app, or the shortcut.

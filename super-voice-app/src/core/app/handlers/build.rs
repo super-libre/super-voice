@@ -142,7 +142,11 @@ impl AppModel {
         let framework = crate::ui::views::models::accel_name(&pending.framework);
         self.report_stage_error(
             pending.stage,
-            &format!("Could not download the {framework} build: {error}"),
+            &crate::fl!(
+                "build-download-failed",
+                framework = framework,
+                error = error
+            ),
         );
     }
 }

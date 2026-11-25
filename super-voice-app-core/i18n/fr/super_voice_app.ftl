@@ -814,6 +814,31 @@ write-method-could-not-save = Impossible d'enregistrer la méthode de saisie : {
 typing-test-failed = Le test de saisie a échoué : { $error }
 no-speech-detected = Aucune parole n'a été entendue.
 
+# Errors and progress the app used to say in English only
+language-could-not-save = Impossible de changer la langue : { $error }
+read-method-could-not-save = Impossible d'enregistrer ce que lit le raccourci : { $error }
+notification-method-could-not-save = Impossible d'enregistrer le signalement des erreurs : { $error }
+idle-unload-could-not-save = Impossible d'enregistrer la mise en veille si inactif : { $error }
+post-processor-could-not-save = Impossible d'enregistrer le post-traitement : { $error }
+speech-model-could-not-save = Impossible d'enregistrer le modèle de synthèse : { $error }
+voice-could-not-save = Impossible de choisir la voix : { $error }
+update-status-could-not-read = Impossible de lire l'état des mises à jour : { $error }
+update-setting-could-not-save = Impossible de changer ce réglage : { $error }
+build-download-failed = Impossible de télécharger la version { $framework } : { $error }
+device-switch-failed = Impossible de changer d'appareil : { $error }
+model-download-failed = Le téléchargement a échoué : { $error }
+model-switch-failed = Le changement de modèle a échoué.
+post-processor = Post-traitement
+speech-model = Modèle de synthèse
+progress-loading-model = Chargement du modèle…
+progress-reloading-model = Rechargement du modèle…
+progress-starting-switch = Début du changement…
+progress-switching-device = Changement d'appareil…
+progress-switching-to = Passage à { $device }…
+progress-loading-on = Chargement sur { $device }…
+progress-loading-on-cpu = Chargement de { $model } sur le processeur…
+progress-loading-on-gpu = Chargement de { $model } sur le GPU…
+
 # The macOS app, while its pages arrive
 page-not-in-this-app-yet = Cette page est dans l'application Linux, pas encore ici.
 recording-not-in-this-app-yet = L'enregistrement n'est pas encore dans cette application. Utilisez l'application Linux, ou le raccourci.

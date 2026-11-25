@@ -68,7 +68,7 @@ impl AppModel {
                 log::warn!("Language settings error: {e}");
                 self.set_action_error(
                     crate::state::ErrorScope::Customization,
-                    format!("Couldn't update language: {e}"),
+                    crate::fl!("language-could-not-save", error = e),
                 );
                 Task::none()
             }

@@ -165,7 +165,7 @@ impl AppModel {
                 self.model_operations.set(
                     stage,
                     ModelOperationState::Error {
-                        message: format!("Download failed: {error}"),
+                        message: crate::fl!("model-download-failed", error = error),
                     },
                 );
                 self.forget_stage_model(stage);

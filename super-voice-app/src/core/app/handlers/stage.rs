@@ -129,7 +129,14 @@ impl AppModel {
                 log::warn!("Could not read the {stage:?} stage: {message}");
                 self.set_action_error(
                     crate::state::ErrorScope::from(stage),
-                    format!("Couldn't save the {}: {message}", stage.noun()),
+                    match stage {
+                        BlockStage::PostProcessing => {
+                            crate::fl!("post-processor-could-not-save", error = message)
+                        }
+                        BlockStage::Synthesis => {
+                            crate::fl!("speech-model-could-not-save", error = message)
+                        }
+                    },
                 );
                 // The failure ends the operation too, and the banner above is
                 // where it is reported.
@@ -555,14 +562,21 @@ impl AppModel {
         let prev_device = if stage == Stage::Transcription {
             let prev = self.current_device.clone();
             let name = crate::ui::views::models::accel_name(&device);
-            self.set_device_switching(device.clone(), format!("Switching to {name}..."));
+            self.set_device_switching(
+                device.clone(),
+                crate::fl!("progress-switching-to", device = name),
+            );
             self.current_device.clone_from(&device);
             (!prev.is_empty()).then_some(prev)
         } else {
             // Stage 2 publishes no device events of its own, so its card needs
             // a progress line put up here or the reload passes unremarked.
             let name = crate::ui::views::models::accel_name(&device);
-            self.set_model_loading(running.clone(), format!("Loading on {name}..."), stage);
+            self.set_model_loading(
+                running.clone(),
+                crate::fl!("progress-loading-on", device = name),
+                stage,
+            );
             previous
         };
 
@@ -641,11 +655,7 @@ impl AppModel {
         // Captured so a failed switch rolls the device back rather than leaving
         // the card on one the daemon never adopted.
         let prev_device = self.current_device.clone();
-        self.set_model_loading(
-            model.clone(),
-            "Initiating model switch...".to_string(),
-            stage,
-        );
+        self.set_model_loading(model.clone(), crate::fl!("progress-starting-switch"), stage);
         if stage == Stage::Transcription
             && let Some(dev) = &device_to_set
         {
@@ -723,7 +733,7 @@ impl AppModel {
         let Some(model) = self.loaded_model(stage).map(ToString::to_string) else {
             return Task::none();
         };
-        self.set_model_loading(model, "Reloading model...".to_string(), stage);
+        self.set_model_loading(model, crate::fl!("progress-reloading-model"), stage);
         Task::perform(reload_stage_model(stage), move |result| match result {
             Ok(()) => stage.block().map_or(cosmic::Action::None, |block| {
                 cosmic::Action::App(Message::Stage(StageMessage::RefreshBlock { stage: block }))

@@ -76,14 +76,14 @@ impl UpdateState {
     /// `unsupported`, or `run`.
     pub fn apply_status_error(&mut self, msg: &str) {
         self.checking = false;
-        self.action_error = Some(format!("Couldn't fetch update status: {msg}"));
+        self.action_error = Some(crate::fl!("update-status-could-not-read", error = msg));
     }
 
     /// A settings-toggle write (`AutoCheckToggled`/`BetaOptinToggled`)
     /// failed. Distinct banner text from [`Self::apply_status_error`] so it
     /// names the right verb.
     pub fn apply_setting_error(&mut self, msg: &str) {
-        self.action_error = Some(format!("Couldn't update setting: {msg}"));
+        self.action_error = Some(crate::fl!("update-setting-could-not-save", error = msg));
     }
 
     /// A `Done`/`Failed` run has nothing further to preserve *once superseded
@@ -704,8 +704,11 @@ mod tests {
         update.apply_status_error("boom");
         assert!(!update.checking);
         assert_eq!(
-            update.action_error.as_deref(),
-            Some("Couldn't fetch update status: boom")
+            update
+                .action_error
+                .as_deref()
+                .map(crate::i18n::without_isolation),
+            Some("Couldn't read the update status: boom".to_string())
         );
     }
 
@@ -714,8 +717,11 @@ mod tests {
         let mut update = UpdateState::default();
         update.apply_setting_error("boom");
         assert_eq!(
-            update.action_error.as_deref(),
-            Some("Couldn't update setting: boom")
+            update
+                .action_error
+                .as_deref()
+                .map(crate::i18n::without_isolation),
+            Some("Couldn't change that setting: boom".to_string())
         );
     }
 

@@ -144,7 +144,7 @@ impl AppModel {
             {
                 self.set_model_loading(
                     model,
-                    "Loading model...".to_string(),
+                    crate::fl!("progress-loading-model"),
                     Stage::PostProcessing,
                 );
                 None
@@ -172,7 +172,8 @@ impl AppModel {
                 // this event just confirms the switch is in progress.
                 if !matches!(self.device_state, DeviceState::Switching { .. }) {
                     warn!("Received switching_device event but not in switching state");
-                    self.set_device_switching(target_device, "Switching device...".to_string());
+                    let switching = crate::fl!("progress-switching-device");
+                    self.set_device_switching(target_device, switching);
                 }
                 None
             }
@@ -182,11 +183,7 @@ impl AppModel {
                 ..
             } => {
                 info!("Received loading_model_for_device event: {model} on {target_device}");
-                let status_message = format!(
-                    "Loading {} on {}...",
-                    model,
-                    if target_device == "cpu" { "CPU" } else { "GPU" }
-                );
+                let status_message = loading_on(&model, &target_device);
                 self.set_device_switching(target_device, status_message);
                 None
             }
@@ -196,7 +193,7 @@ impl AppModel {
             DaemonStatusEvent::LoadingModel { new_model, stage } if is_post_processing(stage) => {
                 self.set_model_loading(
                     new_model,
-                    "Loading model...".to_string(),
+                    crate::fl!("progress-loading-model"),
                     Stage::PostProcessing,
                 );
                 None
@@ -496,7 +493,11 @@ impl AppModel {
             // The card's only cue for a load with nothing to download, and for
             // one this app did not ask for.
             SynthesisEvent::LoadingModel { new_model } => {
-                self.set_model_loading(new_model, "Loading model...".to_string(), Stage::Synthesis);
+                self.set_model_loading(
+                    new_model,
+                    crate::fl!("progress-loading-model"),
+                    Stage::Synthesis,
+                );
                 None
             }
             SynthesisEvent::DeviceSwitchError { error, .. } => {
@@ -625,5 +626,14 @@ mod tests {
     fn other_settings_including_language_are_not_self_update_settings() {
         assert_eq!(self_update_setting_route("language"), None);
         assert_eq!(self_update_setting_route("something_else"), None);
+    }
+}
+
+/// What a device switch says while it loads `model` on `device`.
+fn loading_on(model: &str, device: &str) -> String {
+    if device == "cpu" {
+        crate::fl!("progress-loading-on-cpu", model = model)
+    } else {
+        crate::fl!("progress-loading-on-gpu", model = model)
     }
 }

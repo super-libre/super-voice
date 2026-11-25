@@ -49,7 +49,7 @@ impl AppModel {
                 log::warn!("Voice settings error: {e}");
                 self.set_action_error(
                     ErrorScope::Synthesis,
-                    format!("Couldn't set the voice: {e}"),
+                    crate::fl!("voice-could-not-save", error = e),
                 );
                 Task::none()
             }

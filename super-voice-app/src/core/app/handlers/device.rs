@@ -38,7 +38,7 @@ impl AppModel {
                 self.model_operations.set(
                     Stage::Transcription,
                     ModelOperationState::Error {
-                        message: format!("Device error: {err}"),
+                        message: crate::fl!("device-switch-failed", error = err),
                     },
                 );
                 Task::none()
