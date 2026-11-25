@@ -795,3 +795,8 @@ assistant-disconnect-failed = Couldn't disconnect { $name }: { $error }
 assistant-change-failed = Couldn't change { $name }: { $error }
 key-create-failed = Couldn't create the key: { $error }
 key-remove-failed = Couldn't remove the key: { $error }
+
+# Voices
+recorded-just-now = Recorded just now
+imported-from = Imported from { $name }
+choose-a-voice-recording = Choose a voice recording

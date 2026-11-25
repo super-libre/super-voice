@@ -19,7 +19,7 @@ use super_voice_shared::tts::models::voices::VoiceInfo;
 use super::common::error_banner;
 use crate::core::app::AppModel;
 use crate::state::scripts::{self, Script};
-use crate::state::voices::{ScriptChoice, VoicesState};
+use crate::state::voices::{SampleOrigin, ScriptChoice, VoicesState};
 use crate::ui::languages::friendly_name;
 use crate::ui::messages::{Message, VoicesMessage};
 
@@ -333,10 +333,11 @@ fn pending_section(state: &VoicesState) -> Element<'_, Message> {
         return settings::section().title(crate::fl!("add-a-voice")).into();
     };
 
+    let origin = origin_text(&pending.origin);
     let summary = if pending.seconds > 0.0 {
-        format!("{} · {:.1} s", pending.origin.describe(), pending.seconds)
+        format!("{origin} · {:.1} s", pending.seconds)
     } else {
-        pending.origin.describe()
+        origin
     };
 
     let label_input = widget::text_input(crate::fl!("name-this-voice"), &state.label_input)
@@ -400,6 +401,14 @@ fn pending_section(state: &VoicesState) -> Element<'_, Message> {
         .add(transcript)
         .add(settings::flex_item("", actions))
         .into()
+}
+
+/// Where a sample waiting to be saved came from, so two can be told apart.
+fn origin_text(origin: &SampleOrigin) -> String {
+    match origin {
+        SampleOrigin::Recorded => crate::fl!("recorded-just-now"),
+        SampleOrigin::Imported(name) => crate::fl!("imported-from", name = name.as_str()),
+    }
 }
 
 /// The stored library, one row per voice.
@@ -534,4 +543,19 @@ fn describe(voice: &VoiceInfo, deleting: bool, busy: bool) -> String {
         transcript = transcript,
         id = voice.voice_id.as_str()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::origin_text;
+    use crate::state::voices::SampleOrigin;
+
+    #[test]
+    fn a_sample_waiting_to_be_saved_says_where_it_came_from() {
+        assert_eq!(origin_text(&SampleOrigin::Recorded), "Recorded just now");
+        assert_eq!(
+            origin_text(&SampleOrigin::Imported("ada.wav".to_string())),
+            "Imported from \u{2068}ada.wav\u{2069}"
+        );
+    }
 }

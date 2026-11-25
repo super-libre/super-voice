@@ -795,3 +795,8 @@ assistant-disconnect-failed = Impossible de déconnecter { $name } : { $error }
 assistant-change-failed = Impossible de modifier { $name } : { $error }
 key-create-failed = Impossible de créer la clé : { $error }
 key-remove-failed = Impossible de retirer la clé : { $error }
+
+# Voices
+recorded-just-now = Enregistré à l’instant
+imported-from = Importé depuis { $name }
+choose-a-voice-recording = Choisir un enregistrement de voix
