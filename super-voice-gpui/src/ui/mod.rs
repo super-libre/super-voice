@@ -6,6 +6,7 @@
 //!   follow from them (two panes, the inspector, a card's fields, a row).
 //! - [`list_detail::ListDetail`]: a list and its detail, side by side or one
 //!   at a time with a back button.
+//! - [`key_list`]: a list the keyboard reaches: Tab, Up and Down, Enter.
 //! - [`status::StatusPill`] and [`status::StatusDot`]: status, as a dot on a
 //!   neutral pill.
 //! - [`settings_row::SettingsRow`]: title, description and control.
@@ -22,6 +23,7 @@
 
 pub mod card;
 pub mod empty_state;
+pub mod key_list;
 pub mod list_detail;
 pub mod page_header;
 pub mod settings_row;

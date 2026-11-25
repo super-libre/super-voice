@@ -35,6 +35,7 @@ use crate::effects::{self, CorePage, Runner, runner};
 use crate::pages::{Page, PageView, PaletteCommand};
 use crate::shared::Shared;
 use crate::ui::empty_state::EmptyState;
+use crate::ui::key_list::{self, KeyList, KeyListState};
 use crate::ui::list_detail::ListDetail;
 use crate::ui::page_header::PageHeader;
 use crate::ui::status::{Dot, StatusPill};
@@ -49,6 +50,10 @@ const LIST_NARROWS: Pixels = px(900.);
 /// The editor's widest.
 const EDITOR_MAX: Pixels = px(640.);
 
+/// The No context row's id in the keyboard's list: no context's id is
+/// empty.
+const NONE_ROW: &str = "";
+
 /// The Contexts page.
 pub struct ContextsPage {
     state: ContextsState<String>,
@@ -60,6 +65,8 @@ pub struct ContextsPage {
     terms: Vec<Term>,
     /// The context the editor's fields hold.
     editing: Option<String>,
+    /// The list, as the keyboard reaches it.
+    keys: KeyListState,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -110,6 +117,7 @@ impl PageView for ContextsPage {
             prompt,
             terms: Vec::new(),
             editing: None,
+            keys: KeyListState::new(cx),
             _subscriptions: subscriptions,
         }
     }
@@ -174,6 +182,41 @@ impl PageView for ContextsPage {
     #[cfg(feature = "screenshot")]
     fn pretend(&mut self, scenes: &[&str], window: &mut Window, cx: &mut Context<Self>) {
         pretend::fill(self, scenes, window, cx);
+    }
+}
+
+impl KeyList for ContextsPage {
+    fn key_list(&self) -> &KeyListState {
+        &self.keys
+    }
+
+    fn key_list_mut(&mut self) -> &mut KeyListState {
+        &mut self.keys
+    }
+
+    /// The contexts, then No context.
+    fn rows(&self, _: &App) -> Vec<String> {
+        self.state
+            .items
+            .iter()
+            .map(|context| context.id.clone())
+            .chain(std::iter::once(NONE_ROW.to_string()))
+            .collect()
+    }
+
+    fn picked(&self) -> Option<String> {
+        self.state.draft.as_ref().map(|draft| draft.id.clone())
+    }
+
+    /// Enter opens a context's editor, as a click does; on No context, it
+    /// puts no context in use, as a click does.
+    fn open_row(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let input = if id == NONE_ROW {
+            Input::Activate(None)
+        } else {
+            Input::Edit(id.to_string())
+        };
+        self.send(input, window, cx);
     }
 }
 
@@ -364,7 +407,7 @@ impl Render for ContextsPage {
             .icon(IconName::Plus)
             .label(t("new-context"))
             .on_click(Self::press(Input::Create, cx));
-        let list = self.list(cx);
+        let list = self.list(window, cx);
         let editor = self.editor(two_panes, window, cx);
         let placeholder = self.placeholder(cx);
         let mut panes = ListDetail::new("contexts", list)
@@ -406,29 +449,12 @@ impl Render for ContextsPage {
 
 // The list.
 impl ContextsPage {
-    fn list(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn list(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
         let editing = self.state.draft.as_ref().map(|d| d.id.clone());
         let active = self.state.active.clone();
-        let body: AnyElement = if self.state.loaded {
-            v_flex()
-                .gap_0p5()
-                .children(self.state.items.iter().map(|context| {
-                    let in_use = active.as_deref() == Some(context.id.as_str());
-                    let picked = editing.as_deref() == Some(context.id.as_str());
-                    Self::context_row(context, in_use, picked, cx)
-                }))
-                .child(Self::none_row(active.is_none(), cx))
-                .into_any_element()
-        } else {
-            div()
-                .px_2()
-                .py_2()
-                .text_sm()
-                .text_color(muted)
-                .child(t("loading-progress"))
-                .into_any_element()
-        };
+        let ringed = key_list::ringed(self, window, cx);
+        let ring = |id: &str| ringed.as_deref() == Some(id);
         let reach = self.reach.map(|reach| {
             div()
                 .px_2()
@@ -437,12 +463,41 @@ impl ContextsPage {
                 .text_color(muted)
                 .child(page::reach_text(reach))
         });
-        div()
-            .id("contexts-list")
+        // The rows are the list's own children, for the keyboard to scroll
+        // to.
+        let list = key_list::wire(div().id("contexts-list"), self, cx)
             .size_full()
             .overflow_y_scroll()
-            .p_2()
-            .child(body)
+            .p_2();
+        if !self.state.loaded {
+            return list
+                .child(
+                    div()
+                        .px_2()
+                        .py_2()
+                        .text_sm()
+                        .text_color(muted)
+                        .child(t("loading-progress")),
+                )
+                .into_any_element();
+        }
+        let mut rows: Vec<AnyElement> = self
+            .state
+            .items
+            .iter()
+            .map(|context| {
+                let in_use = active.as_deref() == Some(context.id.as_str());
+                let picked = editing.as_deref() == Some(context.id.as_str());
+                let row = Self::context_row(context, in_use, picked, cx);
+                key_list::row(row, ring(&context.id), window, cx).into_any_element()
+            })
+            .collect();
+        let none = Self::none_row(active.is_none(), cx);
+        rows.push(key_list::row(none, ring(NONE_ROW), window, cx).into_any_element());
+        list.flex()
+            .flex_col()
+            .gap_0p5()
+            .children(rows)
             .children(reach)
             .into_any_element()
     }
