@@ -16,6 +16,17 @@
     name = "super-voice-app"
     path = "src/main.rs"
 
+# The window drawn off screen into a PNG (`just app-shot`). It needs GPUI's
+# headless renderer, which comes with the kit's test support, so it builds
+# only with the `screenshot` feature.
+[[bin]]
+    name = "super-voice-app-shot"
+    path = "src/bin/shot.rs"
+    required-features = ["screenshot"]
+
+[features]
+    screenshot = ["dep:image", "gpui-kit/test-support"]
+
 [dependencies]
     # The UI: GPUI, which gpui-kit re-exports, and the kit's components.
     #
@@ -28,16 +39,29 @@
     # Default features: components, the default Lucide icons, and X11 beside
     # Wayland on Linux, which the app before this one had too.
     gpui-kit = "=0.11.0"
+    # The desktop's languages, for the words (the catalogs are the core's).
+    i18n-embed.workspace = true
     log.workspace = true
     # The daemon client and the logic of every page, which the app draws.
     super-voice-app-core = { path = "../super-voice-app-core" }
     super-voice-shared = { path = "../super-voice-shared" }
+    # The core's async work runs on a runtime of its own (src/runtime.rs).
+    tokio.workspace = true
 
-# `--notify`: posting the daemon's banners as Super Voice (src/notifier.rs).
+    anyhow.workspace = true
+    # For the screenshot binary: the image crate GPUI's screenshots are made
+    # with, to save one as a PNG.
+    image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+
+[dev-dependencies]
+    # Reads the built-in theme file in a test.
+    serde_json.workspace = true
+
+# `--notify`: posting the daemon's banners as Super Voice
+# (src/macos/notifier.rs).
 # objc2 and its framework crates at the versions GPUI's macOS platform
 # already builds.
 [target.'cfg(target_os = "macos")'.dependencies]
-    anyhow.workspace = true
     block2 = "0.6"
     objc2 = "0.6"
     objc2-app-kit.version = "0.3"
