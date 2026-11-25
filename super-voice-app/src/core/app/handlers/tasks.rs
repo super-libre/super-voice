@@ -8,9 +8,7 @@ use crate::daemon::client::{
     get_volume, get_write_method, list_backends, ping_daemon,
 };
 use crate::state::AudioTheme;
-use crate::ui::messages::{
-    BackendMessage, DaemonMessage, Message, ModelsPageMessage, ReadMethodMessage,
-};
+use crate::ui::messages::{BackendMessage, DaemonMessage, Message, ReadMethodMessage};
 use cosmic::prelude::*;
 use log::warn;
 use super_voice_app_core::pages::behavior;
@@ -65,32 +63,9 @@ pub(in crate::core::app) fn reload_backends() -> Task<cosmic::Action<Message>> {
 /// first) and map the result to `RegistryListLoaded` / `RegistryListFailed`.
 /// The catalog always includes incompatible entries; filtering is client-side.
 pub(in crate::core::app) fn fetch_registry_catalog(refresh: bool) -> Task<cosmic::Action<Message>> {
-    let filters = crate::daemon::registry::ListFilters {
-        include_incompatible: Some(true),
-        ..Default::default()
-    };
     Task::perform(
-        async move {
-            // A refresh that fails still lists: the daemon answers from the
-            // copy it saved. What the failure changes is that the list may be
-            // out of date, which the Browse tab then says.
-            let refresh_error = if refresh {
-                crate::daemon::registry::refresh()
-                    .await
-                    .err()
-                    .map(|e| e.to_string())
-            } else {
-                None
-            };
-            (crate::daemon::registry::list(&filters).await, refresh_error)
-        },
-        |(r, refresh_error)| {
-            cosmic::Action::App(Message::ModelsPage(match (r, refresh_error) {
-                (Ok(resp), None) => ModelsPageMessage::RegistryListLoaded(resp),
-                (Ok(resp), Some(e)) => ModelsPageMessage::RegistryListStale(resp, e),
-                (Err(e), _) => ModelsPageMessage::RegistryListFailed(e.to_string()),
-            }))
-        },
+        super_voice_app_core::pages::library::run_catalog(refresh),
+        super::models_page::library_action,
     )
 }
 

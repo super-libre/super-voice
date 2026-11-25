@@ -199,6 +199,9 @@ pub enum ModelMessage {
 /// select/config, and the registry / download-tab install lifecycle.
 #[derive(Debug, Clone)]
 pub enum ModelsPageMessage {
+    /// The Library's logic: the catalog and its filters, and installing,
+    /// updating and uninstalling. See `super_voice_app_core::pages::library`.
+    Library(super_voice_app_core::pages::library::Input),
     /// Activate a Models-page tab (Installed / Download) in the tab bar.
     ModelsTabActivated(segmented_button::Entity),
     /// Open a pipeline step's card on the Models page.
@@ -213,68 +216,6 @@ pub enum ModelsPageMessage {
     RefreshGpuInfo,
     /// GPU inventory + memory loaded from the daemon (empty when none detected).
     GpuInfoLoaded(Vec<super_voice_shared::models::protocol::GpuInfo>),
-    // Registry / Download-tab messages
-    /// User clicked Install on a Download-tab card.
-    InstallBackend(String),
-    /// Daemon accepted the install request.
-    InstallAccepted { source: String, install_id: String },
-    /// Install POST failed (couldn't start).
-    InstallFailedToStart { source: String, error: String },
-    /// SSE: registry.install.progress
-    InstallProgress {
-        install_id: String,
-        source: String,
-        phase: super_voice_shared::registry::events::InstallPhase,
-        bytes_done: Option<u64>,
-        bytes_total: Option<u64>,
-    },
-    /// SSE: registry.install.completed
-    InstallCompleted { source: String },
-    /// SSE: registry.install.failed
-    InstallFailed {
-        install_id: String,
-        source: String,
-        phase: super_voice_shared::registry::events::InstallPhase,
-        error: super_voice_shared::registry::events::InstallError,
-        /// The daemon's reason in words, when it has one.
-        reason: Option<String>,
-    },
-    /// User clicked Update on an Installed-tab card.
-    UpdateBackend(String),
-    /// User chose Uninstall in a card's menu: ask before doing it.
-    AskUninstall(String),
-    /// User answered the uninstall question with Cancel.
-    CancelUninstall,
-    /// User confirmed the uninstall.
-    UninstallBackend(String),
-    /// An uninstall request failed; carries the backend `source` and a
-    /// human-readable error to surface on the installed card.
-    UninstallFailed { source: String, error: String },
-    /// User clicked Retry on the Download-tab empty state, or any other refresh trigger.
-    RefreshRegistry,
-    /// Initial fetch of /registry/backend/list succeeded.
-    RegistryListLoaded(super_voice_shared::registry::RegistryListResponse),
-    /// Initial fetch of /registry/backend/list failed.
-    RegistryListFailed(String),
-    /// The catalog listed, but the refresh asked for before it failed: the
-    /// list is the copy the daemon saved, and may be out of date.
-    RegistryListStale(super_voice_shared::registry::RegistryListResponse, String),
-    /// User typed in the search box.
-    RegistrySearchChanged(String),
-    /// User toggled "show incompatible".
-    RegistryIncludeIncompatible(bool),
-    /// User chose an online filter.
-    RegistryOnlineFilter(Option<bool>),
-    /// User chose which feature a Browse entry must serve.
-    RegistryFeatureFilter(crate::state::registry::FeatureFilter),
-    /// User chose which kind of model a Browse entry must serve.
-    RegistryRoleFilter(crate::state::registry::RoleFilter),
-    /// User chose an online filter for the Installed tab.
-    InstalledOnlineFilter(Option<bool>),
-    /// User chose which feature an installed backend must serve.
-    InstalledFeatureFilter(crate::state::registry::FeatureFilter),
-    /// User chose which kind of model an installed backend must serve.
-    InstalledRoleFilter(crate::state::registry::RoleFilter),
     /// Toggle the per-row overflow ("⋯") menu on an installed-backend card,
     /// keyed by backend `source`. Opening one closes any other.
     ToggleInstalledMenu(String),

@@ -14,7 +14,7 @@ use crate::core::app::AppModel;
 use crate::state::Stage;
 use crate::state::device_offers::build_installed;
 use crate::state::models_page::PendingBuild;
-use crate::ui::messages::{Message, ModelsPageMessage};
+use crate::ui::messages::Message;
 use cosmic::prelude::*;
 
 impl AppModel {
@@ -82,16 +82,16 @@ impl AppModel {
         Task::perform(
             async move { crate::daemon::registry::install_by_source(&key, Some(&framework)).await },
             move |result| {
-                cosmic::Action::App(Message::ModelsPage(match result {
-                    Ok(accepted) => ModelsPageMessage::InstallAccepted {
+                super::models_page::library_action(match result {
+                    Ok(accepted) => super_voice_app_core::pages::library::Input::InstallAccepted {
                         source: source.clone(),
                         install_id: accepted.install_id,
                     },
-                    Err(e) => ModelsPageMessage::InstallFailedToStart {
+                    Err(e) => super_voice_app_core::pages::library::Input::InstallFailedToStart {
                         source: source.clone(),
                         error: e.to_string(),
                     },
-                }))
+                })
             },
         )
     }

@@ -12,6 +12,7 @@ pub mod assistants;
 pub mod behavior;
 pub mod clips;
 pub mod contexts;
+pub mod library;
 pub mod notes;
 pub mod recording_test;
 pub mod settings;

@@ -152,6 +152,9 @@ pub struct AppModel {
     /// The Settings page: how failures are reported, and how long an unused
     /// model stays loaded.
     pub settings: super_voice_app_core::state::settings::SettingsState,
+    /// The Library page's own state: an uninstall waiting to be confirmed,
+    /// and the Installed tab's filters.
+    pub library: super_voice_app_core::pages::library::LibraryState,
 
     // Models page UI state (tabs, active-backend card selection/staging, menus).
     pub models_page: crate::state::models_page::ModelsPageState,

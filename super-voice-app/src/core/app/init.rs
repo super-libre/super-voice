@@ -159,6 +159,7 @@ impl AppModel {
             assistants: crate::state::assistants::AssistantsState::default(),
             read_method: super_voice_shared::models::read_method::ReadMethod::default(),
             settings: super_voice_app_core::state::settings::SettingsState::default(),
+            library: super_voice_app_core::pages::library::LibraryState::default(),
 
             // Models page UI state
             models_page: crate::state::models_page::ModelsPageState::default(),

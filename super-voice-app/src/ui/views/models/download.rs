@@ -15,6 +15,7 @@ use super::chips::{
     result_count, role_groups,
 };
 use super::surface::{card_divider, card_surface, card_title_block, muted_text_color, repo_button};
+use super_voice_app_core::pages::library::Input;
 use super_voice_registry_types::index::supports;
 
 /// Browse tab split into its two regions: the fixed search + filter toolbar
@@ -35,42 +36,11 @@ pub(super) fn download_split(app: &AppModel) -> (Element<'_, Message>, Element<'
     // `total` is the candidate pool (not already installed, and compatible
     // unless the user opted in); `cards` is what survives the active
     // search / target filters. The count reads "{shown} of {total}".
-    let installed_sources: std::collections::HashSet<&str> =
-        app.backends.iter().map(|b| b.source.as_str()).collect();
-    let filters = &app.registry.filters;
-
-    let mut cards: Vec<Element<'_, Message>> = Vec::new();
-    for entry in &app.registry.backends {
-        if installed_sources.contains(entry.source.as_str()) {
-            continue;
-        }
-        // "Show incompatible" is about hardware this machine will never
-        // satisfy. A backend that needs a newer Super Voice is a different thing
-        // — the user can act on it — so it is listed either way, with the
-        // version to update to in its footer.
-        if !filters.include_incompatible
-            && !entry.compatibility.compatible
-            && !entry.compatibility.needs_client_update
-        {
-            continue;
-        }
-        if let Some(o) = filters.online
-            && supports::has(&entry.supports, supports::ONLINE) != o
-        {
-            continue;
-        }
-        if !crate::state::registry::admits(
-            filters.feature,
-            filters.role,
-            entry.models.iter().map(|m| m.product.role.as_str()),
-        ) {
-            continue;
-        }
-        if !filters.search.is_empty() && !registry_entry_matches(entry, &filters.search) {
-            continue;
-        }
-        cards.push(download_card(app, entry));
-    }
+    let cards: Vec<Element<'_, Message>> =
+        super_voice_app_core::pages::library::catalog_entries(&app.registry, &app.backends)
+            .into_iter()
+            .map(|entry| download_card(app, entry))
+            .collect();
 
     let count = result_count(cards.len());
     // A refresh that failed still left a list to show; say it may be old
@@ -131,10 +101,8 @@ pub(super) fn download_toolbar<'a>(
         crate::fl!("search-backends-or-models-progress"),
         &filters.search,
     )
-    .on_input(|x| Message::ModelsPage(ModelsPageMessage::RegistrySearchChanged(x)))
-    .on_clear(Message::ModelsPage(
-        ModelsPageMessage::RegistrySearchChanged(String::new()),
-    ))
+    .on_input(|x| Message::ModelsPage(lib(Input::Search(x))))
+    .on_clear(Message::ModelsPage(lib(Input::Search(String::new()))))
     .width(Length::Fill);
 
     // One overflow menu rather than two competing buttons. Browse is how a
@@ -158,19 +126,18 @@ pub(super) fn download_toolbar<'a>(
 
     // Low-cardinality filters as one-tap chips (active = accent-filled).
     let runs_on = super::chips::runs_on_chips(filters.online, |o| {
-        Message::ModelsPage(ModelsPageMessage::RegistryOnlineFilter(o))
+        Message::ModelsPage(lib(Input::Online(o)))
     });
     let feature = super::chips::feature_filter_chips(filters.feature, |f| {
-        Message::ModelsPage(ModelsPageMessage::RegistryFeatureFilter(f))
+        Message::ModelsPage(lib(Input::Feature(f)))
     });
-    let kind = super::chips::role_filter_chips(filters.role, |r| {
-        Message::ModelsPage(ModelsPageMessage::RegistryRoleFilter(r))
-    });
+    let kind =
+        super::chips::role_filter_chips(filters.role, |r| Message::ModelsPage(lib(Input::Role(r))));
     let show_incompat = crate::ui::press_guard::press_guard(
         cosmic::widget::toggler(filters.include_incompatible)
             .label(crate::fl!("show-incompatible"))
             .spacing(spacing.space_xs)
-            .on_toggle(|x| Message::ModelsPage(ModelsPageMessage::RegistryIncludeIncompatible(x))),
+            .on_toggle(|x| Message::ModelsPage(lib(Input::IncludeIncompatible(x)))),
     );
 
     // Runs-on chips, Kind chips, then the incompatible toggle, wrapping onto a
@@ -214,32 +181,6 @@ pub(super) fn download_toolbar<'a>(
     .into()
 }
 
-/// Whether a registry entry matches the search needle. Searches the backend
-/// name, description, and repo id, plus the name of every model it serves —
-/// so "whisper" or "voxtral" find their backend even when the term isn't in
-/// the display name, and "openai" matches through the repo id.
-pub(super) fn registry_entry_matches(
-    entry: &super_voice_shared::registry::RegistryBackend,
-    needle: &str,
-) -> bool {
-    let needle = needle.to_lowercase();
-    let mut hay = format!(
-        "{} {} {}",
-        entry.name.to_lowercase(),
-        entry
-            .description
-            .as_deref()
-            .unwrap_or_default()
-            .to_lowercase(),
-        entry.source.to_lowercase(),
-    );
-    for m in &entry.models {
-        hay.push(' ');
-        hay.push_str(&m.name.to_lowercase());
-    }
-    hay.contains(&needle)
-}
-
 /// Empty/error state shown when no registry data is available yet.
 pub(super) fn download_empty_state(app: &AppModel) -> Element<'_, Message> {
     use crate::state::registry::RefreshOutcome;
@@ -257,7 +198,7 @@ pub(super) fn download_empty_state(app: &AppModel) -> Element<'_, Message> {
     column![
         text::body(msg),
         button::standard(crate::fl!("retry"))
-            .on_press(Message::ModelsPage(ModelsPageMessage::RefreshRegistry)),
+            .on_press(Message::ModelsPage(lib(Input::Refresh { index: true }))),
         widget::text(updated_label).size(10),
     ]
     .spacing(cosmic::theme::spacing().space_s)
@@ -278,9 +219,9 @@ fn install_button(
         button::standard(label).into()
     } else if entry.compatibility.compatible {
         button::suggested(crate::fl!("install"))
-            .on_press(Message::ModelsPage(ModelsPageMessage::InstallBackend(
+            .on_press(Message::ModelsPage(lib(Input::Install(
                 entry.source.clone(),
-            )))
+            ))))
             .into()
     } else if entry.compatibility.needs_client_update {
         button::standard(crate::fl!("update-super-voice")).into()
@@ -422,7 +363,7 @@ fn browse_overflow_menu() -> Element<'static, Message> {
         .push(super::surface::menu_item(
             icons::ARROWS_CLOCKWISE,
             crate::fl!("refresh-catalog"),
-            Message::ModelsPage(ModelsPageMessage::RefreshRegistry),
+            Message::ModelsPage(lib(Input::Refresh { index: true })),
         ))
         // Git-branch rather than a download glyph: the drawer's default source
         // is a repository, and it is the mark this app already uses for one on
@@ -448,4 +389,9 @@ pub(super) fn phase_label(p: super_voice_shared::registry::events::InstallPhase)
         InstallPhase::Installing => crate::fl!("registry-phase-installing"),
         InstallPhase::Rescanning => crate::fl!("registry-phase-finishing"),
     }
+}
+
+/// A Library input, as the page's message.
+fn lib(input: Input) -> crate::ui::messages::ModelsPageMessage {
+    crate::ui::messages::ModelsPageMessage::Library(input)
 }

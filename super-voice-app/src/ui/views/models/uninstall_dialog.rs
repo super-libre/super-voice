@@ -11,11 +11,12 @@ use cosmic::widget::{self, button};
 
 use crate::core::app::AppModel;
 use crate::state::Stage;
-use crate::ui::messages::{Message, ModelsPageMessage};
+use crate::ui::messages::Message;
+use super_voice_app_core::pages::library::Input;
 
 /// The dialog for the backend the user asked to uninstall, until they answer.
 pub fn uninstall_dialog(app: &AppModel) -> Option<Element<'_, Message>> {
-    let source = app.models_page.pending_uninstall.as_deref()?;
+    let source = app.library.pending_uninstall.as_deref()?;
     let name = app
         .backends
         .iter()
@@ -34,12 +35,17 @@ pub fn uninstall_dialog(app: &AppModel) -> Option<Element<'_, Message>> {
             .title(crate::fl!("uninstall-backend-question", backend = name))
             .body(body)
             .primary_action(button::destructive(crate::fl!("uninstall")).on_press(
-                Message::ModelsPage(ModelsPageMessage::UninstallBackend(source.to_string())),
+                Message::ModelsPage(lib(Input::Uninstall(source.to_string()))),
             ))
             .secondary_action(
                 button::standard(crate::fl!("cancel"))
-                    .on_press(Message::ModelsPage(ModelsPageMessage::CancelUninstall)),
+                    .on_press(Message::ModelsPage(lib(Input::CancelUninstall))),
             )
             .into(),
     )
+}
+
+/// A Library input, as the page's message.
+fn lib(input: Input) -> crate::ui::messages::ModelsPageMessage {
+    crate::ui::messages::ModelsPageMessage::Library(input)
 }
