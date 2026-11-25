@@ -9,12 +9,9 @@ use crate::state::registry::{AddSource, PreviewState};
 use crate::ui::icons;
 use crate::ui::messages::{Message, ModelsPageMessage};
 
-use super::chips::{
-    CloudEgress, capability_chips, count_chip, entry_accepts_context, entry_clones_voices,
-    model_device_chips, role_label,
-};
+use super::chips::{backend_chips, count_chip, model_device_chips, role_label};
 use super::surface::{card_divider, muted_text_color};
-use super_voice_registry_types::index::supports;
+use super_voice_app_core::pages::add_backend::{Input, RunsAs};
 
 /// Right-side "Install manually" sheet, rendered as a COSMIC context drawer.
 ///
@@ -43,9 +40,9 @@ pub fn add_backend_sheet(app: &AppModel) -> Element<'_, Message> {
             vec![crate::fl!("git-repository"), crate::fl!("local-folder")],
             selected,
             |i| {
-                Message::ModelsPage(ModelsPageMessage::AddSourceChanged(
+                Message::ModelsPage(add(Input::Source(
                     AddSource::ALL[i.min(AddSource::ALL.len() - 1)],
-                ))
+                )))
             }
         ),
     ]
@@ -97,7 +94,7 @@ fn repository_entry(app: &AppModel, gap: u16) -> Element<'_, Message> {
         crate::fl!("check")
     });
     if !checking && !url.is_empty() {
-        check = check.on_press(Message::ModelsPage(ModelsPageMessage::CheckAddSource));
+        check = check.on_press(Message::ModelsPage(add(Input::Check)));
     }
 
     row![
@@ -105,8 +102,8 @@ fn repository_entry(app: &AppModel, gap: u16) -> Element<'_, Message> {
             "https://github.com/owner/backend",
             &app.registry.custom_repo_input
         )
-        .on_input(|x| Message::ModelsPage(ModelsPageMessage::RegistryCustomRepoInputChanged(x)))
-        .on_submit(|_| Message::ModelsPage(ModelsPageMessage::CheckAddSource))
+        .on_input(|x| Message::ModelsPage(add(Input::Url(x))))
+        .on_submit(|_| Message::ModelsPage(add(Input::Check)))
         .width(Length::Fill),
         check,
     ]
@@ -135,16 +132,16 @@ fn folder_entry(app: &AppModel, gap: u16) -> Element<'_, Message> {
         crate::fl!("check")
     });
     if !checking && !path.is_empty() {
-        check = check.on_press(Message::ModelsPage(ModelsPageMessage::CheckAddSource));
+        check = check.on_press(Message::ModelsPage(add(Input::Check)));
     }
 
     row![
         widget::text_input("/home/you/dev/my-backend", &app.registry.add_folder)
-            .on_input(|x| Message::ModelsPage(ModelsPageMessage::AddFolderInputChanged(x)))
-            .on_submit(|_| Message::ModelsPage(ModelsPageMessage::CheckAddSource))
+            .on_input(|x| Message::ModelsPage(add(Input::Folder(x))))
+            .on_submit(|_| Message::ModelsPage(add(Input::Check)))
             .width(Length::Fill),
         button::standard(crate::fl!("choose-progress"))
-            .on_press(Message::ModelsPage(ModelsPageMessage::ImportBackendFromDir)),
+            .on_press(Message::ModelsPage(add(Input::Choose))),
         check,
     ]
     .spacing(gap)
@@ -244,18 +241,8 @@ fn resolved_preview(
         col = col.push(text::body(desc.to_string()).class(cosmic::theme::Text::Color(muted)));
     }
 
-    let egress = supports::has(&b.supports, supports::ONLINE).then_some(CloudEgress {
-        hosts: b.allowed_hosts.as_slice(),
-        user_url: false,
-    });
-    if let Some(chips) = capability_chips(
-        supports::has(&b.supports, supports::GPU),
-        supports::has(&b.supports, supports::CPU),
-        egress,
-        entry_accepts_context(b),
-        entry_clones_voices(b),
-        false,
-    ) {
+    let caps = super_voice_app_core::rules::backends::entry_capabilities(b);
+    if let Some(chips) = backend_chips(&caps, false) {
         col = col.push(chips);
     }
 
@@ -323,38 +310,37 @@ enum FactStyle {
     Good,
 }
 
-/// The label/value rows: what a person is actually agreeing to run.
+/// The label/value rows: what a person is actually agreeing to run. Which
+/// facts there are is the core's (`add_backend::facts`); this words them.
 fn facts(b: &super_voice_shared::registry::RegistryBackend) -> Vec<(String, String, FactStyle)> {
+    let facts = super_voice_app_core::pages::add_backend::facts(b);
     let mut out = Vec::with_capacity(5);
 
     out.push((
         crate::fl!("runs-as"),
-        match b.kind.as_str() {
-            "wasm" => crate::fl!("wasm-component-sandboxed"),
-            "subprocess" => crate::fl!("native-subprocess"),
-            other => other.to_string(),
+        match facts.runs_as {
+            RunsAs::Wasm => crate::fl!("wasm-component-sandboxed"),
+            RunsAs::Subprocess => crate::fl!("native-subprocess"),
+            RunsAs::Other(other) => other,
         },
         FactStyle::Plain,
     ));
 
     // Only when there is something to get. A required secret is a real cost
-    // the preview can warn about — installing is not enough, you have to go
-    // fetch a credential before it will run — but every local backend needs
-    // none, so a row that mostly reads "Nothing" is padding.
-    let needed: Vec<&str> = b
-        .secrets
-        .iter()
-        .filter(|s| s.required)
-        .map(|s| s.label.as_str())
-        .collect();
-    if !needed.is_empty() {
-        out.push((crate::fl!("needs"), needed.join(", "), FactStyle::Plain));
+    // the preview can warn about: installing is not enough, you have to go
+    // fetch a credential before it will run.
+    if !facts.needs.is_empty() {
+        out.push((
+            crate::fl!("needs"),
+            facts.needs.join(", "),
+            FactStyle::Plain,
+        ));
     }
 
     // Always, including when it is empty: "nothing, runs offline" is the
     // reassurance someone installing a microphone reader is looking for, so
     // the absence is worth as much as the list.
-    if b.allowed_hosts.is_empty() {
+    if facts.reaches.is_empty() {
         out.push((
             crate::fl!("reaches"),
             crate::fl!("nothing-runs-offline"),
@@ -363,27 +349,16 @@ fn facts(b: &super_voice_shared::registry::RegistryBackend) -> Vec<(String, Stri
     } else {
         out.push((
             crate::fl!("reaches"),
-            b.allowed_hosts.join(", "),
+            facts.reaches.join(", "),
             FactStyle::Mono,
         ));
     }
 
-    if let Some(asset) = &b.compatibility.selected_asset
-        && !asset.target.is_empty()
-    {
-        let accel = asset.accel.join(", ");
-        out.push((
-            crate::fl!("built-for"),
-            if accel.is_empty() {
-                asset.target.clone()
-            } else {
-                format!("{}, {accel}", asset.target)
-            },
-            FactStyle::Mono,
-        ));
+    if let Some(built_for) = facts.built_for {
+        out.push((crate::fl!("built-for"), built_for, FactStyle::Mono));
     }
 
-    out.push((crate::fl!("license"), b.license.clone(), FactStyle::Plain));
+    out.push((crate::fl!("license"), facts.license, FactStyle::Plain));
     out
 }
 
@@ -420,7 +395,7 @@ fn install_row(app: &AppModel, muted: cosmic::iced::Color) -> Element<'_, Messag
 
     let mut btn = button::suggested(label);
     if live {
-        btn = btn.on_press(Message::ModelsPage(ModelsPageMessage::InstallPreviewed));
+        btn = btn.on_press(Message::ModelsPage(add(Input::Install)));
     }
 
     let note: Element<'_, Message> = if let Some(err) = start_error {
@@ -469,4 +444,9 @@ fn install_row(app: &AppModel, muted: cosmic::iced::Color) -> Element<'_, Messag
         .align_y(Alignment::Center)
         .width(Length::Fill)
         .into()
+}
+
+/// A sheet input, as the page's message.
+fn add(input: Input) -> ModelsPageMessage {
+    ModelsPageMessage::AddBackend(input)
 }

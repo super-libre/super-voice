@@ -281,7 +281,7 @@ pub(super) fn muted_text_color() -> cosmic::iced::Color {
 /// prepended. Carries an "Open repository" tooltip.
 pub(super) fn repo_button(source: &str) -> Element<'static, Message> {
     use crate::ui::icons;
-    let url = format!("https://{source}");
+    let url = super_voice_app_core::rules::backends::repository_url(source);
     rounded_tooltip(
         widget::button::icon(icons::phosphor_handle(icons::GIT_BRANCH))
             .on_press(Message::Shell(ShellMessage::LaunchUrl(url))),

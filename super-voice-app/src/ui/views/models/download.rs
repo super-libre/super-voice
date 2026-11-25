@@ -10,13 +10,10 @@ use crate::ui::icons;
 use crate::ui::messages::{Message, ModelsPageMessage, ShellMessage};
 
 use super::active::backend_glyph_tile;
-use super::chips::{
-    CloudEgress, capability_chips, entry_accepts_context, entry_clones_voices, models_inventory,
-    result_count, role_groups,
-};
+use super::chips::{backend_chips, models_inventory, result_count, role_groups};
 use super::surface::{card_divider, card_surface, card_title_block, muted_text_color, repo_button};
 use super_voice_app_core::pages::library::Input;
-use super_voice_registry_types::index::supports;
+use super_voice_app_core::rules::backends::{entry_capabilities, entry_needs_key};
 
 /// Browse tab split into its two regions: the fixed search + filter toolbar
 /// (with the live result count) and the scrollable list of backend cards.
@@ -157,7 +154,7 @@ pub(super) fn download_toolbar<'a>(
     // follows the chips directly.
     let mut chips = row![feature];
     // The kind splits speech to text's two stages, so it shows only there.
-    if filters.feature == crate::state::registry::FeatureFilter::SpeechToText {
+    if filters.feature.has_kinds() {
         chips = chips.push(kind);
     }
     let filter_row = chips
@@ -254,18 +251,7 @@ pub(super) fn download_card<'a>(
 
     // Browse describes a backend that is not installed, so nothing of the
     // user's is configured for it yet.
-    let egress = supports::has(&entry.supports, supports::ONLINE).then_some(CloudEgress {
-        hosts: entry.allowed_hosts.as_slice(),
-        user_url: false,
-    });
-    let caps = capability_chips(
-        supports::has(&entry.supports, supports::GPU),
-        supports::has(&entry.supports, supports::CPU),
-        egress,
-        entry_accepts_context(entry),
-        entry_clones_voices(entry),
-        true,
-    );
+    let caps = backend_chips(&entry_capabilities(entry), true);
     let header = row![
         backend_glyph_tile(),
         card_title_block(entry.name.clone(), &entry.version, description, caps),
@@ -333,7 +319,7 @@ pub(super) fn download_card<'a>(
         .spacing(spacing.space_xxs)
         .align_y(Alignment::Center)
         .into()
-    } else if entry.secrets.iter().any(|s| s.required) {
+    } else if entry_needs_key(entry) {
         text::caption(crate::fl!("api-key-required"))
             .class(cosmic::theme::Text::Color(muted))
             .into()

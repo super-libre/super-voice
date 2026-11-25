@@ -466,8 +466,11 @@ impl cosmic::Application for AppModel {
         // running would wake the app for nothing.
         if self.registry.add_preview.is_checking() {
             subs.push(
-                cosmic::iced::time::every(crate::ui::icons::SPINNER_FRAME)
-                    .map(|_| Message::ModelsPage(ModelsPageMessage::AddPreviewSpin)),
+                cosmic::iced::time::every(crate::ui::icons::SPINNER_FRAME).map(|_| {
+                    Message::ModelsPage(ModelsPageMessage::AddBackend(
+                        super_voice_app_core::pages::add_backend::Input::Spin,
+                    ))
+                }),
             );
         }
 

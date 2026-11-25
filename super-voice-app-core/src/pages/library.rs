@@ -423,6 +423,22 @@ pub async fn run_update(source: String) -> Input {
     }
 }
 
+/// Whether a stage is filled by `source`, so uninstalling it stops it first:
+/// the uninstall question says so. A stage that can't be read counts as not.
+/// For an app that doesn't keep the stages itself.
+pub async fn in_use(source: &str) -> bool {
+    use crate::daemon::client::v1::pipeline::stage::get_stage;
+    for stage in super::models::STAGES {
+        if get_stage(stage)
+            .await
+            .is_ok_and(|s| s.source.as_deref() == Some(source))
+        {
+            return true;
+        }
+    }
+    false
+}
+
 pub async fn run_uninstall(source: String) -> Input {
     let result = client::uninstall(&source)
         .await

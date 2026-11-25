@@ -221,35 +221,13 @@ pub enum ModelsPageMessage {
     ToggleInstalledMenu(String),
     /// Dismiss any open installed-backend overflow menu (click-outside).
     CloseInstalledMenu,
-    /// User clicked "+ Import from dir" on the Download tab. Opens an async
-    /// folder picker; if the user picks one, the path comes back as
-    /// [`ModelsPageMessage::ImportBackendFromDirPicked`].
-    ImportBackendFromDir,
-    /// Async folder picker resolved. `None` means the user cancelled — no-op.
-    ImportBackendFromDirPicked(Option<String>),
-    /// User typed in the Custom-repo URL field in the Download tab.
-    RegistryCustomRepoInputChanged(String),
+    /// The "Install manually" sheet's logic: its source, the preview, and
+    /// the install it starts. See `super_voice_app_core::pages::add_backend`.
+    AddBackend(super_voice_app_core::pages::add_backend::Input),
     /// Toggle the Browse toolbar's overflow ("⋯") menu.
     ToggleBrowseMenu,
     /// Dismiss the Browse toolbar's overflow menu (click-outside).
     CloseBrowseMenu,
-    /// User picked an install source in the Add-a-backend drawer. Switching
-    /// clears the preview: it described the other source.
-    AddSourceChanged(crate::state::registry::AddSource),
-    /// User typed in the drawer's folder-path field.
-    AddFolderInputChanged(String),
-    /// User pressed Check in the drawer, or submitted the URL field. Resolves
-    /// the source without installing it.
-    CheckAddSource,
-    /// A preview resolved. Carries the backend the source would install.
-    AddPreviewLoaded(Box<super_voice_shared::registry::PreviewResponse>),
-    /// A preview failed. Carries the daemon's message, shown verbatim.
-    AddPreviewFailed(String),
-    /// One frame of the drawer's "reading" spinner. Only fires while a check
-    /// is in flight; the subscription that emits it is gated on that.
-    AddPreviewSpin,
-    /// User pressed Install in the drawer, committing to the previewed backend.
-    InstallPreviewed,
 }
 
 /// The stage-1 model's device + device-switch errors.

@@ -36,19 +36,17 @@ impl AppModel {
 
             ModelsPageMessage::Library(input) => self.library_input(input),
 
-            ModelsPageMessage::ImportBackendFromDir
-            | ModelsPageMessage::ImportBackendFromDirPicked(_)
-            | ModelsPageMessage::RegistryCustomRepoInputChanged(_)
-            | ModelsPageMessage::ToggleBrowseMenu
-            | ModelsPageMessage::CloseBrowseMenu => self.handle_models_registry(message),
+            ModelsPageMessage::AddBackend(input) => self.add_backend_input(input),
 
-            ModelsPageMessage::AddSourceChanged(_)
-            | ModelsPageMessage::AddFolderInputChanged(_)
-            | ModelsPageMessage::CheckAddSource
-            | ModelsPageMessage::AddPreviewLoaded(_)
-            | ModelsPageMessage::AddPreviewFailed(_)
-            | ModelsPageMessage::AddPreviewSpin
-            | ModelsPageMessage::InstallPreviewed => self.handle_add_sheet(message),
+            ModelsPageMessage::ToggleBrowseMenu => {
+                self.models_page.browse_menu_open = !self.models_page.browse_menu_open;
+                Task::none()
+            }
+
+            ModelsPageMessage::CloseBrowseMenu => {
+                self.models_page.browse_menu_open = false;
+                Task::none()
+            }
         }
     }
 

@@ -49,7 +49,7 @@ pub fn backend_supports_gpu(backend: &crate::daemon::backends::BackendInfo) -> b
 
 /// What a stage's backend can run its models on, as the capability chips read
 /// it.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StageCompute {
     pub gpu: bool,
     pub cpu: bool,
@@ -174,6 +174,182 @@ pub fn backend_has_user_url(backend: &crate::daemon::backends::BackendInfo) -> b
         o.name == super_voice_registry_types::manifest::BASE_URL_OPTION
             && o.value.as_ref().is_some_and(|v| !v.trim().is_empty())
     })
+}
+
+/// Where an online backend sends audio, as a card can describe it: the hosts
+/// its `backend.toml` declares, and whether the user pointed it at an
+/// endpoint of their own. The address the user set stays out of it: a card
+/// names that it exists, never what it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Egress {
+    /// The backend's declared `[network].allowed_hosts`.
+    pub hosts: Vec<String>,
+    /// A `base_url` the user set adds an endpoint beyond `hosts`.
+    pub user_url: bool,
+}
+
+/// A backend's capability chips, in the order a card shows them: GPU and CPU
+/// (what it runs on), Cloud (where it sends audio), Contexts (it hears the
+/// user's dictation context) and Voice Cloning (it speaks in voices the user
+/// cloned).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Capabilities {
+    pub compute: StageCompute,
+    /// Where it sends audio, when it is online.
+    pub cloud: Option<Egress>,
+    pub contexts: bool,
+    pub voice_cloning: bool,
+}
+
+/// An installed backend's capabilities, as its Library card shows them.
+#[must_use]
+pub fn backend_capabilities(backend: &crate::daemon::backends::BackendInfo) -> Capabilities {
+    Capabilities {
+        compute: StageCompute {
+            gpu: backend_supports_gpu(backend),
+            cpu: backend_supports_cpu(backend),
+        },
+        cloud: backend_is_online(backend).then(|| Egress {
+            hosts: backend.allowed_hosts.clone(),
+            user_url: backend_has_user_url(backend),
+        }),
+        contexts: supports::has(&backend.supports, supports::DICTATION_CONTEXT),
+        voice_cloning: supports::has(&backend.supports, supports::VOICE_CLONING),
+    }
+}
+
+/// A catalog entry's capabilities, as its Browse card and the manual-install
+/// preview show them. Nothing of the user's is configured for a backend not
+/// installed yet, so its Cloud chip names its declared hosts alone.
+#[must_use]
+pub fn entry_capabilities(entry: &super_voice_shared::registry::RegistryBackend) -> Capabilities {
+    Capabilities {
+        compute: StageCompute {
+            gpu: supports::has(&entry.supports, supports::GPU),
+            cpu: supports::has(&entry.supports, supports::CPU),
+        },
+        cloud: supports::has(&entry.supports, supports::ONLINE).then(|| Egress {
+            hosts: entry.allowed_hosts.clone(),
+            user_url: false,
+        }),
+        contexts: entry_accepts_context(entry),
+        voice_cloning: entry_clones_voices(entry),
+    }
+}
+
+/// Whether a catalog entry needs an API key before it runs: a secret it
+/// declares required. Its Browse card says so.
+#[must_use]
+pub fn entry_needs_key(entry: &super_voice_shared::registry::RegistryBackend) -> bool {
+    entry.secrets.iter().any(|s| s.required)
+}
+
+/// The web page of the repository a backend's `source` names.
+#[must_use]
+pub fn repository_url(source: &str) -> String {
+    format!("https://{source}")
+}
+
+/// What a model is for, as a card groups it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModelKind {
+    Transcription,
+    PostProcessing,
+    Synthesis,
+}
+
+impl ModelKind {
+    /// The kind of a model `role`. An unknown role, one a newer backend
+    /// declares and this build has no name for, reads as transcription,
+    /// matching the wire default and the daemon's own reading of a missing
+    /// value.
+    #[must_use]
+    pub fn of(role: &str) -> Self {
+        match role {
+            "post_processor" => Self::PostProcessing,
+            "synthesis" => Self::Synthesis,
+            _ => Self::Transcription,
+        }
+    }
+}
+
+/// The models of one kind a backend ships.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelGroup {
+    pub kind: ModelKind,
+    /// The model names, in catalog order.
+    pub names: Vec<String>,
+}
+
+/// A backend's models, `(name, role)` pairs, grouped by kind in pipeline
+/// order: transcription, post-processing, then text to speech.
+///
+/// The order is fixed rather than catalog-derived so two backends with the
+/// same kinds present them the same way round. Empty groups are dropped, so a
+/// single-kind backend yields exactly one.
+pub fn model_groups<'a>(models: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<ModelGroup> {
+    let mut groups = [
+        ModelKind::Transcription,
+        ModelKind::PostProcessing,
+        ModelKind::Synthesis,
+    ]
+    .map(|kind| ModelGroup {
+        kind,
+        names: Vec::new(),
+    });
+    for (name, role) in models {
+        let kind = ModelKind::of(role);
+        if let Some(group) = groups.iter_mut().find(|g| g.kind == kind) {
+            group.names.push(name.to_string());
+        }
+    }
+    groups.into_iter().filter(|g| !g.names.is_empty()).collect()
+}
+
+#[cfg(test)]
+mod model_group_tests {
+    //! A card's model inventory names each kind of model it ships, in a fixed
+    //! order, so two backends with the same kinds read the same way round.
+    use super::{ModelGroup, ModelKind, model_groups};
+
+    fn group(kind: ModelKind, names: &[&str]) -> ModelGroup {
+        ModelGroup {
+            kind,
+            names: names.iter().map(ToString::to_string).collect(),
+        }
+    }
+
+    #[test]
+    fn each_kind_is_a_group_in_pipeline_order() {
+        assert_eq!(
+            model_groups([
+                ("kokoro-82m", "synthesis"),
+                ("tidy", "post_processor"),
+                ("whisper-small", "transcription"),
+                ("whisper-base", "transcription"),
+            ]),
+            [
+                group(ModelKind::Transcription, &["whisper-small", "whisper-base"]),
+                group(ModelKind::PostProcessing, &["tidy"]),
+                group(ModelKind::Synthesis, &["kokoro-82m"]),
+            ]
+        );
+    }
+
+    /// A synthesis model is text to speech, and a role this build has no name
+    /// for is transcription.
+    #[test]
+    fn a_role_reads_as_its_kind() {
+        assert_eq!(
+            model_groups([("kokoro-82m", "synthesis")]),
+            [group(ModelKind::Synthesis, &["kokoro-82m"])]
+        );
+        assert_eq!(
+            model_groups([("q", "quantum")]),
+            [group(ModelKind::Transcription, &["q"])]
+        );
+        assert!(model_groups([]).is_empty());
+    }
 }
 
 #[cfg(test)]
@@ -491,6 +667,44 @@ mod update_offer_tests {
         assert!(!super::entry_clones_voices(&e));
         e.supports = vec!["voice_cloning".to_string()];
         assert!(super::entry_clones_voices(&e));
+    }
+
+    /// A catalog entry's chips are what the index sums up on it; its Cloud
+    /// chip names its declared hosts, and nothing of the user's.
+    #[test]
+    fn a_catalog_entrys_chips_read_its_supports() {
+        let mut e = entry(None, "1.0.0");
+        let none = super::entry_capabilities(&e);
+        assert!(!none.compute.gpu && !none.compute.cpu);
+        assert_eq!(none.cloud, None, "online on the wire, not in supports");
+        e.supports = ["online", "cpu", "voice_cloning"]
+            .map(String::from)
+            .to_vec();
+        e.allowed_hosts = vec!["api.example.com".into()];
+        let caps = super::entry_capabilities(&e);
+        assert!(caps.compute.cpu && !caps.compute.gpu);
+        assert_eq!(
+            caps.cloud,
+            Some(super::Egress {
+                hosts: vec!["api.example.com".into()],
+                user_url: false
+            })
+        );
+        assert!(caps.voice_cloning && !caps.contexts);
+    }
+
+    /// A required secret is an API key to fetch first; an optional one isn't.
+    #[test]
+    fn a_required_secret_needs_a_key() {
+        let mut e = entry(None, "1.0.0");
+        assert!(!super::entry_needs_key(&e));
+        e.secrets = serde_json::from_value(serde_json::json!([
+            { "name": "token", "label": "Token", "required": false }
+        ]))
+        .expect("a secret");
+        assert!(!super::entry_needs_key(&e));
+        e.secrets[0].required = true;
+        assert!(super::entry_needs_key(&e));
     }
 
     #[test]
