@@ -11,10 +11,13 @@ use gpui_kit::{AssetSource, Result, SharedString};
 icon_assets!(
     ExtraIcons,
     [
+        AppWindow,
         AudioLines,
         BookOpenText,
         Brain,
         Bug,
+        Cloud,
+        Download,
         FileVolume,
         KeyRound,
         Keyboard,
@@ -25,8 +28,11 @@ icon_assets!(
         ShieldX,
         SlidersHorizontal,
         Upload,
+        Speaker,
+        Type,
         UserRoundPen,
         Volume2,
+        WandSparkles,
     ]
 );
 
