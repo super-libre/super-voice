@@ -922,6 +922,13 @@ about-copied = The version details are on the clipboard.
 # The General pages: Shortcuts, Assistants, Settings and Updates
 shortcuts-description = Keys that dictate or read aloud, from any app.
 shortcut-change-keys = Change the shortcut's keys
+connect-ellipsis = Connect…
+disconnect-ellipsis = Disconnect…
+disconnect-assistant-question = Disconnect { $name }?
+create-key-ellipsis = Create key…
+remove-ellipsis = Remove…
+remove-key-question = Remove the key "{ $name }"?
+remove-key-description = The assistant that uses it can no longer reach Super Voice.
 update-ready-to-install = Super Voice { $tag } is ready to install.
 open-updates = Open Updates
 update-no-installer-caption = No installer was published for this computer. To install it from a terminal, run:
