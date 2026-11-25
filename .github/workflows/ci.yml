@@ -222,11 +222,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Scoped to the members that build here rather than the whole
-      # workspace: the COSMIC panel applet and the consent helper need
-      # libcosmic's `applet` feature, which reaches cosmic-panel-config —
-      # the one crate in that chain with no macOS build. The settings app
-      # is included; libcosmic itself is portable. `just check-macos` owns
-      # that list, so it stays in one place.
+      # workspace: the consent helper and the settings app are Linux-only.
+      # They are on libcosmic, whose `applet` feature reaches
+      # cosmic-panel-config, a crate with no macOS build. On macOS the app is
+      # the SwiftUI one in super-voice-macos/. `just check-macos` owns that
+      # list, so it stays in one place.
       - name: Run clippy
         run: just check-macos
 

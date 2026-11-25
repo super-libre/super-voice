@@ -8,7 +8,9 @@
 //! "not allowed" (`UNErrorDomain` 1), whatever the user has chosen, without
 //! `usernoted` logging anything about it. So the daemon runs the app's
 //! executable in notify mode, `super-voice-app --notify <title> <body>`, which
-//! posts as Super Voice and exits; see `super-voice-app/src/core/app/macos/notifier.rs`.
+//! posts as Super Voice and exits. The bundle's executable is the `SwiftUI` app,
+//! which handles the flag in `enum Entry` in
+//! `super-voice-macos/Sources/SuperVoice/SuperVoiceApp.swift`.
 //! The banner carries the app's name and icon, a click opens the app, and a
 //! post the user has not allowed comes back as a failure.
 //!
@@ -20,7 +22,7 @@ use objc2_foundation::NSBundle;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// The app's notify-mode flag; `notifier::FLAG` in super-voice-app.
+/// The app's notify-mode flag; see `enum Entry` in the `SwiftUI` app.
 const NOTIFY_FLAG: &str = "--notify";
 
 /// How long the app gets to post. It answers in well under a second, or in

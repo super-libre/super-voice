@@ -144,9 +144,8 @@ pub(super) fn download_toolbar<'a>(
     // window is too narrow for their natural width, and these children have
     // nothing to give — the labels clip mid-word instead ("Post-processing"
     // breaking inside its own chip, the toggle sliding off the edge). How
-    // narrow "too narrow" is depends on the platform's font metrics, so this
-    // is not a fixed breakpoint to tune: macOS renders the same labels wider
-    // than Linux does and hit it at a window size Linux was fine at.
+    // narrow "too narrow" is depends on the font's metrics, so this is not a
+    // fixed breakpoint to tune.
     //
     // The toggle used to be pushed to the right edge with a `horizontal_space`
     // spacer. A wrapping row cannot do that — a fill-width spacer would eat

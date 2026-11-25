@@ -10,9 +10,6 @@ mod update;
 mod view;
 use subscription::{UdpSubscriptionId, audio_events_subscription};
 
-#[cfg(target_os = "macos")]
-pub(crate) mod macos;
-
 use crate::daemon::backends::BackendInfo;
 use crate::state::{ContextPage, DaemonStatus, MenuAction};
 use crate::ui::messages::{DaemonMessage, Message, ModelsPageMessage, ShellMessage};
@@ -51,8 +48,8 @@ pub struct AppModel {
     nav: nav_bar::Model,
 
     // Super Voice specific state
-    /// The connection to the daemon: whether it answers, the wait before
-    /// trying again, and, on macOS, where the daemon's agent stands.
+    /// The connection to the daemon: whether it answers, and the wait before
+    /// trying again.
     pub connection: super_voice_app_core::state::connection::ConnectionState,
     /// The daemon's microphone: open or not, its level, and whether that
     /// sounds like speech. Every page that records reads it.
@@ -189,12 +186,6 @@ pub struct AppModel {
     /// The view `just screenshots` asked for, until the app has opened it and
     /// said so; see `scene`. `None` for a normal launch.
     scene: Option<scene::Progress>,
-    /// Where the native title bar put the traffic lights; see `macos`.
-    #[cfg(target_os = "macos")]
-    title_bar: macos::TitleBar,
-    /// The system look the theme was built from; see `macos::appearance`.
-    #[cfg(target_os = "macos")]
-    look: macos::appearance::Look,
 }
 
 impl AppModel {
@@ -326,29 +317,6 @@ impl cosmic::Application for AppModel {
         self.nav_model_impl()
     }
 
-    /// A clear window behind frosted glass, so that the only translucency is
-    /// the theme's own: libcosmic otherwise fills the window with the theme's
-    /// background, and a translucent one drawn twice is all but opaque.
-    #[cfg(target_os = "macos")]
-    fn style(&self) -> Option<cosmic::iced::theme::Style> {
-        self.shown_look().frosted().then(|| {
-            let theme = cosmic::theme::active();
-            let on_background = theme.cosmic().on_bg_color().into();
-            cosmic::iced::theme::Style {
-                background_color: cosmic::iced::Color::TRANSPARENT,
-                text_color: on_background,
-                icon_color: on_background,
-            }
-        })
-    }
-
-    /// The sidebar with the toggle above it, beside the traffic lights (see
-    /// `macos`).
-    #[cfg(target_os = "macos")]
-    fn nav_bar(&self) -> Option<Element<'_, cosmic::Action<Self::Message>>> {
-        self.macos_sidebar()
-    }
-
     /// Display a context drawer if the context page is requested.
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
         self.context_drawer_impl()
@@ -466,26 +434,6 @@ impl cosmic::Application for AppModel {
                 cosmic::iced::time::every(scene::STEP)
                     .map(|_| Message::Shell(ShellMessage::SceneStep)),
             );
-        }
-
-        // Style the NSWindow once it exists, answer the menu bar, and follow
-        // the system appearance; see `macos`.
-        #[cfg(target_os = "macos")]
-        {
-            subs.push(
-                cosmic::iced::window::open_events()
-                    .map(|id| Message::Shell(ShellMessage::WindowOpened(id))),
-            );
-            subs.push(
-                cosmic::iced::window::resize_events()
-                    .map(|(id, _)| Message::Shell(ShellMessage::WindowResized(id))),
-            );
-            subs.push(Subscription::run(macos::menu_bar::events));
-            subs.push(Subscription::run(macos::appearance::changes));
-            // For the connection page, which says what to do about it.
-            if self.connection.status != DaemonStatus::Connected && macos::bundle::in_bundle() {
-                subs.push(Subscription::run(macos::bundle::daemon_agent));
-            }
         }
 
         Subscription::batch(subs)

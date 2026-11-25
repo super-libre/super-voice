@@ -85,17 +85,8 @@ impl AppModel {
                 self.udp_restart_counter = self.udp_restart_counter.wrapping_add(1);
                 Task::none()
             }
-            Effect::RegisterAgents => {
-                // The next status poll reports how it went.
-                #[cfg(target_os = "macos")]
-                std::thread::spawn(page::register_agents);
-                Task::none()
-            }
-            Effect::OpenLoginItems => {
-                #[cfg(target_os = "macos")]
-                page::open_login_items();
-                Task::none()
-            }
+            // The agents and Login Items are macOS's, and this app is Linux's.
+            Effect::RegisterAgents | Effect::OpenLoginItems => Task::none(),
         }
     }
 

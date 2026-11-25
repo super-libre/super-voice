@@ -2154,12 +2154,6 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpi"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
-
-[[package]]
-name = "dpi"
-version = "0.1.2"
 source = "git+https://github.com/pop-os/winit.git?tag=cosmic-0.14#71ce08c043814514a8fd92d9d0599f115ae854e8"
 
 [[package]]
@@ -4605,24 +4599,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "muda"
-version = "0.21.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4340e89c178916e62879c5c36b7f699019369be413e496178a6983ce91b8bc03"
-dependencies = [
- "crossbeam-channel",
- "dpi 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "keyboard-types",
- "objc2 0.6.5",
- "objc2-app-kit 0.3.2",
- "objc2-core-foundation",
- "objc2-foundation 0.3.2",
- "png 0.18.1",
- "thiserror 2.0.21",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "mutate_once"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4949,7 +4925,7 @@ dependencies = [
  "objc2-core-data",
  "objc2-core-image",
  "objc2-foundation 0.2.2",
- "objc2-quartz-core 0.2.2",
+ "objc2-quartz-core",
 ]
 
 [[package]]
@@ -4964,7 +4940,6 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-foundation 0.3.2",
- "objc2-quartz-core 0.3.2",
  "objc2-uniform-type-identifiers",
 ]
 
@@ -5160,18 +5135,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "objc2-quartz-core"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96c1358452b371bf9f104e21ec536d37a650eb10f7ee379fff67d2e08d537f1f"
-dependencies = [
- "bitflags 2.11.0",
- "objc2 0.6.5",
- "objc2-core-foundation",
- "objc2-foundation 0.3.2",
-]
-
-[[package]]
 name = "objc2-security"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5212,18 +5175,6 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7902ac02859fc1f7045f8b598c63f1ae0cc7efeaa06a9bc9f3d9a3c955974fa4"
 dependencies = [
- "objc2 0.6.5",
- "objc2-foundation 0.3.2",
-]
-
-[[package]]
-name = "objc2-user-notifications"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9df9128cbbfef73cda168416ccf7f837b62737d748333bfe9ab71c245d76613e"
-dependencies = [
- "bitflags 2.11.0",
- "block2 0.6.2",
  "objc2 0.6.5",
  "objc2-foundation 0.3.2",
 ]
@@ -7270,7 +7221,6 @@ name = "super-voice-app"
 version = "0.3.0-beta.7"
 dependencies = [
  "anyhow",
- "block2 0.6.2",
  "chrono",
  "dirs 7.0.0",
  "futures-util",
@@ -7282,14 +7232,7 @@ dependencies = [
  "libcosmic",
  "log",
  "mockito",
- "muda",
- "objc2 0.6.5",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "objc2-quartz-core 0.3.2",
- "objc2-user-notifications",
  "open",
- "raw-window-handle",
  "rfd 0.18.0",
  "serde",
  "serde_json",
@@ -10046,7 +9989,7 @@ dependencies = [
  "bitflags 2.11.0",
  "cfg_aliases",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "libc",
  "raw-window-handle",
  "rustix 1.1.4",
@@ -10071,7 +10014,7 @@ source = "git+https://github.com/pop-os/winit.git?tag=cosmic-0.14#71ce08c0438145
 dependencies = [
  "android-activity",
  "bitflags 2.11.0",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "ndk",
  "raw-window-handle",
  "smol_str",
@@ -10087,7 +10030,7 @@ dependencies = [
  "bitflags 2.11.0",
  "block2 0.6.2",
  "dispatch2",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-core-foundation",
@@ -10123,7 +10066,7 @@ source = "git+https://github.com/pop-os/winit.git?tag=cosmic-0.14#71ce08c0438145
 dependencies = [
  "bitflags 2.11.0",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "keyboard-types",
  "raw-window-handle",
  "smol_str",
@@ -10136,7 +10079,7 @@ version = "0.31.0-beta.2"
 source = "git+https://github.com/pop-os/winit.git?tag=cosmic-0.14#71ce08c043814514a8fd92d9d0599f115ae854e8"
 dependencies = [
  "bitflags 2.11.0",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "libredox",
  "orbclient",
  "raw-window-handle",
@@ -10154,7 +10097,7 @@ dependencies = [
  "bitflags 2.11.0",
  "block2 0.6.2",
  "dispatch2",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "objc2 0.6.5",
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
@@ -10175,7 +10118,7 @@ dependencies = [
  "bitflags 2.11.0",
  "calloop",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "libc",
  "memmap2 0.9.10",
  "raw-window-handle",
@@ -10201,7 +10144,7 @@ dependencies = [
  "bitflags 2.11.0",
  "concurrent-queue",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "js-sys",
  "pin-project",
  "raw-window-handle",
@@ -10221,7 +10164,7 @@ source = "git+https://github.com/pop-os/winit.git?tag=cosmic-0.14#71ce08c0438145
 dependencies = [
  "bitflags 2.11.0",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "raw-window-handle",
  "smol_str",
  "tracing",
@@ -10239,7 +10182,7 @@ dependencies = [
  "bytemuck",
  "calloop",
  "cursor-icon",
- "dpi 0.1.2 (git+https://github.com/pop-os/winit.git?tag=cosmic-0.14)",
+ "dpi",
  "libc",
  "percent-encoding",
  "raw-window-handle",

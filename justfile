@@ -61,17 +61,15 @@ service_dst := systemd_unit_dir / service_file
 
 # Workspace members that build on macOS.
 #
-# Everything except the COSMIC consent helper, a Linux shell component, and the
-# CI-only indexer. The settings app is here: libcosmic
-# itself is portable — its vendored iced fork gates every Wayland crate behind
-# `not(target_vendor = "apple")` — so the app builds once its libcosmic
-# feature list drops `applet` and the Wayland/D-Bus features. See
-# super-voice-app/Cargo.toml.
+# Everything except the COSMIC consent helper, the settings app and the
+# CI-only indexer. The consent helper and the settings app are Linux-only. On
+# macOS the app is the SwiftUI one in super-voice-macos/, built on
+# super-voice-app-core through super-voice-ffi. See `bundle-macos`.
 #
 # Named as a list rather than reached with `--workspace --exclude` so the
 # macOS gates say what they cover, and so a new portable crate has to be added
 # deliberately rather than silently skipped.
-macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app-core -p super-voice-ffi -p super-voice-app'
+macos_members := '-p super-voice-daemon -p super-voice-cli -p super-voice-shared -p super-voice-registry-types -p super-voice-install -p super-voice-app-core -p super-voice-ffi'
 
 # macOS ships as one app bundle, `Super Voice.app`: the settings app is its
 # executable, and the daemon and the CLI sit beside it in Contents/MacOS. The
@@ -362,11 +360,11 @@ ci: fmt-check check check-features test test-install doctest schema-check
 [doc("Full local CI gate for macOS (see `ci` for the Linux one)")]
 ci-macos: fmt-check check-macos check-features test-macos test-install doctest-macos schema-check
 
-# Stop a recipe that builds a COSMIC-shell component before cargo does.
+# Stop a recipe that builds a Linux-only GUI component before cargo does.
 #
-# Not everything on libcosmic: super-voice-app builds and runs on macOS (see
-# `macos_members`). These are the two components that are Linux shell
-# integration by nature, for two different reasons:
+# The settings app is Linux-only: on macOS the app is the SwiftUI one in
+# super-voice-macos/, bundled by `just bundle-macos`. The other two components
+# are Linux shell integration by nature, for two different reasons:
 #
 #   The panel applet takes libcosmic's `applet` feature, which reaches
 #   cosmic-panel-config -> smithay-client-toolkit -> xkbcommon via
@@ -385,11 +383,12 @@ ci-macos: fmt-check check-macos check-features test-macos test-install doctest-m
 linux-only-gui:
     #!/usr/bin/env bash
     if [ "$(uname -s)" = "Darwin" ]; then
-        echo "This recipe builds a Linux shell component: the COSMIC panel applet" >&2
-        echo "(which needs cosmic-panel-config, a crate with no macOS build) or the" >&2
-        echo "consent helper (a Wayland layer-shell overlay)." >&2
+        echo "This recipe builds a Linux-only component: the settings app, the COSMIC" >&2
+        echo "panel applet (which needs cosmic-panel-config, a crate with no macOS" >&2
+        echo "build) or the consent helper (a Wayland layer-shell overlay)." >&2
         echo "" >&2
-        echo "The settings app is NOT in this category — 'just run-app' works here." >&2
+        echo "On macOS the app is the SwiftUI one in super-voice-macos/." >&2
+        echo "Build it with 'just bundle-macos'." >&2
         echo "The consent dialog is not a separate binary on macOS; the daemon shows" >&2
         echo "it itself through osascript." >&2
         exit 1
@@ -738,50 +737,35 @@ codesign-macos bin identifier:
 # features. The COSMIC applet asks
 # for `applet`, so that union always contains it — and `applet` reaches
 # cosmic-panel-config -> smithay-client-toolkit -> xkbcommon via pkg-config,
-# which has no macOS build. The app then fails to build on macOS even though
-# its own feature list is clean. `-p` narrows the selection to one package,
-# so only that package's features are resolved.
+# which has no macOS build. The daemon and the CLI then fail to build on macOS
+# even though their own feature lists are clean. `-p` narrows the selection to
+# one package, so only that package's features are resolved.
 #
 # This is also why `just run-daemon` used to fail here: it built the consent
 # helper and the daemon in one invocation, and the app's `applet` came along
 # for the ride.
+#
+# The settings app is Linux-only, so `app_select` is `--bin` alone.
 #
 # On Linux that union is what ships: the release workflow builds every binary
 # in one invocation. Narrowing it there changes the binary, not just the
 # build. The daemon built with `-p` gets zbus without its tokio executor and
 # a different Wayland client backend. So Linux keeps `--bin` alone, and a
 # binary built here is the one that ships.
-app_select := if os() == "macos" { "-p " + app_name + " --bin " + app_name } else { "--bin " + app_name }
+app_select := "--bin " + app_name
 daemon_select := if os() == "macos" { "-p " + daemon_bin_name + " --bin " + daemon_bin_name } else { "--bin " + daemon_bin_name }
 cli_select := if os() == "macos" { "-p " + cli_name + " --bin " + cli_name } else { "--bin " + cli_name }
 
 # Run the app for testing purposes
-run-app *args:
+run-app *args: linux-only-gui
     #!/usr/bin/env bash
     set -euo pipefail
-
-    # Built, signed, then run as a separate step: `cargo run` would produce the
-    # binary and exec it in one go, leaving no point at which to re-sign.
-    # Cargo reports where it put the binary, which follows `--release`,
-    # `--profile` and `CARGO_TARGET_DIR`.
-    exe=$(cargo build {{ app_select }} {{ args }} --message-format=json-render-diagnostics \
-        | sed -n 's|.*"executable":"\([^"]*/{{ app_name }}\)".*|\1|p')
-    just codesign-macos "$exe" {{ macos_sign_prefix }}-app
-
-    # Run the built binary directly instead of via `cargo run`, because
-    # signing has to be the last thing that touches it. Cargo keeps the real
-    # artifact in target/debug/deps/ and hardlinks it to target/debug/<bin>;
-    # `codesign` replaces the file rather than editing in place, which breaks
-    # that link, so the next cargo invocation re-uplifts from deps/ and the
-    # signature is gone. `cargo run` would do exactly that, one line after we
-    # signed — the binary reverts to ad-hoc, with its mtime rolled back to
-    # the deps artifact's, and macOS quietly drops every grant again.
 
     # The app's own lines down to debug, and none of the toolkit's. A RUST_LOG
     # of your own wins, e.g. `RUST_LOG=super_voice_app=trace just run-app`.
     exec env RUST_BACKTRACE=full \
         RUST_LOG="${RUST_LOG:-super_voice_app=debug,super_voice_shared=debug}" \
-        "$exe"
+        cargo run {{ app_select }} {{ args }}
 
 # Run the daemon for testing purposes.
 #
@@ -922,11 +906,10 @@ audit:
     cargo audit
 
 # Build only the app. The package selection is explained above `run-app`.
-build-app *args:
+build-app *args: linux-only-gui
     #!/usr/bin/env bash
     set -euo pipefail
     cargo build --release {{ app_select }} {{ args }}
-    just codesign-macos target/release/{{ app_name }} {{ macos_sign_prefix }}-app
 
 # Build only the daemon.
 #

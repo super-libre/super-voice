@@ -61,27 +61,21 @@ pub fn speech_to_text(app: &AppModel) -> Element<'_, Message> {
     settings::view_column(blocks).into()
 }
 
-/// Text to speech's Behavior tab: Read aloud, where the session has it, then
-/// one Test section that speaks typed text and reads aloud.
+/// Text to speech's Behavior tab: Read aloud, then one Test section that
+/// speaks typed text and reads aloud.
 pub fn text_to_speech(app: &AppModel) -> Element<'_, Message> {
     let mut blocks = banners(app, &[ErrorScope::Speech, ErrorScope::ReadAloud]);
-    // Reading aloud reads the Wayland session, so only Linux has it.
-    let reads_aloud = cfg!(target_os = "linux");
-    if reads_aloud {
-        blocks.push(super::read_aloud::settings_section(app.read_method));
-    }
+    blocks.push(super::read_aloud::settings_section(app.read_method));
     let mut rows = super::speech::test_rows(
         &app.speech.status,
         &app.speech.test_text,
         app.speech.level,
         app.speech.is_playing,
     );
-    if reads_aloud {
-        rows.push(super::read_aloud::test_row(
-            app.read_method,
-            &app.speech.status,
-        ));
-    }
+    rows.push(super::read_aloud::test_row(
+        app.read_method,
+        &app.speech.status,
+    ));
     blocks.push(test_section(rows));
     settings::view_column(blocks).into()
 }

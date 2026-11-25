@@ -40,21 +40,16 @@ fn build_nav() -> nav_bar::Model {
         .data::<Section>(Section::TextToSpeech)
         .icon(icons::phosphor(icons::SPEAKER_HIGH));
 
-    // The Shortcuts page: only a Linux desktop takes shortcuts from the
-    // daemon. macOS's shortcut is the `voice hotkey` agent's.
-    #[cfg(target_os = "linux")]
     nav.insert()
         .text(crate::fl!("shortcuts"))
         .data::<Section>(Section::Shortcuts)
         .icon(icons::phosphor(icons::KEYBOARD))
         .divider_above(true);
 
-    // Shortcuts opens the group on Linux; Assistants does elsewhere.
     nav.insert()
         .text(crate::fl!("assistants"))
         .data::<Section>(Section::Assistants)
-        .icon(icons::phosphor(icons::ROBOT))
-        .divider_above(!cfg!(target_os = "linux"));
+        .icon(icons::phosphor(icons::ROBOT));
 
     nav.insert()
         .text(crate::fl!("settings"))
@@ -176,37 +171,7 @@ impl AppModel {
             action_error: None,
 
             scene: super::scene::requested().map(super::scene::Progress::new),
-
-            // Measured once the window opens.
-            #[cfg(target_os = "macos")]
-            title_bar: super::macos::TitleBar::default(),
-
-            // The look `main` gave the app its theme from.
-            #[cfg(target_os = "macos")]
-            look: super::macos::appearance::launch_look(),
         };
-
-        // On macOS the native frame and the app's own toolbar replace
-        // libcosmic's header bar; see `macos`.
-        //
-        // libcosmic also draws a window edge — a 1px border, rounded corners,
-        // and a transparent backdrop outside them — for compositors that
-        // leave that to the client. It skips all three for a maximized
-        // window, so the app tells it the window is maximized: the native
-        // frame draws the edge. Only Wayland ever resets the flag.
-        #[cfg(target_os = "macos")]
-        {
-            app.core.window.show_headerbar = false;
-            app.core.window.is_maximized = true;
-        }
-
-        // Opened from `Super Voice.app`, the app is what installs the daemon;
-        // see `macos::bundle`.
-        #[cfg(target_os = "macos")]
-        if super::macos::bundle::in_bundle() {
-            super::macos::bundle::request_notification_permission();
-            std::thread::spawn(super_voice_app_core::pages::connection::register_agents);
-        }
 
         // Create startup commands
         let title_command = app.update_title();

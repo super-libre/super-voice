@@ -40,8 +40,8 @@ just install-applet     # COSMIC only, from a super-cosmic-applet checkout
 
 #### On macOS
 
-Everything builds here except the two Linux shell components. The panel
-applet needs libcosmic's `applet` feature, which reaches
+Everything builds here except the settings app and the two Linux shell
+components. The panel applet needs libcosmic's `applet` feature, which reaches
 `cosmic-panel-config` -> `smithay-client-toolkit` -> `xkbcommon` via
 pkg-config, and `cosmic-panel-config` is the one crate in that chain with no
 `target_vendor = "apple"` gate. The consent helper takes `wayland` and is a
@@ -49,12 +49,11 @@ layer-shell overlay, which has no macOS counterpart; the daemon uses
 `osascript` there instead, so whether it would still compile is untested and
 moot.
 
-libcosmic itself is portable, which is easy to miss: its vendored iced fork
-puts every Wayland crate behind that same Apple gate, and has a
-`cfg(target_os = "windows")` table beside it. The settings app builds and
-runs on macOS once its libcosmic feature list drops `applet` and the
-Wayland/D-Bus features — see the two `[target.…]` tables in
-`super-voice-app/Cargo.toml`.
+The settings app in `super-voice-app` is Linux-only. On macOS the app is the
+SwiftUI one in `super-voice-macos/`, built on `super-voice-app-core` through
+`super-voice-ffi`. `just bundle-macos` bundles it with the daemon and the CLI.
+`just macos-swift-app` builds `target/<config>/Super Voice (dev).app`, a
+development copy with no daemon beside it.
 
 So a plain `cargo build`/`cargo test` over the workspace still fails on macOS
 by design — use the platform-scoped recipes, which select the members that do
@@ -86,13 +85,14 @@ them) puts it in `/Applications`:
 
 ```
 Super Voice.app/Contents/
-  Info.plist                      super-voice-app/resources/macos/Info.plist
-  MacOS/super-voice-app           the settings app, the bundle's executable
+  Info.plist                      super-voice-macos/Info.plist
+  MacOS/super-voice-app           the SwiftUI app, the bundle's executable
   MacOS/super-voice-daemon
   MacOS/super-voice-cli           `voice` on the PATH is a wrapper around this
   Helpers/super-voice-cli         the same CLI, which the shortcut agent runs
   Library/LaunchAgents/           the daemon's and the shortcut's agents
   Resources/AppIcon.icns          rendered from the app's SVG
+  Resources/icons/                the Phosphor SVGs the app draws
 ```
 
 The daemon and the CLI sit beside the app for two reasons. The daemon trusts
@@ -103,9 +103,9 @@ executable in `Contents/MacOS` has the app as its main bundle, which is how
 A main bundle is not enough for notifications, though: Notification Center
 serves only the bundle's own executable, and every request the daemon makes
 fails as "not allowed" whatever the user has chosen. So the daemon runs
-`super-voice-app --notify <title> <body>`, which sets up a windowless
-`NSApplication`, posts as Super Voice and exits
-(`super-voice-app/src/core/app/macos/notifier.rs`). A bare daemon falls back
+`super-voice-app --notify <title> <body>`, which posts as Super Voice and
+exits without opening a window. The SwiftUI app handles it, in `enum Entry` in
+`super-voice-macos/Sources/SuperVoice/SuperVoiceApp.swift`. A bare daemon falls back
 to `osascript`, whose banners read "Script Editor".
 
 The main bundle is also why the shortcut listener runs from the copy in
@@ -183,8 +183,8 @@ granted. What you actually see:
 
 None of that is a bug in Super Voice, and none of it is fixable in code.
 
-With the variable set, every `just run-daemon`, `just run-app`, `just
-run-cli`, `just build-*` and `just bundle-macos` re-signs its output with a
+With the variable set, every `just run-daemon`, `just run-cli`, `just
+build-*` and `just bundle-macos` re-signs its output with a
 stable identity, and grants stick across rebuilds. Leave it unset and nothing changes — the step
 is a no-op off macOS and when it is empty, so Linux and CI are unaffected.
 
@@ -244,7 +244,7 @@ Super Voice is a Rust workspace:
 | Crate                      | Role                                                              |
 |----------------------------|------------------------------------------------------------------|
 | `super-voice-daemon`         | The engine: installs backends, loads models, serves the protocol |
-| `super-voice-app`          | Desktop settings & management app                                |
+| `super-voice-app`          | The settings app on Linux, on libcosmic                          |
 | `super-voice-app-core`     | What the apps share, with no UI library: client, state, audio    |
 | `super-voice-ffi`          | The core for other languages, through UniFFI (the SwiftUI app)   |
 | `super-voice-cli`          | The `voice` command-line client, for both features               |
