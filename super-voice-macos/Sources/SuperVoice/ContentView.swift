@@ -58,6 +58,9 @@ struct ContentView: View {
         if Snapshot.scene.hasPrefix("updates") {
             return .updates
         }
+        if Snapshot.scene.hasPrefix("shortcuts") {
+            return .shortcuts
+        }
         #endif
         return .speechToText
     }
@@ -90,6 +93,8 @@ struct ContentView: View {
                 AssistantsView(model: AssistantsModel.shared)
             case .updates:
                 UpdatesView(model: UpdatesModel.shared)
+            case .shortcuts:
+                ShortcutsView(model: ShortcutsModel.shared)
             case .speechToText:
                 SpeechToTextView(notes: notes)
             case .textToSpeech:
