@@ -60,6 +60,18 @@ impl ModelOperationState {
 }
 
 /// One stage's operation, plus the clock the stall watchdog reads.
+/// What a progress report did to a stage: see
+/// [`ModelOperations::apply_progress`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Progressed {
+    /// It moved on: provisioning or loading.
+    Moved,
+    /// It failed; the stage shows why.
+    Failed,
+    /// It finished or was cancelled.
+    Finished,
+}
+
 #[derive(Debug, Clone, Default)]
 struct StageOperation {
     state: ModelOperationState,
@@ -165,6 +177,57 @@ impl ModelOperations {
     /// Fail every stage whose in-flight operation has shown no progress for
     /// `timeout`, and name them. A stage that has already failed, or has
     /// nothing in flight, is left alone.
+    /// Take in a report of how `stage`'s model is coming along: a download
+    /// tick, the daemon's poll of one, or the load that follows it.
+    ///
+    /// - `loading_model`: loading, with what the backend says of its load
+    ///   (`loading` words it when the backend says nothing).
+    /// - `error`: failed, with the daemon's reason (`failed` words a report
+    ///   that gives none).
+    /// - `completed`, `cancelled`: over. Nothing changes here: the answer to
+    ///   the request that started it, or the next read of the stage, ends it.
+    /// - Anything else (`verifying`, `downloading`, and what the daemon adds
+    ///   later): its files are being provisioned. Each tick restarts the stall
+    ///   clock.
+    pub fn apply_progress(
+        &mut self,
+        stage: Stage,
+        progress: &super_voice_shared::models::protocol::DownloadProgress,
+        loading: impl FnOnce() -> String,
+        failed: impl FnOnce() -> String,
+    ) -> Progressed {
+        let target_model = progress.model_name.clone();
+        match progress.status.as_str() {
+            "loading_model" => {
+                self.start(
+                    stage,
+                    ModelOperationState::Loading {
+                        target_model,
+                        status_message: loading(),
+                        load: progress.load.clone(),
+                    },
+                );
+                Progressed::Moved
+            }
+            "error" => {
+                let message = progress.error.clone().unwrap_or_else(failed);
+                self.set(stage, ModelOperationState::Error { message });
+                Progressed::Failed
+            }
+            "completed" | "cancelled" => Progressed::Finished,
+            _ => {
+                self.start(
+                    stage,
+                    ModelOperationState::Provisioning {
+                        target_model,
+                        progress: Box::new(progress.clone()),
+                    },
+                );
+                Progressed::Moved
+            }
+        }
+    }
+
     pub fn fail_stalled(&mut self, timeout: Duration, message: &str) -> Vec<Stage> {
         let mut stalled = Vec::new();
         for stage in Stage::ALL {

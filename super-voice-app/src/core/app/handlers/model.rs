@@ -7,6 +7,7 @@ use crate::ui::messages::{DeviceMessage, Message, ModelMessage, ModelsPageMessag
 use cosmic::prelude::*;
 use log::info;
 use log::warn;
+use super_voice_app_core::rules::load::sanitize_home;
 
 impl AppModel {
     /// Handle model management messages
@@ -272,21 +273,9 @@ fn idle_selection(stage: &crate::daemon::client::StageState) -> Option<(String, 
     Some((stage.model.clone()?, stage.source.clone()?))
 }
 
-/// Collapse the user's home directory back to `$HOME` in an error message and
-/// cap it at 200 chars for display. Skips the substitution when `home` is empty
-/// — an empty `from` makes `str::replace` insert the replacement at every char
-/// boundary, shredding the message (Tier 1 #16).
-pub(in crate::core::app) fn sanitize_home(err: &str, home: &str) -> String {
-    if home.is_empty() {
-        err.chars().take(200).collect()
-    } else {
-        err.replace(home, "$HOME").chars().take(200).collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{IdleAfterReady, idle_after_ready, sanitize_home};
+    use super::{IdleAfterReady, idle_after_ready};
     use crate::daemon::client::ModelState;
 
     fn whisper() -> Option<(String, String)> {
@@ -323,28 +312,5 @@ mod tests {
             idle_after_ready(ModelState::Idle, None),
             IdleAfterReady::Unknown
         );
-    }
-
-    #[test]
-    fn empty_home_leaves_message_intact() {
-        // The regression: an empty HOME must NOT insert "$HOME" everywhere.
-        assert_eq!(
-            sanitize_home("load failed at /a/b", ""),
-            "load failed at /a/b"
-        );
-    }
-
-    #[test]
-    fn set_home_is_folded_back() {
-        assert_eq!(
-            sanitize_home("no file /home/jo/models/x", "/home/jo"),
-            "no file $HOME/models/x"
-        );
-    }
-
-    #[test]
-    fn output_is_capped_at_200_chars() {
-        let long = "e".repeat(500);
-        assert_eq!(sanitize_home(&long, "").chars().count(), 200);
     }
 }

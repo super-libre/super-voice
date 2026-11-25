@@ -42,14 +42,26 @@ pub fn staged_vram_shortfall(
     backend: &BackendInfo,
     gpus: &[GpuInfo],
 ) -> Option<(u64, u64)> {
+    staged_vram_shortfall_in(Stage::Transcription, operation, picks, backend, gpus)
+}
+
+/// [`staged_vram_shortfall`] for any stage's staged model.
+#[must_use]
+pub fn staged_vram_shortfall_in(
+    stage: Stage,
+    operation: &ModelOperationState,
+    picks: &StagedPicks,
+    backend: &BackendInfo,
+    gpus: &[GpuInfo],
+) -> Option<(u64, u64)> {
     if matches!(operation, ModelOperationState::Loading { .. }) {
         return None;
     }
-    let model_name = picks.get(Stage::Transcription).map(|p| p.model.as_str())?;
+    let model_name = picks.get(stage).map(|p| p.model.as_str())?;
     let model = backend.models.iter().find(|m| m.name == model_name)?;
     let gpu_available = gpus.first().map(|g| g.free_bytes.unwrap_or(g.total_bytes));
     vram_shortfall(
-        picks.device(Stage::Transcription),
+        picks.device(stage),
         model.estimated_vram_bytes,
         gpu_available,
     )

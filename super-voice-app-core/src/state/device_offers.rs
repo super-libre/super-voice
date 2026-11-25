@@ -18,6 +18,7 @@
 /// for one model of it.
 use super::Stage;
 
+#[derive(Debug)]
 struct Offer {
     stage: Stage,
     source: String,
@@ -33,7 +34,7 @@ struct Offer {
 /// devices". Callers must keep the two apart: an empty list is the daemon
 /// saying this install can run the model on nothing, which is a blocking
 /// state the UI reports; a miss is a request still in flight.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct DeviceOffers {
     offers: Vec<Offer>,
 }
