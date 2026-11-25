@@ -31,6 +31,18 @@ pub async fn status(socket_path: PathBuf, token: &str) -> HttpResult<VoiceStatus
     super_engine_client::http_client::status(socket_path, token).await
 }
 
+/// `GET /settings/hotkey` — the keys the macOS shortcut listener listens
+/// for. Needs the `settings` scope.
+///
+/// # Errors
+/// Returns an error if the daemon HTTP listener isn't reachable, refuses the
+/// token, or answers without a binding.
+pub async fn hotkey(socket_path: PathBuf, token: &str) -> HttpResult<String> {
+    let resp = transport::settings_get(socket_path, token, "/settings/hotkey").await?;
+    resp.hotkey
+        .ok_or_else(|| HttpError::Other("the daemon answered without a hotkey".to_string()))
+}
+
 /// Public transport surface for downstream clients that compose their own
 /// per-scope endpoint wrappers (e.g. the settings app): the engine's, plus
 /// the `settings_*` calls that read Super STT's [`DaemonResponse`]. Returns

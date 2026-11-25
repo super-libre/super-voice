@@ -120,6 +120,14 @@ pub enum Command {
         enabled: bool,
     },
     GetPreviewTyping,
+    /// Set the keys the macOS shortcut listener listens for. Checked with
+    /// [`crate::models::hotkey::validate`] before it is stored.
+    SetHotkey {
+        binding: String,
+    },
+    GetHotkey,
+    /// Go back to [`crate::models::hotkey::DEFAULT_BINDING`].
+    ClearHotkey,
     /// Run final transcripts through `model`. An empty `source` resolves to
     /// the selected post-processor backend, the way `SetModel` resolves against
     /// the active backend. The model must be one its backend declares with

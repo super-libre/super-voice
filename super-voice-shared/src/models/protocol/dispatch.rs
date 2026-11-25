@@ -49,6 +49,9 @@ impl TryFrom<DaemonRequest> for Command {
             "list_audio_themes" => Ok(Command::ListAudioThemes),
             "set_preview_typing" => cmd_set_preview_typing(&request),
             "get_preview_typing" => Ok(Command::GetPreviewTyping),
+            "set_hotkey" => cmd_set_hotkey(&request),
+            "get_hotkey" => Ok(Command::GetHotkey),
+            "clear_hotkey" => Ok(Command::ClearHotkey),
             "set_post_processor" => cmd_set_post_processor(&request),
             "get_post_processor" => Ok(Command::GetPostProcessor),
             "clear_post_processor" => Ok(Command::ClearPostProcessor),
@@ -369,6 +372,17 @@ fn cmd_set_preview_typing(request: &DaemonRequest) -> Result<Command, String> {
         .ok_or("Missing enabled field for set_preview_typing command")?;
 
     Ok(Command::SetPreviewTyping { enabled })
+}
+
+fn cmd_set_hotkey(request: &DaemonRequest) -> Result<Command, String> {
+    let binding = request
+        .data
+        .as_ref()
+        .and_then(|data| data.get("hotkey"))
+        .and_then(|v| v.as_str())
+        .ok_or("Missing hotkey for set_hotkey command")?
+        .to_string();
+    Ok(Command::SetHotkey { binding })
 }
 
 fn cmd_set_recording_stop_mode(request: &DaemonRequest) -> Result<Command, String> {

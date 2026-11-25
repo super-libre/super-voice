@@ -214,7 +214,7 @@ backend's, which can serve both features (`options`: one of a backend's
 [options](./backends/options.md) set or cleared; `secrets`: one of its
 [secrets](./backends/secrets.md) stored or cleared). The rest
 are a feature's: a per-model `language`, and for speech to text `write_method`,
-`preview_typing`, `recording_stop_mode`, `post_processor` and `contexts`, for
+`preview_typing`, `hotkey`, `recording_stop_mode`, `post_processor` and `contexts`, for
 text to speech `read_method`, `voice` (a model's voice, set or cleared) and
 `voices` (the cloned-voice library: a voice added, renamed or deleted). Text to speech has one stage, so its payloads carry no `stage`,
 and it adds two `daemon_status_changed` statuses of its own, `preparing_voice`

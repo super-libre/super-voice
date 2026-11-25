@@ -2,6 +2,7 @@
 pub mod assistants;
 pub mod backends;
 pub mod contexts;
+pub mod hotkey;
 pub mod notification_method;
 pub mod protocol;
 pub mod read_method;

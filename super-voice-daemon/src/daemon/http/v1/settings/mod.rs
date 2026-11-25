@@ -18,6 +18,7 @@
 //! lives in the macro call and nowhere else.
 
 pub(crate) mod audio_theme;
+pub(crate) mod hotkey;
 pub(crate) mod idle_unload;
 pub(crate) mod language;
 pub(crate) mod notification_method;
@@ -68,6 +69,11 @@ pub(crate) fn routes() -> OpenApiRouter<AppState> {
         .routes(routes!(
             preview_typing::get_preview_typing,
             preview_typing::set_preview_typing
+        ))
+        .routes(routes!(
+            hotkey::get_hotkey,
+            hotkey::set_hotkey,
+            hotkey::clear_hotkey
         ))
         .routes(routes!(
             update_check_enabled::get_update_check_enabled,

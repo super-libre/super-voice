@@ -204,6 +204,27 @@ impl FromDaemon for PreviewTypingState {
     }
 }
 
+/// The keys the macOS shortcut listener listens for.
+#[derive(Serialize, ToSchema)]
+pub(crate) struct HotkeyState {
+    #[schema(example = "success")]
+    status: &'static str,
+    /// The binding: the one set, or `ctrl+alt+space` when none is.
+    #[schema(example = "ctrl+alt+space")]
+    hotkey: String,
+}
+
+impl FromDaemon for HotkeyState {
+    fn from_daemon(resp: DaemonResponse) -> Self {
+        Self {
+            status: "success",
+            hotkey: resp
+                .hotkey
+                .unwrap_or_else(|| super_voice_shared::models::hotkey::DEFAULT_BINDING.to_string()),
+        }
+    }
+}
+
 /// Whether the periodic update check runs.
 #[derive(Serialize, ToSchema)]
 pub(crate) struct UpdateCheckEnabledState {
