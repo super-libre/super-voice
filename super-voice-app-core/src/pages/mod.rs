@@ -13,6 +13,7 @@ pub mod assistants;
 pub mod behavior;
 pub mod clips;
 pub mod configure;
+pub mod connection;
 pub mod contexts;
 pub mod library;
 pub mod model_language;

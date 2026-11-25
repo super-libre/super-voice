@@ -94,7 +94,7 @@ impl AppModel {
             ModelsPageMessage::RefreshGpuInfo => {
                 // Periodic poll — only query when connected so the disconnected
                 // state doesn't spam failing requests.
-                if self.daemon_status == DaemonStatus::Connected {
+                if self.connection.status == DaemonStatus::Connected {
                     Task::perform(get_gpu_info(), |result| {
                         cosmic::Action::App(Message::ModelsPage(ModelsPageMessage::GpuInfoLoaded(
                             result.unwrap_or_default(),

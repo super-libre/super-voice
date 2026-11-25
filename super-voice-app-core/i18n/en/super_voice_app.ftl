@@ -848,3 +848,6 @@ stage-could-not-read = Couldn't read { $stage }: { $error }
 # A backend's Configure sheet
 backend-setting-could-not-save = Couldn't save that setting: { $error }
 backends-could-not-load = Couldn't read the backends: { $error }
+
+# Connection
+authorization-denied-restart = Access was refused. Restart the daemon ({ $command }) so it forgets that answer, then press Retry authorization.

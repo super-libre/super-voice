@@ -5,7 +5,7 @@ use cosmic::Element;
 use cosmic::iced::widget::{column, row};
 use cosmic::iced::{Alignment, Length};
 use cosmic::widget::{self, button, space::horizontal as horizontal_space, text};
-use super_voice_registry_types::index::supports;
+use super_voice_app_core::pages::contexts::Reach;
 use super_voice_shared::models::contexts::DictationContext;
 
 use crate::core::app::AppModel;
@@ -72,23 +72,14 @@ fn intro(app: &AppModel) -> Element<'_, Message> {
     // Which backends will actually use it. A context reaching nothing is the
     // one failure the user cannot see, so say it here rather than let them
     // wonder why nothing changed.
-    let accepting = app
-        .backends
-        .iter()
-        .filter(|b| supports::has(&b.supports, supports::DICTATION_CONTEXT))
-        .count();
-    let note = if app.backends.is_empty() {
-        None
-    } else if accepting == 0 {
-        Some(crate::fl!("none-of-your-installed-backends-can-use"))
-    } else if accepting == app.backends.len() {
-        None
-    } else {
-        Some(crate::fl!(
+    let note = match super_voice_app_core::pages::contexts::reach(&app.backends) {
+        None => None,
+        Some(Reach::Nothing) => Some(crate::fl!("none-of-your-installed-backends-can-use")),
+        Some(Reach::Partly { accepting, total }) => Some(crate::fl!(
             "context-supported-count",
-            accepting = (accepting).to_string(),
-            value0 = (app.backends.len()).to_string()
-        ))
+            accepting = accepting.to_string(),
+            value0 = total.to_string()
+        )),
     };
     if let Some(note) = note {
         lines = lines.push(muted(text::caption(note)));

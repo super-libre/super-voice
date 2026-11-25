@@ -848,3 +848,6 @@ stage-could-not-read = Impossible de lire { $stage } : { $error }
 # A backend's Configure sheet
 backend-setting-could-not-save = Impossible d'enregistrer ce réglage : { $error }
 backends-could-not-load = Impossible de lire les moteurs : { $error }
+
+# Connection
+authorization-denied-restart = L’accès a été refusé. Redémarrez le service ({ $command }) pour qu’il oublie cette réponse, puis appuyez sur Redemander l’autorisation.

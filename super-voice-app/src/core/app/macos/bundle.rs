@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! What the settings app does as the main executable of `Super Voice.app`:
-//! register the bundle's `LaunchAgent`s, ask to show notifications, and say
-//! where the daemon's agent stands while the daemon cannot be reached.
+//! ask to show notifications, and say where the daemon's agent stands while
+//! the daemon cannot be reached. Registering the bundle's `LaunchAgent`s is
+//! the core's (`pages::connection::register_agents`).
 //!
 //! None of it applies to a bare binary in `target/` (`just run-app`). That
 //! has no bundle for `ServiceManagement` to find the agents in, and none for
@@ -14,9 +15,8 @@ use objc2::runtime::Bool;
 use objc2_foundation::{NSBundle, NSError};
 use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
 use std::time::Duration;
-use super_voice_shared::launch_agents::{Agent, Status};
 
-use crate::ui::messages::{Message, ShellMessage};
+use crate::ui::messages::{DaemonMessage, Message};
 
 /// How often [`daemon_agent`] looks again. Only while the daemon is
 /// unreachable, which is when the connection page shows what it found.
@@ -29,28 +29,6 @@ pub(crate) fn in_bundle() -> bool {
         && std::path::Path::new(&bundle.bundlePath().to_string())
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
-}
-
-/// Register each agent that has never been registered, which starts it and
-/// runs it at every login.
-///
-/// This is what installs the daemon for someone who drags Super Voice into
-/// Applications and opens it, so it runs on every launch rather than once.
-/// An agent switched off in Login Items is left alone: that was the user's
-/// choice, and only they can undo it.
-///
-/// Blocking — `ServiceManagement` answers over XPC — so it runs off the UI
-/// thread.
-pub(crate) fn register_agents() {
-    for agent in Agent::ALL {
-        if agent.status() != Status::NotRegistered {
-            continue;
-        }
-        match agent.register() {
-            Ok(()) => log::info!("registered {}", agent.label()),
-            Err(e) => log::warn!("{e:#}"),
-        }
-    }
 }
 
 /// Ask to show notifications.
@@ -81,10 +59,15 @@ pub(crate) fn request_notification_permission() {
 pub(crate) fn daemon_agent() -> impl Stream<Item = Message> {
     cosmic::iced::stream::channel(1, async |mut output| {
         loop {
-            let Ok(status) = tokio::task::spawn_blocking(|| Agent::Daemon.status()).await else {
+            let Ok(status) =
+                tokio::task::spawn_blocking(super_voice_app_core::pages::connection::read_agent)
+                    .await
+            else {
                 break;
             };
-            let message = Message::Shell(ShellMessage::DaemonAgent(status));
+            let message = Message::Daemon(DaemonMessage::Connection(
+                super_voice_app_core::pages::connection::Input::AgentRead(status),
+            ));
             if output.send(message).await.is_err() {
                 break;
             }

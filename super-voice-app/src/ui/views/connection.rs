@@ -9,49 +9,7 @@ use cosmic::{
     Element,
     widget::{button, settings, text},
 };
-
-/// What fixes a daemon that is installed but not running — which is the only
-/// way this page has anything to say, since the app and the daemon install
-/// together.
-///
-/// Built at call time rather than held in a `const`, because the launchd form
-/// needs the caller's uid: `launchctl` addresses a user agent by domain
-/// target (`gui/<uid>/<label>`), never by label alone.
-fn start_daemon_command() -> String {
-    #[cfg(target_os = "linux")]
-    {
-        "systemctl --user start super-voice".to_string()
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        format!("launchctl kickstart {}", launchd_target())
-    }
-}
-
-/// The same, for a daemon that is running and needs replacing. `-k` kills the
-/// current process first; plain `kickstart` on a running agent is a no-op,
-/// which would leave the deny cache the message is telling them to clear.
-fn restart_daemon_command() -> String {
-    #[cfg(target_os = "linux")]
-    {
-        "systemctl --user restart super-voice".to_string()
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        format!("launchctl kickstart -k {}", launchd_target())
-    }
-}
-
-/// The `LaunchAgent`'s domain target. Matches the label in
-/// `super-voice-daemon/launchd/` and the `launchd_target` the justfile builds.
-#[cfg(not(target_os = "linux"))]
-fn launchd_target() -> String {
-    format!(
-        "gui/{}/{}",
-        unsafe { libc::getuid() },
-        super_voice_shared::launch_agents::Agent::Daemon.label()
-    )
-}
+use super_voice_app_core::pages::connection::{self as page, Fix, Input};
 
 /// The window's whole body while the daemon cannot be reached, with the nav
 /// hidden: the Connection sheet's rows under a "Connection" heading.
@@ -70,8 +28,7 @@ pub fn sheet(app: &AppModel) -> Element<'_, Message> {
 
 /// The connection's rows, as the page and the sheet both show them.
 fn section(app: &AppModel) -> settings::Section<'_, Message> {
-    let daemon_status = &app.daemon_status;
-    let status_text = match daemon_status {
+    let status_text = match &app.connection.status {
         DaemonStatus::Connected => crate::fl!("connected"),
         DaemonStatus::Connecting => crate::fl!("connecting"),
         DaemonStatus::Disconnected => crate::fl!("disconnected"),
@@ -81,101 +38,72 @@ fn section(app: &AppModel) -> settings::Section<'_, Message> {
         }
     };
 
-    let mut connection_section = settings::section()
+    let section = settings::section()
         .add(settings::item(
             crate::fl!("status"),
             text::body(status_text),
         ))
         .add(settings::item(
             crate::fl!("socket-path"),
-            text::body(app.socket_path.to_string_lossy().to_string()),
+            text::body(page::socket_path()),
         ));
 
     // Not reaching the daemon is the one failure this page can actually help
     // with, and it never said how. A red status and nothing to act on is not
     // an answer, so offer what fixes it.
-    if matches!(
-        daemon_status,
-        DaemonStatus::Disconnected | DaemonStatus::Error(_)
-    ) {
-        connection_section = not_running(connection_section, app);
-    }
-
-    if matches!(daemon_status, DaemonStatus::Blocked(_)) {
-        connection_section = connection_section
+    match page::fix(&app.connection) {
+        None => section,
+        Some(Fix::Start { command }) => section
+            .add(settings::item(
+                crate::fl!("no-daemon"),
+                text::body(crate::fl!("the-daemon-is-not-running")),
+            ))
+            .add(settings::item(
+                crate::fl!("start-it"),
+                row![
+                    text::body(command.clone()),
+                    button::standard(crate::fl!("copy"))
+                        .on_press(Message::Shell(ShellMessage::CopyText(command))),
+                ]
+                .spacing(cosmic::theme::spacing().space_xs)
+                .align_y(Alignment::Center),
+            )),
+        Some(Fix::TurnOn) => section
+            .add(settings::item(
+                crate::fl!("no-daemon"),
+                text::body(crate::fl!("super-voice-s-background-service-is-switched")),
+            ))
+            .add(settings::item(
+                crate::fl!("turn-it-on"),
+                button::standard(crate::fl!("open-login-items"))
+                    .on_press(connection_input(Input::OpenLoginItems)),
+            )),
+        Some(Fix::Register) => section
+            .add(settings::item(
+                crate::fl!("no-daemon"),
+                text::body(crate::fl!("super-voice-s-background-service-is-not")),
+            ))
+            .add(settings::item(
+                crate::fl!("register-it"),
+                button::standard(crate::fl!("register"))
+                    .on_press(connection_input(Input::Register)),
+            )),
+        Some(Fix::Reauthorize { restart }) => section
             .add(settings::item(
                 crate::fl!("action-required"),
-                text::body(format!(
-                    "Authorization was denied. Restart the daemon to clear the deny \
-                     cache ({}), then click Retry to request access again.",
-                    restart_daemon_command()
+                text::body(crate::fl!(
+                    "authorization-denied-restart",
+                    command = restart
                 )),
             ))
             .add(settings::item(
                 "",
                 button::standard(crate::fl!("retry-authorization"))
                     .on_press(Message::Daemon(DaemonMessage::RetryAuthorization)),
-            ));
+            )),
     }
-
-    connection_section
 }
 
-/// What to do about a daemon that cannot be reached: usually the command
-/// that starts it, ready to paste.
-fn not_running<'a>(
-    section: settings::Section<'a, Message>,
-    #[cfg_attr(
-        not(target_os = "macos"),
-        expect(unused_variables, reason = "only macOS reads the agent's status")
-    )]
-    app: &AppModel,
-) -> settings::Section<'a, Message> {
-    // From the app bundle, launchd runs the daemon only while its agent is
-    // registered and switched on, and a launchctl command fixes neither.
-    #[cfg(target_os = "macos")]
-    match app.daemon_agent {
-        Some(super_voice_shared::launch_agents::Status::RequiresApproval) => {
-            return section
-                .add(settings::item(
-                    crate::fl!("no-daemon"),
-                    text::body(crate::fl!("super-voice-s-background-service-is-switched")),
-                ))
-                .add(settings::item(
-                    crate::fl!("turn-it-on"),
-                    button::standard(crate::fl!("open-login-items"))
-                        .on_press(Message::Shell(ShellMessage::OpenLoginItems)),
-                ));
-        }
-        Some(super_voice_shared::launch_agents::Status::NotRegistered) => {
-            return section
-                .add(settings::item(
-                    crate::fl!("no-daemon"),
-                    text::body(crate::fl!("super-voice-s-background-service-is-not")),
-                ))
-                .add(settings::item(
-                    crate::fl!("register-it"),
-                    button::standard(crate::fl!("register"))
-                        .on_press(Message::Shell(ShellMessage::RegisterAgents)),
-                ));
-        }
-        _ => {}
-    }
-
-    let start_command = start_daemon_command();
-    section
-        .add(settings::item(
-            crate::fl!("no-daemon"),
-            text::body(crate::fl!("the-daemon-is-not-running")),
-        ))
-        .add(settings::item(
-            crate::fl!("start-it"),
-            row![
-                text::body(start_command.clone()),
-                button::standard(crate::fl!("copy"))
-                    .on_press(Message::Shell(ShellMessage::CopyText(start_command))),
-            ]
-            .spacing(cosmic::theme::spacing().space_xs)
-            .align_y(Alignment::Center),
-        ))
+fn connection_input(input: Input) -> Message {
+    Message::Daemon(DaemonMessage::Connection(input))
 }

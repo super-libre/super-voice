@@ -381,7 +381,7 @@ impl AppModel {
     /// speech to text as the scene needs it, then report ready, or look for the
     /// widget to click.
     pub(super) fn scene_step(&mut self) -> Task<cosmic::Action<Message>> {
-        let connected = self.daemon_status == DaemonStatus::Connected;
+        let connected = self.connection.status == DaemonStatus::Connected;
         let Some(progress) = self.scene.as_mut() else {
             return Task::none();
         };

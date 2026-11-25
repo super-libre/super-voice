@@ -2,15 +2,12 @@
 
 mod events;
 
-use crate::core::app::events::classify_daemon_error;
 use crate::core::app::handlers::tasks::{build_load_settings_tasks, ping_task};
 use crate::core::app::{AppModel, DeviceState};
-use crate::daemon::client::app_id;
-use crate::daemon::client::test_daemon_connection;
-use crate::state::DaemonStatus;
 use crate::ui::messages::{DaemonMessage, Message, ModelMessage};
 use cosmic::prelude::*;
-use log::{info, warn};
+use log::info;
+use super_voice_app_core::pages::connection::{self as page, Effect, Input, Outcome};
 
 impl AppModel {
     /// Handle daemon connection messages
@@ -19,9 +16,16 @@ impl AppModel {
         message: DaemonMessage,
     ) -> Task<cosmic::Action<Message>> {
         match message {
-            DaemonMessage::DaemonConnectionResult(_)
-            | DaemonMessage::RefreshDaemonStatus
-            | DaemonMessage::PingTimeout => self.handle_daemon_connect_result(message),
+            DaemonMessage::RefreshDaemonStatus => Task::perform(page::run_check(), |input| {
+                cosmic::Action::App(Message::Daemon(DaemonMessage::Connection(input)))
+            }),
+
+            DaemonMessage::PingTimeout => {
+                // Surface a stalled model switch (no progress for too long)
+                // rather than letting the UI spin on the now-untimed POST.
+                self.check_switch_stall();
+                self.connection(Input::Tick).1
+            }
 
             DaemonMessage::DaemonConnected => self.handle_daemon_connected(),
 
@@ -39,60 +43,66 @@ impl AppModel {
             DaemonMessage::DaemonError(_)
             | DaemonMessage::RetryConnection
             | DaemonMessage::WidgetBlocked(_)
-            | DaemonMessage::RetryAuthorization => self.handle_daemon_errors_retry(message),
+            | DaemonMessage::RetryAuthorization
+            | DaemonMessage::Connection(_) => self.handle_daemon_errors_retry(message),
 
             DaemonMessage::DaemonEventsReceived(_) => self.handle_daemon_events(message),
         }
     }
 
-    fn handle_daemon_connect_result(
+    /// Hand `input` to the Connection page's logic, and start the work it
+    /// asks for. Returns what it came to, for the caller to read
+    /// `reconnected` from.
+    pub(in crate::core::app) fn connection(
         &mut self,
-        message: DaemonMessage,
-    ) -> Task<cosmic::Action<Message>> {
-        match message {
-            DaemonMessage::DaemonConnectionResult(result) => {
-                match result {
-                    Ok(()) => {
-                        self.daemon_status = DaemonStatus::Connected;
-                    }
-                    Err(e) => {
-                        self.daemon_status = classify_daemon_error(e);
-                    }
-                }
-                Task::none()
-            }
+        input: Input,
+    ) -> (Outcome, Task<cosmic::Action<Message>>) {
+        let outcome = page::update(&mut self.connection, input);
+        let tasks: Vec<_> = outcome
+            .effects
+            .iter()
+            .map(|effect| self.connection_effect(effect))
+            .collect();
+        (outcome, Task::batch(tasks))
+    }
 
-            DaemonMessage::RefreshDaemonStatus => {
-                Task::perform(test_daemon_connection(), |result| {
-                    cosmic::Action::App(Message::Daemon(DaemonMessage::DaemonConnectionResult(
-                        result,
-                    )))
+    fn connection_effect(&mut self, effect: &Effect) -> Task<cosmic::Action<Message>> {
+        match effect {
+            Effect::Ping => ping_task(),
+            Effect::RetryAfter(delay) => {
+                let delay = *delay;
+                Task::perform(tokio::time::sleep(delay), |()| {
+                    cosmic::Action::App(Message::Daemon(DaemonMessage::RetryConnection))
                 })
             }
-
-            DaemonMessage::PingTimeout => {
-                // Surface a stalled model switch (no progress for too long)
-                // rather than letting the UI spin on the now-untimed POST.
-                self.check_switch_stall();
-                if self.daemon_status == DaemonStatus::Connected {
-                    ping_task()
-                } else {
-                    Task::none()
-                }
+            Effect::ForgetSession => {
+                page::forget_session();
+                Task::none()
             }
-
-            _ => Task::none(),
+            Effect::Resubscribe => {
+                // Bump the iced subscription key so the events task starts
+                // again from scratch: the one before ended with `Blocked`.
+                self.udp_restart_counter = self.udp_restart_counter.wrapping_add(1);
+                Task::none()
+            }
+            Effect::RegisterAgents => {
+                // The next status poll reports how it went.
+                #[cfg(target_os = "macos")]
+                std::thread::spawn(page::register_agents);
+                Task::none()
+            }
+            Effect::OpenLoginItems => {
+                #[cfg(target_os = "macos")]
+                page::open_login_items();
+                Task::none()
+            }
         }
     }
 
     fn handle_daemon_connected(&mut self) -> Task<cosmic::Action<Message>> {
-        // Only switch to Settings page if we're transitioning from disconnected to connected
-        let was_disconnected = self.daemon_status != DaemonStatus::Connected;
-
-        self.daemon_status = DaemonStatus::Connected;
-        // Connected: reset the reconnect backoff so the next disconnect starts
-        // from the short initial delay again.
-        self.reconnect_retry.reset();
+        // Connected: the backoff starts again from its short first wait on the
+        // next drop. Whether it was down before is what the rest turns on.
+        let was_disconnected = self.connection(Input::Reached).0.reconnected;
         // Only clear potentially stuck switching states on actual reconnect, not periodic pings
         if was_disconnected {
             self.device_state = DeviceState::Ready;
@@ -146,62 +156,17 @@ impl AppModel {
         &mut self,
         message: DaemonMessage,
     ) -> Task<cosmic::Action<Message>> {
-        match message {
-            DaemonMessage::DaemonError(err) => {
-                // Route user-denied responses into the Blocked state
-                // so we don't keep pinging the daemon every 5s and
-                // re-priming its in-memory deny cache. Any other
-                // error is transient (daemon restarting, socket
-                // missing, etc.) and gets the auto-retry loop.
-                let next = classify_daemon_error(err);
-                if matches!(next, DaemonStatus::Blocked(_)) {
-                    warn!("Daemon access blocked by user denial; auto-retry suppressed: {next:?}");
-                    self.daemon_status = next;
-                    Task::none()
-                } else {
-                    self.daemon_status = next;
-                    // Exponential backoff with jitter (shared RetryStrategy)
-                    // instead of a flat 5 s, so many clients reconnecting after a
-                    // daemon restart don't stampede in lockstep.
-                    let delay = self.reconnect_retry.next_delay();
-                    self.reconnect_retry.should_retry();
-                    Task::perform(
-                        async move {
-                            tokio::time::sleep(delay).await;
-                        },
-                        |()| cosmic::Action::App(Message::Daemon(DaemonMessage::RetryConnection)),
-                    )
-                }
-            }
-
-            DaemonMessage::RetryConnection => {
-                self.daemon_status = DaemonStatus::Connecting;
-                ping_task()
-            }
-
-            DaemonMessage::WidgetBlocked(reason) => {
-                warn!("Widget subscription blocked ({reason}); halting auto-retry");
-                self.daemon_status = DaemonStatus::Blocked(reason);
-                Task::none()
-            }
-
-            DaemonMessage::RetryAuthorization => {
-                info!("Retrying authorization after user denial");
-                // Drop the cached settings token so the next
-                // session::obtain fires /auth/request and (after a
-                // daemon restart) spawns a fresh consent popup.
-                if let Err(e) = super_voice_shared::daemon::session::forget(app_id()) {
-                    warn!("Failed to forget settings session before retry: {e}");
-                }
-                // Bump the iced subscription key so the audio-events
-                // task re-spawns from scratch — its previous instance
-                // ended with `Blocked`.
-                self.udp_restart_counter = self.udp_restart_counter.wrapping_add(1);
-                self.daemon_status = DaemonStatus::Connecting;
-                ping_task()
-            }
-
-            _ => Task::none(),
-        }
+        let input = match message {
+            // A refusal stops the retries, so the app doesn't keep asking the
+            // daemon and renewing its remembered refusal; any other failure
+            // is tried again after a growing wait.
+            DaemonMessage::DaemonError(err) => Input::Failed(err),
+            DaemonMessage::RetryConnection => Input::Retry,
+            DaemonMessage::WidgetBlocked(reason) => Input::Refused(reason),
+            DaemonMessage::RetryAuthorization => Input::RetryAuthorization,
+            DaemonMessage::Connection(input) => input,
+            _ => return Task::none(),
+        };
+        self.connection(input).1
     }
 }

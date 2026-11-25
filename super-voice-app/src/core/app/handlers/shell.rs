@@ -97,22 +97,6 @@ impl AppModel {
                 }
                 Task::none()
             }
-            #[cfg(target_os = "macos")]
-            ShellMessage::DaemonAgent(status) => {
-                self.daemon_agent = Some(status);
-                Task::none()
-            }
-            #[cfg(target_os = "macos")]
-            ShellMessage::RegisterAgents => {
-                // The next status poll reports how it went.
-                std::thread::spawn(crate::core::app::macos::bundle::register_agents);
-                Task::none()
-            }
-            #[cfg(target_os = "macos")]
-            ShellMessage::OpenLoginItems => {
-                super_voice_shared::launch_agents::open_login_items_settings();
-                Task::none()
-            }
 
             ShellMessage::LaunchUrl(url) => {
                 match open::that_detached(&url) {

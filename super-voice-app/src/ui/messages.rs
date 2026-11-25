@@ -103,22 +103,11 @@ pub enum ShellMessage {
     /// The toolbar's sidebar button, standing in for libcosmic's header toggle.
     #[cfg(target_os = "macos")]
     ToggleSidebar,
-    /// Where the bundle's daemon agent stands, looked up while the daemon is
-    /// unreachable. See `core::app::macos::bundle`.
-    #[cfg(target_os = "macos")]
-    DaemonAgent(super_voice_shared::launch_agents::Status),
-    /// Register the bundle's agents, for a daemon agent that is not.
-    #[cfg(target_os = "macos")]
-    RegisterAgents,
-    /// Open Login Items, where a daemon agent the user switched off goes back on.
-    #[cfg(target_os = "macos")]
-    OpenLoginItems,
 }
 
 /// Daemon connection, connection-time settings loads, and the SSE event stream.
 #[derive(Debug, Clone)]
 pub enum DaemonMessage {
-    DaemonConnectionResult(super_voice_shared::daemon::http_client::HttpResult<()>),
     DaemonConnected,
     /// The `/events` SSE stream finished (re)subscribing. Distinct from
     /// `DaemonConnected` (which the REST ping loop also fires): it marks the
@@ -143,6 +132,10 @@ pub enum DaemonMessage {
     /// page. Drops the cached settings token and triggers a fresh
     /// consent flow.
     RetryAuthorization,
+    /// An input for the Connection page's logic with no message of its own:
+    /// the answer to a status check (`RefreshDaemonStatus`), which only shows
+    /// the status and tries nothing again.
+    Connection(super_voice_app_core::pages::connection::Input),
     PingTimeout,
     DaemonEventsReceived(Vec<super_voice_shared::models::protocol::NotificationEvent>),
 }

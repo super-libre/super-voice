@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-use crate::state::{ContextPage, DaemonStatus};
+use crate::state::ContextPage;
 use crate::ui::icons;
 use crate::ui::messages::{Message, ModelMessage};
 use cosmic::prelude::*;
@@ -114,11 +114,7 @@ impl AppModel {
             notes: crate::state::notes::NotesState::default(),
             clips: crate::state::clips::ClipsState::default(),
             nav,
-            // Initialize Super Voice state using proper socket path
-            socket_path: super_voice_shared::validation::get_http_socket_path(),
-            daemon_status: DaemonStatus::Disconnected,
-            reconnect_retry:
-                super_voice_shared::daemon::retry::RetryStrategy::for_initial_connection(),
+            connection: super_voice_app_core::state::connection::ConnectionState::default(),
             microphone: super_voice_app_core::state::Microphone::default(),
             recording_test: super_voice_app_core::state::recording_test::RecordingTest::default(),
             behavior: crate::state::behavior::BehaviorState::default(),
@@ -188,9 +184,6 @@ impl AppModel {
             // The look `main` gave the app its theme from.
             #[cfg(target_os = "macos")]
             look: super::macos::appearance::launch_look(),
-
-            #[cfg(target_os = "macos")]
-            daemon_agent: None,
         };
 
         // On macOS the native frame and the app's own toolbar replace
@@ -212,7 +205,7 @@ impl AppModel {
         #[cfg(target_os = "macos")]
         if super::macos::bundle::in_bundle() {
             super::macos::bundle::request_notification_permission();
-            std::thread::spawn(super::macos::bundle::register_agents);
+            std::thread::spawn(super_voice_app_core::pages::connection::register_agents);
         }
 
         // Create startup commands

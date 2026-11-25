@@ -28,7 +28,7 @@ impl AppModel {
     pub(super) fn header_end_impl(&self) -> Vec<Element<'_, Message>> {
         // No daemon → the body shows the connection warning; keep the title bar
         // empty rather than surfacing stale GPU / readiness readouts.
-        if self.daemon_status != DaemonStatus::Connected {
+        if self.connection.status != DaemonStatus::Connected {
             return Vec::new();
         }
 
@@ -56,7 +56,7 @@ impl AppModel {
     /// Enables the COSMIC application to create a nav bar with this model.
     pub(super) fn nav_model_impl(&self) -> Option<&nav_bar::Model> {
         // Only show navigation when daemon is connected
-        if self.daemon_status == DaemonStatus::Connected {
+        if self.connection.status == DaemonStatus::Connected {
             Some(&self.nav)
         } else {
             None
@@ -90,7 +90,7 @@ impl AppModel {
             // tab) while the daemon is connected; navigating away or a dropped
             // connection both dismiss it here, no extra bookkeeping required.
             ContextPage::AddBackend => {
-                let on_library_page = self.daemon_status == DaemonStatus::Connected
+                let on_library_page = self.connection.status == DaemonStatus::Connected
                     && self.active_page() == Page::Library;
                 on_library_page.then(|| {
                     context_drawer::context_drawer(
@@ -107,7 +107,7 @@ impl AppModel {
             // scoped the same way: it lists the backends that can fill the
             // stage and selects the chosen one.
             ContextPage::SelectBlockBackend(stage) => {
-                let on_models_page = self.daemon_status == DaemonStatus::Connected
+                let on_models_page = self.connection.status == DaemonStatus::Connected
                     && self.active_page() == Page::Models;
                 on_models_page.then(|| {
                     context_drawer::context_drawer(
@@ -122,7 +122,7 @@ impl AppModel {
             // The "Select a backend" sheet is scoped to the Models page: it
             // lists installed backends and activates the chosen one.
             ContextPage::SelectBackend => {
-                let on_models_page = self.daemon_status == DaemonStatus::Connected
+                let on_models_page = self.connection.status == DaemonStatus::Connected
                     && self.active_page() == Page::Models;
                 on_models_page.then(|| {
                     context_drawer::context_drawer(
@@ -155,7 +155,7 @@ impl AppModel {
             // (Models) and from each installed card (Library), so it's scoped to
             // either page, and only when a backend is selected for configuration.
             ContextPage::ConfigureBackend => {
-                let on_backend_page = self.daemon_status == DaemonStatus::Connected
+                let on_backend_page = self.connection.status == DaemonStatus::Connected
                     && matches!(self.active_page(), Page::Models | Page::Library);
                 let backend = self
                     .configure
@@ -179,8 +179,8 @@ impl AppModel {
     /// The Assistants page's open dialog: Connect, or a key for another
     /// assistant. Scoped to the page, as the sheets are to theirs.
     pub(super) fn assistants_dialog(&self) -> Option<Element<'_, Message>> {
-        let on_assistants_page =
-            self.daemon_status == DaemonStatus::Connected && self.active_page() == Page::Assistants;
+        let on_assistants_page = self.connection.status == DaemonStatus::Connected
+            && self.active_page() == Page::Assistants;
         if !on_assistants_page {
             return None;
         }
@@ -198,8 +198,8 @@ impl AppModel {
     /// extra bookkeeping. The draft, because the draft *is* what the sheet
     /// edits: without one there is nothing to draw.
     fn context_editor_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Message>> {
-        let on_contexts_page =
-            self.daemon_status == DaemonStatus::Connected && self.active_page() == Page::Contexts;
+        let on_contexts_page = self.connection.status == DaemonStatus::Connected
+            && self.active_page() == Page::Contexts;
         if !on_contexts_page {
             return None;
         }
@@ -241,7 +241,7 @@ impl AppModel {
     /// The active page, or the connection page while disconnected.
     fn page_view(&self) -> Element<'_, Message> {
         // Force Connection page when daemon is not connected
-        if self.daemon_status != DaemonStatus::Connected {
+        if self.connection.status != DaemonStatus::Connected {
             return views::connection::page(self);
         }
 

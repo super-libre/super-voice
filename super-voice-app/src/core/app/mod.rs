@@ -21,7 +21,6 @@ use cosmic::iced::Subscription;
 use cosmic::prelude::*;
 use cosmic::widget::{menu, nav_bar};
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 /// The model operation a pipeline stage has in flight. Defined with the
 /// per-stage container that holds it, and re-exported here because every
@@ -52,13 +51,9 @@ pub struct AppModel {
     nav: nav_bar::Model,
 
     // Super Voice specific state
-    /// Socket path for daemon communication
-    pub socket_path: PathBuf,
-    /// Current daemon connection status
-    pub daemon_status: DaemonStatus,
-    /// Reconnect backoff (shared `RetryStrategy`: exponential + jitter),
-    /// advanced on each failed reconnect and reset on a successful connection.
-    pub reconnect_retry: super_voice_shared::daemon::retry::RetryStrategy,
+    /// The connection to the daemon: whether it answers, the wait before
+    /// trying again, and, on macOS, where the daemon's agent stands.
+    pub connection: super_voice_app_core::state::connection::ConnectionState,
     /// The daemon's microphone: open or not, its level, and whether that
     /// sounds like speech. Every page that records reads it.
     pub microphone: super_voice_app_core::state::Microphone,
@@ -200,11 +195,6 @@ pub struct AppModel {
     /// The system look the theme was built from; see `macos::appearance`.
     #[cfg(target_os = "macos")]
     look: macos::appearance::Look,
-    /// Where the bundle's daemon agent stands, while the daemon is
-    /// unreachable; see `macos::bundle`. `None` outside the bundle, and until
-    /// first looked up.
-    #[cfg(target_os = "macos")]
-    pub(crate) daemon_agent: Option<super_voice_shared::launch_agents::Status>,
 }
 
 impl AppModel {
@@ -430,7 +420,7 @@ impl cosmic::Application for AppModel {
         }
         // The Assistants page's open sessions, while it is shown: they start,
         // speak, listen and end on their own.
-        if self.daemon_status == DaemonStatus::Connected
+        if self.connection.status == DaemonStatus::Connected
             && self.active_page() == crate::state::Page::Assistants
         {
             subs.push(
@@ -493,7 +483,7 @@ impl cosmic::Application for AppModel {
             subs.push(Subscription::run(macos::menu_bar::events));
             subs.push(Subscription::run(macos::appearance::changes));
             // For the connection page, which says what to do about it.
-            if self.daemon_status != DaemonStatus::Connected && macos::bundle::in_bundle() {
+            if self.connection.status != DaemonStatus::Connected && macos::bundle::in_bundle() {
                 subs.push(Subscription::run(macos::bundle::daemon_agent));
             }
         }

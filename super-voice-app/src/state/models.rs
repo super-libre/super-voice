@@ -5,22 +5,9 @@
 // Re-export AudioTheme from shared crate
 pub use super_voice_shared::models::theme::AudioTheme;
 
-/// Daemon connection status
-#[derive(Debug, Clone, Default, PartialEq)]
-pub enum DaemonStatus {
-    #[default]
-    Disconnected,
-    Connecting,
-    Connected,
-    Error(String),
-    /// User denied the settings-scope consent prompt (either just now
-    /// or via the daemon's sticky deny cache). All settings-scope
-    /// operations will fail until the user explicitly retries
-    /// authorization — usually after `systemctl --user restart
-    /// super-stt`. The auto-retry loop is suppressed in this state to
-    /// avoid spamming the daemon's deny cache.
-    Blocked(String),
-}
+/// Daemon connection status: the core's, which the Connection page's logic
+/// keeps.
+pub use super_voice_app_core::state::connection::DaemonStatus;
 
 /// One page of the application: a nav entry's own, or a tab of a feature's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

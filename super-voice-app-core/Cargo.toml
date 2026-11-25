@@ -34,6 +34,10 @@
     tokio.workspace = true
     urlencoding = "2.1.3"
 
+# The daemon's launchd target names the user's id.
+[target.'cfg(target_os = "macos")'.dependencies]
+    libc.workspace = true
+
 [dev-dependencies]
     # The `v1/` wrapper tests drive each call against a fake daemon served on a
     # Unix socket (see `daemon/client/tests/fake_daemon.rs`), so the request the

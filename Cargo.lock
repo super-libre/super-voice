@@ -7320,6 +7320,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "i18n-embed",
+ "libc",
  "log",
  "mockito",
  "rust-embed",
