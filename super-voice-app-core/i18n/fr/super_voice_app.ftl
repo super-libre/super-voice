@@ -870,7 +870,6 @@ daemon-connected = Service connecté
 daemon-connecting = Connexion au service…
 daemon-not-answering = Le service ne répond pas : { $reason }
 daemon-access-refused = L’accès a été refusé : { $reason }
-page-not-built = Cette page n’est pas encore faite.
 
 # The window: each feature's readiness, the command palette, the drawer
 readiness-unknown = Inconnu
