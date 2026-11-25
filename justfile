@@ -547,6 +547,7 @@ macos-swift-app config="release":
 # SUPER_VOICE_SNAPSHOT_INACTIVE=1 to take it anyway, for layout alone.
 # SUPER_VOICE_HTTP_SOCKET points it at a daemon (a test one, with
 # XDG_STATE_HOME keeping its token apart), and the shot waits for the header.
+# SUPER_VOICE_LANGUAGE=fr shoots it in French.
 # Scenes: `notes`, the list; `note`, the newest note open; and `edited`, that
 # note with a sentence typed into it and saved. It reads a copy of the sample
 # notes in super-voice-macos/Fixtures, never yours, so `edited` changes only
@@ -579,6 +580,7 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
         ${SUPER_VOICE_SNAPSHOT_INACTIVE:+--env SUPER_VOICE_SNAPSHOT_INACTIVE=1} \
         ${SUPER_VOICE_HTTP_SOCKET:+--env SUPER_VOICE_HTTP_SOCKET="$SUPER_VOICE_HTTP_SOCKET"} \
         ${XDG_STATE_HOME:+--env XDG_STATE_HOME="$XDG_STATE_HOME"} \
+        ${SUPER_VOICE_LANGUAGE:+--env SUPER_VOICE_LANGUAGE="$SUPER_VOICE_LANGUAGE"} \
         --env XDG_DATA_HOME="$data" \
         "target/debug/Super Voice (SwiftUI).app"
     if [ ! -s "$out" ]; then

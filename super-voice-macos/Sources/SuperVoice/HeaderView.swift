@@ -47,8 +47,8 @@ struct HeaderPills: View {
                 if let gpu = model.header.gpus.first {
                     GpuPill(gpu: gpu, all: model.header.gpus)
                 }
-                FeaturePill(icon: .microphone, feature: "Speech to text", readiness: model.header.speechToText)
-                FeaturePill(icon: .speakerHigh, feature: "Text to speech", readiness: model.header.textToSpeech)
+                FeaturePill(icon: .microphone, feature: t("speech-to-text"), readiness: model.header.speechToText)
+                FeaturePill(icon: .speakerHigh, feature: t("text-to-speech"), readiness: model.header.textToSpeech)
             }
         }
     }
@@ -102,13 +102,13 @@ extension Readiness {
     /// What the dot means, after the feature's name.
     var words: String {
         switch self {
-        case .none: "No backend selected"
-        case .blocked: "Backend setup incomplete"
-        case .notLoaded: "No model loaded"
-        case .ready: "Model loaded and ready"
-        case .idle: "Model ready"
-        case .failed: "The selected model isn't loaded"
-        case .noVoice: "No cloned voice chosen"
+        case .none: t("no-backend-selected")
+        case .blocked: t("backend-setup-incomplete")
+        case .notLoaded: t("no-model-loaded")
+        case .ready: t("model-loaded-and-ready")
+        case .idle: t("model-ready")
+        case .failed: t("the-selected-model-isn-t-loaded")
+        case .noVoice: t("no-cloned-voice-chosen")
         }
     }
 }
@@ -136,17 +136,27 @@ struct GpuPill: View {
 
     private var label: String {
         if let used = gpu.usedBytes {
-            return "\(gpu.name) · \(gib(used)) / \(gib(gpu.totalBytes)) GiB"
+            return "\(gpu.name) · " + t("memory-pair", ["value0": gib(used), "value1": gib(gpu.totalBytes)])
         }
-        return "\(gpu.name) · \(gib(gpu.totalBytes)) GiB"
+        return "\(gpu.name) · " + size(gpu.totalBytes)
     }
 
     private func detail(_ gpu: GpuReadout) -> String {
         guard let used = gpu.usedBytes else {
-            return "\(gpu.fullName)\n\(gib(gpu.totalBytes)) GiB"
+            return t("gpu-memory-total", ["value0": gpu.fullName, "value1": size(gpu.totalBytes)])
         }
         let free = gpu.totalBytes > used ? gpu.totalBytes - used : 0
-        return "\(gpu.fullName)\n\(gib(used)) GiB used, \(gib(free)) GiB free of \(gib(gpu.totalBytes)) GiB"
+        return t("gpu-memory-summary", [
+            "value0": gpu.fullName,
+            "value1": size(used),
+            "value2": size(free),
+            "value3": size(gpu.totalBytes),
+        ])
+    }
+
+    /// "24.0 GiB".
+    private func size(_ bytes: UInt64) -> String {
+        t("memory-size", ["gib": gib(bytes)])
     }
 }
 

@@ -9,14 +9,14 @@ enum Destination: Hashable, CaseIterable {
 
     var title: String {
         switch self {
-        case .models: "Models"
-        case .library: "Library"
-        case .speechToText: "Speech to text"
-        case .textToSpeech: "Text to speech"
-        case .shortcuts: "Shortcuts"
-        case .assistants: "Assistants"
-        case .settings: "Settings"
-        case .updates: "Updates"
+        case .models: t("models")
+        case .library: t("library")
+        case .speechToText: t("speech-to-text")
+        case .textToSpeech: t("text-to-speech")
+        case .shortcuts: t("shortcuts")
+        case .assistants: t("assistants")
+        case .settings: t("settings")
+        case .updates: t("updates")
         }
     }
 
@@ -97,9 +97,9 @@ struct SpeechToTextView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Picker("Tab", selection: $tab) {
-                Text("Notes").tag(Tab.notes)
-                Text("Contexts").tag(Tab.contexts)
-                Text("Behavior").tag(Tab.behavior)
+                Text(t("notes")).tag(Tab.notes)
+                Text(t("contexts")).tag(Tab.contexts)
+                Text(t("behavior")).tag(Tab.behavior)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -109,11 +109,11 @@ struct SpeechToTextView: View {
             .padding(.horizontal, 28)
             switch tab {
             case .notes: NotesView(model: notes)
-            case .contexts: NotYetView(title: "Contexts", icon: .microphone)
-            case .behavior: NotYetView(title: "Behavior", icon: .microphone)
+            case .contexts: NotYetView(title: t("contexts"), icon: .microphone)
+            case .behavior: NotYetView(title: t("behavior"), icon: .microphone)
             }
         }
-        .navigationTitle("Speech to text")
+        .navigationTitle(t("speech-to-text"))
     }
 }
 
@@ -143,7 +143,7 @@ struct NotYetView: View {
                 IconView(icon: icon, size: 40)
             }
         } description: {
-            Text("This page is in the Linux app, and not here yet.")
+            Text(t("page-not-in-this-app-yet"))
         }
         .navigationTitle(title)
     }

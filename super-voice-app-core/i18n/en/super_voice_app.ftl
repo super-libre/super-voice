@@ -806,3 +806,7 @@ choose-a-voice-recording = Choose a voice recording
 contexts-could-not-load = Couldn't load contexts: { $error }
 context-could-not-save = Couldn't save that context: { $error }
 backend-context-change-failed = Couldn't change this backend's context: { $error }
+
+# The macOS app, while its pages arrive
+page-not-in-this-app-yet = This page is in the Linux app, and not here yet.
+recording-not-in-this-app-yet = Recording isn't in this app yet. Use the Linux app, or the shortcut.
