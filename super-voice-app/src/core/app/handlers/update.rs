@@ -122,8 +122,7 @@ impl AppModel {
                     Err(e) => {
                         log::warn!("failed to relaunch after update: {e}");
                         if let Some(run) = self.update.run.as_mut() {
-                            run.error =
-                                Some("Couldn't relaunch — start Super Voice manually".to_string());
+                            run.error = Some(crate::fl!("relaunch-failed"));
                         }
                         Task::none()
                     }
