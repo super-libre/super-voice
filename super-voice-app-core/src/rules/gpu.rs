@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! How the header shows the GPU: its name, short, and how full its memory is.
+//! How the apps show a GPU: its name, short, how full its memory is, and
+//! the frameworks models run on.
 
 /// A GPU's name without the vendor's marketing prefix, for compact display
 /// (`"NVIDIA GeForce RTX 3090"` → `"RTX 3090"`). The full name goes in the
@@ -20,6 +21,21 @@ pub fn short_name(name: &str) -> &str {
         }
     }
     name
+}
+
+/// A framework as people name it, from the id the daemon uses: `cuda` is
+/// CUDA, `vulkan` Vulkan. An id the app doesn't know is shown as it is.
+#[must_use]
+pub fn accel_name(accel: &str) -> String {
+    match accel {
+        "cpu" => "CPU",
+        "cuda" => "CUDA",
+        "rocm" => "ROCm",
+        "vulkan" => "Vulkan",
+        "metal" => "Metal",
+        other => other,
+    }
+    .to_string()
 }
 
 /// How full a GPU's memory is, as its meter's colour says: green, then yellow
@@ -59,6 +75,15 @@ pub fn meter_level(used: u64, total: u64) -> MeterLevel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frameworks_go_by_their_names() {
+        assert_eq!(accel_name("cuda"), "CUDA");
+        assert_eq!(accel_name("rocm"), "ROCm");
+        assert_eq!(accel_name("vulkan"), "Vulkan");
+        assert_eq!(accel_name("cpu"), "CPU");
+        assert_eq!(accel_name("tpu"), "tpu");
+    }
 
     #[test]
     fn the_vendor_prefix_goes() {

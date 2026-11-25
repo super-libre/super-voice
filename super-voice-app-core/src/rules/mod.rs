@@ -5,4 +5,5 @@
 pub mod backends;
 pub mod gpu;
 pub mod memory;
+pub mod pipeline;
 pub mod status;

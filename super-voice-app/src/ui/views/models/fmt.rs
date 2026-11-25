@@ -5,6 +5,8 @@ use cosmic::widget;
 
 use crate::ui::messages::Message;
 
+pub(crate) use super_voice_app_core::rules::gpu::accel_name;
+
 /// Format a byte count as a one-decimal GiB string (e.g. `"24.0 GiB"`).
 // reason: display-only; the imprecision is cosmetic
 #[allow(clippy::cast_precision_loss)]
@@ -127,20 +129,6 @@ pub(super) fn no_viable_device_warning<'a>(model: &str) -> Element<'a, Message> 
     .into()
 }
 
-/// A framework as people name it, from the id the daemon uses: `cuda` is
-/// CUDA, `vulkan` Vulkan. An id this app does not know is shown as it is.
-pub(crate) fn accel_name(accel: &str) -> String {
-    match accel {
-        "cpu" => "CPU",
-        "cuda" => "CUDA",
-        "rocm" => "ROCm",
-        "vulkan" => "Vulkan",
-        "metal" => "Metal",
-        other => other,
-    }
-    .to_string()
-}
-
 /// A download's size, e.g. `"640 MB"` or `"1.4 GB"`.
 // reason: display-only; the imprecision is cosmetic
 #[allow(clippy::cast_precision_loss)]
@@ -171,15 +159,6 @@ pub(super) fn running_note(chosen: Option<&str>, running: &str) -> Option<String
 #[cfg(test)]
 mod device_name_tests {
     use super::*;
-
-    #[test]
-    fn frameworks_go_by_their_names() {
-        assert_eq!(accel_name("cuda"), "CUDA");
-        assert_eq!(accel_name("rocm"), "ROCm");
-        assert_eq!(accel_name("vulkan"), "Vulkan");
-        assert_eq!(accel_name("cpu"), "CPU");
-        assert_eq!(accel_name("tpu"), "tpu");
-    }
 
     #[test]
     fn a_download_reads_in_mb_then_gb() {
