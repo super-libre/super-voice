@@ -83,6 +83,39 @@ pub fn update(test: &mut RecordingTest, microphone: &mut Microphone, input: Inpu
     }
 }
 
+/// What the microphone is doing, as a message key: hearing speech, hearing
+/// silence, or closed.
+#[must_use]
+pub const fn hearing_key(microphone: &Microphone) -> &'static str {
+    match (microphone.recording, microphone.speech) {
+        (true, true) => "hearing-speech",
+        (true, false) => "hearing-silence",
+        (false, _) => "microphone-closed",
+    }
+}
+
+/// What a preview spans, as a message key.
+#[must_use]
+pub const fn spans_key(source: PreviewSource) -> &'static str {
+    match source {
+        PreviewSource::Stream => "everything-said-so-far",
+        PreviewSource::Window => "the-last-few-seconds",
+    }
+}
+
+/// What the test's transcript box says: the last take's words, that it heard
+/// nothing or failed, or what the box is for before any take.
+#[must_use]
+pub fn heard_text(heard: Option<&Heard>) -> String {
+    match heard {
+        None => crate::i18n::text("test-transcript-shows-here", &[]),
+        Some(Heard::Words(words)) => words.clone(),
+        Some(Heard::Nothing) => crate::i18n::text("no-speech-detected", &[]),
+        Some(Heard::Failed(e)) => crate::i18n::text("the-recording-failed", &[("error", e)])
+            .replace(['\u{2068}', '\u{2069}'], ""),
+    }
+}
+
 /// Record a take: what it hears so far, then its transcript. Dropping the
 /// stream stops the recording.
 pub fn take() -> impl Stream<Item = Input> + Send + 'static {
@@ -171,6 +204,28 @@ mod tests {
             Input::Transcribed(Err("no model".into())),
         );
         assert_eq!(test.heard, Some(Heard::Failed("no model".into())));
+    }
+
+    #[test]
+    fn the_test_says_what_it_hears_in_words_of_its_own() {
+        use super::{heard_text, hearing_key};
+        let mut microphone = Microphone::default();
+        assert_eq!(hearing_key(&microphone), "microphone-closed");
+        microphone.recording = true;
+        assert_eq!(hearing_key(&microphone), "hearing-silence");
+        microphone.speech = true;
+        assert_eq!(hearing_key(&microphone), "hearing-speech");
+        assert_eq!(heard_text(Some(&Heard::Words("hi".into()))), "hi");
+        let failed = heard_text(Some(&Heard::Failed("no model".into())));
+        assert!(failed.contains("no model") && !failed.contains('\u{2068}'));
+        for key in [
+            "hearing-speech",
+            "hearing-silence",
+            "microphone-closed",
+            "test-transcript-shows-here",
+        ] {
+            assert!(crate::i18n::LANGUAGE_LOADER.has(key), "no message {key}");
+        }
     }
 
     #[test]
