@@ -202,9 +202,7 @@ impl CorePage for NotesPage {
         let outcome = page::update(&mut self.state, input);
         self.sync_editor(window, cx);
         effects::run_effects(self, outcome.effects, window, cx);
-        let notice = outcome
-            .notice
-            .map(|notice| Toast::error(notice_text(&notice)));
+        let notice = outcome.notice.map(|notice| toast_for(&notice));
         let notice = notice.or_else(|| {
             exported.map(|path| {
                 Toast::success(t_with("exported-to", &[("path", &path)])).title(t("note-exported"))
@@ -260,6 +258,22 @@ impl CorePage for NotesPage {
                 None
             }
         }
+    }
+}
+
+/// A notice as a toast: a failure as an error; a take that heard nothing
+/// as information, since nothing failed; a take refused because another
+/// recording holds the microphone as a warning.
+fn toast_for(notice: &Notice) -> Toast {
+    let text = notice_text(notice);
+    match notice {
+        Notice::NoSpeech => Toast::info(text),
+        Notice::AnotherRecording => Toast::warning(text),
+        Notice::CouldNotRead(_)
+        | Notice::CouldNotSave(_)
+        | Notice::CouldNotDelete(_)
+        | Notice::CouldNotExport(_)
+        | Notice::RecordingFailed(_) => Toast::error(text),
     }
 }
 
