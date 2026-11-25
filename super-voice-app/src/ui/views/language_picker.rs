@@ -6,6 +6,7 @@ use cosmic::widget::{self, button, column, scrollable, text_input};
 use crate::core::app::AppModel;
 use crate::ui::messages::{LanguageMessage, Message, SettingsMessage};
 use super_voice_app_core::languages::picker_rows;
+use super_voice_app_core::pages::model_language::{self, ModelKey};
 use super_voice_app_core::pages::settings::Input;
 
 pub fn sheet(app: &AppModel) -> Element<'_, Message> {
@@ -54,12 +55,10 @@ pub fn sheet(app: &AppModel) -> Element<'_, Message> {
     let mut list = column::with_capacity(rows.len()).spacing(spacing.space_xxs);
     for (tag, label) in rows {
         let msg = if let Some((stage, ref src, ref mdl)) = app.language.language_picker_target {
-            Message::Language(LanguageMessage::ModelLanguageSelected {
-                stage,
-                source: src.clone(),
-                model: mdl.clone(),
-                choice: tag,
-            })
+            Message::Language(LanguageMessage::Model(model_language::Input::Picked(
+                ModelKey::new(stage, src.clone(), mdl.clone()),
+                tag,
+            )))
         } else {
             Message::Settings(SettingsMessage::Page(Input::PrimaryLanguagePicked(tag)))
         };

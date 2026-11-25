@@ -42,7 +42,4 @@ pub use models::{
     ActionError, AudioTheme, ContextPage, DaemonStatus, ErrorScope, MenuAction, ModelsTab, Page,
     Section,
 };
-pub use super_voice_app_core::state::{
-    BlockStage, LanguageResolution, SpeakingStatus, SpeechState, Stage, VoiceChoice,
-    VoiceResolution, VoiceState,
-};
+pub use super_voice_app_core::state::{BlockStage, SpeakingStatus, SpeechState, Stage, VoiceState};

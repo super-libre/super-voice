@@ -346,15 +346,12 @@ impl AppModel {
                 // Every pair answered for, not just one: both stages
                 // show a language control, and a block that follows the
                 // global value goes stale on either card.
-                let pairs: Vec<(Stage, String, String)> =
-                    self.language.model_languages.pairs().collect();
-                let mut tasks = vec![crate::core::app::handlers::settings_page::load_language()];
-                tasks.extend(
-                    pairs.into_iter().map(|(stage, source, model)| {
-                        self.load_model_language(stage, &source, model)
-                    }),
-                );
-                Some(Task::batch(tasks))
+                Some(Task::batch([
+                    crate::core::app::handlers::settings_page::load_language(),
+                    Task::done(crate::core::app::handlers::language::page_action(
+                        super_voice_app_core::pages::model_language::Input::PrimaryChanged,
+                    )),
+                ]))
             }
             // Another client (or this one) changed the post-processor.
             // Re-read it so the section shows the current selection and

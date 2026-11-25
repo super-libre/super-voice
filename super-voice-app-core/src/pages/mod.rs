@@ -13,6 +13,8 @@ pub mod behavior;
 pub mod clips;
 pub mod contexts;
 pub mod library;
+pub mod model_language;
+pub mod model_voice;
 pub mod models;
 pub mod notes;
 pub mod recording_test;

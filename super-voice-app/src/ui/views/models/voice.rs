@@ -11,6 +11,7 @@ use crate::core::app::AppModel;
 use crate::daemon::backends::BackendInfo;
 use crate::ui::icons;
 use crate::ui::messages::{Message, VoiceMessage};
+use super_voice_app_core::pages::model_voice::{self, DefaultVoice, Input, VoiceWarning};
 
 /// The voice dropdown for `model`, or `None` when there is nothing to pick.
 ///
@@ -28,37 +29,20 @@ pub(super) fn voice_dropdown<'a>(
     model: &str,
     app: &'a AppModel,
 ) -> Option<Element<'a, Message>> {
-    // Stale-block guard, the same one the language button uses: the two values
-    // below describe one model, and a card drawing another must not read them.
-    if app.voice.target.as_ref() != Some(&(backend.source.clone(), model.to_string())) {
+    // Stale-block guard, the same one the language button uses: the voice
+    // state describes one model, and a card drawing another must not read it.
+    if !model_voice::shows(&app.voice, &backend.source, model) {
         return None;
     }
-    let block = app.voice.resolution.as_ref()?;
-    if app.voice.choices.is_empty() {
-        return None;
-    }
+    let (default, voices) = model_voice::picker(&app.voice)?;
 
-    let default_row = block.default.as_ref().map_or_else(
-        || crate::fl!("no-cloned-voice-chosen"),
-        |id| {
-            // Named, not just "Default": a user comparing two rows should not
-            // have to remember which voice the manifest picked.
-            let label = app
-                .voice
-                .choices
-                .iter()
-                .find(|v| &v.id == id)
-                .map_or(id.as_str(), |v| v.label.as_str());
-            crate::fl!("voice-default", label = label)
-        },
-    );
+    let default_row = match default {
+        DefaultVoice::NoneChosen => crate::fl!("no-cloned-voice-chosen"),
+        DefaultVoice::Named(label) => crate::fl!("voice-default", label = label),
+    };
     let mut labels: Vec<String> = vec![default_row];
-    // Cloned voices are marked. They sit in the same list as the presets
-    // because they are the same choice to the user, but one of them is a
-    // recording they made and the other is shipped with the model, and a list
-    // that did not say could put two identical labels side by side.
-    labels.extend(app.voice.choices.iter().map(|v| {
-        if v.kind == "cloned" {
+    labels.extend(voices.iter().map(|(v, cloned)| {
+        if *cloned {
             crate::fl!("voice-cloned", label = v.label.as_str())
         } else {
             v.label.clone()
@@ -68,24 +52,19 @@ pub(super) fn voice_dropdown<'a>(
     // The selected row is the *stored* voice, not the effective one: with no
     // preference set the default row is what is selected, which is exactly what
     // `override: null` means.
-    let selected = block.model_override.as_ref().and_then(|id| {
-        app.voice
-            .choices
-            .iter()
-            .position(|v| &v.id == id)
-            .map(|i| i + 1)
-    });
+    let selected = model_voice::chosen(&app.voice)
+        .and_then(|id| voices.iter().position(|(v, _)| v.id == id).map(|i| i + 1));
 
     // The ids are cloned into the closure rather than indexed out of `app` on
     // press: the catalog can be replaced by a refresh between render and click,
     // and an index into a list that has since changed would store the wrong
     // voice.
-    let ids: Vec<String> = app.voice.choices.iter().map(|v| v.id.clone()).collect();
+    let ids: Vec<String> = voices.iter().map(|(v, _)| v.id.clone()).collect();
     Some(
         widget::dropdown(labels, selected.or(Some(0)), move |index| {
-            Message::Voice(VoiceMessage::ModelVoiceSelected(
+            Message::Voice(VoiceMessage::Page(Input::Picked(
                 index.checked_sub(1).map(|i| ids[i].clone()),
-            ))
+            )))
         })
         .into(),
     )
@@ -105,17 +84,10 @@ pub(super) fn voice_warning<'a>(
     model: &str,
     app: &'a AppModel,
 ) -> Option<Element<'a, Message>> {
-    if app.voice.target.as_ref() != Some(&(backend.source.clone(), model.to_string())) {
+    if !model_voice::shows(&app.voice, &backend.source, model) {
         return None;
     }
-    let block = app.voice.resolution.as_ref()?;
-    if !block.has_no_voice() {
-        return None;
-    }
-    let detail = voice_warning_text(
-        !app.voice.choices.is_empty(),
-        block.kinds.iter().any(|k| k == "cloned"),
-    );
+    let detail = voice_warning_text(model_voice::warning(&app.voice)?);
     // The same warning glyph the VRAM notice uses, so the two read as one kind
     // of message rather than two.
     Some(
@@ -131,22 +103,13 @@ pub(super) fn voice_warning<'a>(
 
 /// The wording [`voice_warning`] shows: which way out of "nothing to speak in"
 /// this user actually has.
-///
-/// `has_choices` is whether the dropdown above has anything in it, `clones`
-/// whether the model takes cloned ids at all. Kept free of [`AppModel`] so the
-/// one thing this line must never do — send someone who has already recorded a
-/// voice off to record one — is a test rather than a screenshot.
-fn voice_warning_text(has_choices: bool, clones: bool) -> String {
-    match (has_choices, clones) {
+fn voice_warning_text(warning: VoiceWarning) -> String {
+    match warning {
         // Something to pick, and the dropdown offering it is directly above.
-        (true, _) => crate::fl!("no-built-in-voices-pick-a-cloned-voice"),
-        (false, true) => {
-            crate::fl!("no-built-in-voices-record-one")
-        }
-        // Neither a list nor a way to fill one: a manifest that declares preset
-        // voices and then ships none. Nothing to send the user to, so the line
-        // states the fact and stops.
-        (false, false) => crate::fl!("no-cloned-voice-chosen"),
+        VoiceWarning::PickACloned => crate::fl!("no-built-in-voices-pick-a-cloned-voice"),
+        VoiceWarning::RecordOne => crate::fl!("no-built-in-voices-record-one"),
+        // Nothing to send the user to, so the line states the fact and stops.
+        VoiceWarning::NoneChosen => crate::fl!("no-cloned-voice-chosen"),
     }
 }
 
@@ -156,11 +119,12 @@ mod tests {
     //! and the Voices tab are different answers, and offering the wrong one
     //! is the whole failure mode: a user with a library told to go and record.
     use super::voice_warning_text;
+    use super_voice_app_core::pages::model_voice::warning_for;
 
     /// Which verb the line reaches for, lowercased. The wording is meant to be
     /// edited; which way out it points is not, so that is all these assert on.
     fn routes(has_choices: bool, clones: bool) -> (String, bool, bool) {
-        let text = voice_warning_text(has_choices, clones).to_lowercase();
+        let text = voice_warning_text(warning_for(has_choices, clones)).to_lowercase();
         let picks = text.contains("pick");
         let records = text.contains("record");
         (text, picks, records)

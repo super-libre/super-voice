@@ -7,7 +7,7 @@
 
 /// How a model's voice resolves, from
 /// `GET /tts/pipeline/{stage}/model/{model}/voice`.
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct VoiceResolution {
     /// The voice an utterance naming none is spoken in. `None` when the model
     /// has neither a stored voice nor a `default_voice` — the state a cloning
@@ -47,7 +47,7 @@ impl VoiceResolution {
 }
 
 /// One voice a model can be pinned to, from `.../voice/list`.
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct VoiceChoice {
     /// The `voice` id to send.
     pub id: String,

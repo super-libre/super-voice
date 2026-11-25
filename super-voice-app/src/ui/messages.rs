@@ -437,28 +437,9 @@ pub enum VoicesMessage {
 /// The synthesis model's voice.
 #[derive(Debug, Clone)]
 pub enum VoiceMessage {
-    /// Resolution block for `(source, model)`, from
-    /// `GET /tts/pipeline/{stage}/model/{model}/voice`.
-    ModelVoiceLoaded {
-        source: String,
-        model: String,
-        block: crate::state::VoiceResolution,
-    },
-    /// The voices `(source, model)` can be pinned to.
-    ///
-    /// A separate message from the block for the same reason the language pair
-    /// is split: choosing a voice rewrites the block and leaves this list as it
-    /// was, so folding the two would blank the picker on every pick.
-    ModelVoicesListed {
-        source: String,
-        model: String,
-        voices: Vec<crate::state::VoiceChoice>,
-    },
-    /// The user picked a voice for the shown model, or cleared it back to the
-    /// model's own default (`None`).
-    ModelVoiceSelected(Option<String>),
-    /// A voice request failed; carries what to show.
-    VoiceError(String),
+    /// Something the voice's logic handles. See
+    /// `super_voice_app_core::pages::model_voice`.
+    Page(super_voice_app_core::pages::model_voice::Input),
 }
 
 /// The Shortcuts page.
@@ -575,40 +556,10 @@ pub enum LanguageMessage {
     },
     CloseLanguagePicker,
     LanguagePickerQueryChanged(String),
-    /// Per-model resolution block (`/stt/pipeline/{stage}/model/{model}/language`)
-    /// loaded from the daemon for `(source, model)`.
-    /// The languages a model can be pinned to, from
-    /// `GET /stt/pipeline/{stage}/model/{model}/language/list`.
-    ///
-    /// Separate from the resolution block: the block changes with every pick,
-    /// the offer cannot change for a given model, so a pick does not re-fetch
-    /// a list that has not moved.
-    ModelLanguagesLoaded {
-        stage: Stage,
-        source: String,
-        model: String,
-        languages: Vec<String>,
-    },
-    ModelLanguageLoaded {
-        /// The stage the block was read through.
-        stage: Stage,
-        source: String,
-        model: String,
-        block: crate::state::LanguageResolution,
-    },
-    /// User picked a per-model override.
-    /// `choice = None` → Follow global (DELETE override);
-    /// `choice = Some("auto")` → Auto-detect;
-    /// `choice = Some(tag)` → explicit BCP-47 tag.
-    ModelLanguageSelected {
-        /// The stage the model is addressed through: it resolves the bare
-        /// model name against the backend filling it.
-        stage: Stage,
-        source: String,
-        model: String,
-        choice: Option<String>,
-    },
-    LanguageError(String),
+    /// Something a model's language logic handles: reading it, what it can
+    /// be set to, and a pick. See
+    /// `super_voice_app_core::pages::model_language`.
+    Model(super_voice_app_core::pages::model_language::Input),
 }
 
 /// Speech to text's Behavior tab: its settings and the typing test.
