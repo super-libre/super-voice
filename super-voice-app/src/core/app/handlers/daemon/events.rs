@@ -211,7 +211,9 @@ impl AppModel {
             // that page.
             DaemonStatusEvent::UpdateAvailable { latest_version } => {
                 log::info!("Daemon reports update available: {latest_version}");
-                Some(self.handle_update_messages(UpdateMessage::AvailableEventReceived))
+                Some(self.handle_update_messages(UpdateMessage::Page(
+                    super_voice_app_core::pages::updates::Input::Available,
+                )))
             }
         }
     }
@@ -346,7 +348,7 @@ impl AppModel {
                 // global value goes stale on either card.
                 let pairs: Vec<(Stage, String, String)> =
                     self.language.model_languages.pairs().collect();
-                let mut tasks = vec![self.load_primary_language()];
+                let mut tasks = vec![crate::core::app::handlers::settings_page::load_language()];
                 tasks.extend(
                     pairs.into_iter().map(|(stage, source, model)| {
                         self.load_model_language(stage, &source, model)
@@ -364,7 +366,7 @@ impl AppModel {
             // daemon reports a model out of memory as idle only while the next
             // use would load it. So every stage is read again with it.
             "idle_unload" => Some(Task::batch([
-                crate::core::app::handlers::tasks::load_idle_unload(),
+                crate::core::app::handlers::settings_page::load_idle_unload(),
                 crate::core::app::handlers::stage::load_block(BlockStage::PostProcessing),
                 crate::core::app::handlers::stage::load_block(BlockStage::Synthesis),
                 self.read_transcription_idle(),
@@ -374,7 +376,7 @@ impl AppModel {
             "audio_theme" => Some(crate::core::app::handlers::tasks::load_audio_theme()),
             "volume" => Some(crate::core::app::handlers::tasks::load_volume()),
             "notification_method" => {
-                Some(crate::core::app::handlers::tasks::load_notification_method())
+                Some(crate::core::app::handlers::settings_page::load_notification_method())
             }
             "write_method" => Some(crate::core::app::handlers::tasks::load_write_method()),
             "preview_typing" => Some(crate::core::app::handlers::tasks::load_preview_typing()),
@@ -431,7 +433,9 @@ impl AppModel {
                     // already chains `CheckNow`), while a genuine
                     // cross-app change still gets a correct fresh
                     // recompute.
-                    Some(self.handle_update_messages(UpdateMessage::CheckNow))
+                    Some(self.handle_update_messages(UpdateMessage::Page(
+                        super_voice_app_core::pages::updates::Input::CheckNow,
+                    )))
                 }
                 None => None,
             },
@@ -507,7 +511,9 @@ impl AppModel {
             SynthesisEvent::SettingsChanged { setting } => self.handle_setting_changed(&setting),
             SynthesisEvent::UpdateAvailable { latest_version } => {
                 log::info!("Daemon reports update available: {latest_version}");
-                Some(self.handle_update_messages(UpdateMessage::AvailableEventReceived))
+                Some(self.handle_update_messages(UpdateMessage::Page(
+                    super_voice_app_core::pages::updates::Input::Available,
+                )))
             }
             // A backend selected or deselected elsewhere, with no load to
             // follow it and no `ready` to say so.

@@ -4,15 +4,11 @@
 //! result-to-`Message` mapping isn't re-rolled at each call site.
 
 use crate::daemon::client::{
-    get_current_audio_theme, get_idle_unload, get_notification_method, get_preview_typing,
-    get_read_method, get_recording_stop_mode, get_update_check_enabled, get_update_status,
+    get_current_audio_theme, get_preview_typing, get_read_method, get_recording_stop_mode,
     get_volume, get_write_method, list_backends, ping_daemon,
 };
 use crate::state::AudioTheme;
-use crate::ui::messages::{
-    BackendMessage, DaemonMessage, IdleUnloadMessage, Message, ModelsPageMessage,
-    NotificationMethodMessage, ReadMethodMessage, UpdateMessage,
-};
+use crate::ui::messages::{BackendMessage, DaemonMessage, Message, ReadMethodMessage};
 use cosmic::prelude::*;
 use log::warn;
 use super_voice_app_core::pages::behavior;
@@ -67,32 +63,9 @@ pub(in crate::core::app) fn reload_backends() -> Task<cosmic::Action<Message>> {
 /// first) and map the result to `RegistryListLoaded` / `RegistryListFailed`.
 /// The catalog always includes incompatible entries; filtering is client-side.
 pub(in crate::core::app) fn fetch_registry_catalog(refresh: bool) -> Task<cosmic::Action<Message>> {
-    let filters = crate::daemon::registry::ListFilters {
-        include_incompatible: Some(true),
-        ..Default::default()
-    };
     Task::perform(
-        async move {
-            // A refresh that fails still lists: the daemon answers from the
-            // copy it saved. What the failure changes is that the list may be
-            // out of date, which the Browse tab then says.
-            let refresh_error = if refresh {
-                crate::daemon::registry::refresh()
-                    .await
-                    .err()
-                    .map(|e| e.to_string())
-            } else {
-                None
-            };
-            (crate::daemon::registry::list(&filters).await, refresh_error)
-        },
-        |(r, refresh_error)| {
-            cosmic::Action::App(Message::ModelsPage(match (r, refresh_error) {
-                (Ok(resp), None) => ModelsPageMessage::RegistryListLoaded(resp),
-                (Ok(resp), Some(e)) => ModelsPageMessage::RegistryListStale(resp, e),
-                (Err(e), _) => ModelsPageMessage::RegistryListFailed(e.to_string()),
-            }))
-        },
+        super_voice_app_core::pages::library::run_catalog(refresh),
+        super::models_page::library_action,
     )
 }
 
@@ -116,8 +89,8 @@ pub(in crate::core::app) fn build_load_settings_tasks() -> Task<cosmic::Action<M
         load_recording_stop_mode(),
         load_read_method(),
         load_write_method(),
-        load_notification_method(),
-        load_idle_unload(),
+        super::settings_page::load_notification_method(),
+        super::settings_page::load_idle_unload(),
         refresh_update_status(),
         load_update_check_enabled(),
     ])
@@ -209,41 +182,6 @@ pub(in crate::core::app) fn load_write_method() -> Task<cosmic::Action<Message>>
     })
 }
 
-/// Fetch how failures are reported.
-pub(in crate::core::app) fn load_notification_method() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_notification_method(), |result| {
-        use super_voice_shared::models::notification_method::NotificationMethod;
-        match result {
-            Ok(method_str) => {
-                let method = method_str.parse::<NotificationMethod>().unwrap_or_default();
-                cosmic::Action::App(Message::NotificationMethod(
-                    NotificationMethodMessage::Loaded(method),
-                ))
-            }
-            Err(e) => {
-                warn!("Failed to load notification method: {e}");
-                cosmic::Action::App(Message::NotificationMethod(
-                    NotificationMethodMessage::Loaded(NotificationMethod::default()),
-                ))
-            }
-        }
-    })
-}
-
-/// Fetch the idle-unload setting. Also the `SettingsChanged { setting:
-/// "idle_unload" }` handler, so a change made elsewhere shows here.
-pub(in crate::core::app) fn load_idle_unload() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_idle_unload(), |result| match result {
-        Ok(after_secs) => {
-            cosmic::Action::App(Message::IdleUnload(IdleUnloadMessage::Loaded(after_secs)))
-        }
-        Err(e) => {
-            warn!("Failed to load the idle unload setting: {e}");
-            cosmic::Action::App(Message::IdleUnload(IdleUnloadMessage::Loaded(0)))
-        }
-    })
-}
-
 /// Re-fetch the self-update status. Used by connection-time settings loads
 /// (`build_load_settings_tasks`), by `on_nav_select` when the Updates page is
 /// opened, and by the `SettingsChanged { setting }` SSE handler for
@@ -251,10 +189,10 @@ pub(in crate::core::app) fn load_idle_unload() -> Task<cosmic::Action<Message>> 
 /// `beta_optin_effective` rides this status, not a separate field), so its
 /// data isn't stale from whenever the app last connected or last re-fetched.
 pub(in crate::core::app) fn refresh_update_status() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_update_status(), |result| match result {
-        Ok(status) => cosmic::Action::App(Message::Update(UpdateMessage::StatusLoaded(status))),
-        Err(e) => cosmic::Action::App(Message::Update(UpdateMessage::StatusError(e.to_string()))),
-    })
+    Task::perform(
+        super_voice_app_core::pages::updates::run_status(),
+        super::update::page_action,
+    )
 }
 
 /// Load the automatic-check-enabled setting, defaulting to `true` (its
@@ -263,13 +201,8 @@ pub(in crate::core::app) fn refresh_update_status() -> Task<cosmic::Action<Messa
 /// `SettingsChanged { setting: "update_check_enabled" }` SSE handler so a
 /// change from another client is reflected here too.
 pub(in crate::core::app) fn load_update_check_enabled() -> Task<cosmic::Action<Message>> {
-    Task::perform(get_update_check_enabled(), |result| match result {
-        Ok(enabled) => {
-            cosmic::Action::App(Message::Update(UpdateMessage::AutoCheckLoaded(enabled)))
-        }
-        Err(e) => {
-            warn!("Failed to load update-check-enabled setting: {e}");
-            cosmic::Action::App(Message::Update(UpdateMessage::AutoCheckLoaded(true)))
-        }
-    })
+    Task::perform(
+        super_voice_app_core::pages::updates::run_load_auto_check(),
+        super::update::page_action,
+    )
 }

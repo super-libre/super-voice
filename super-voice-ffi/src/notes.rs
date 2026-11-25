@@ -10,11 +10,14 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures_util::StreamExt;
 use super_voice_app_core::notes::{self, Note};
 use super_voice_app_core::pages::notes::{self as page, Effect, Input, Notice};
-use super_voice_app_core::state::notes::NotesState;
+use super_voice_app_core::state::notes::{NoteTake, NotesState, TakeTarget};
+use super_voice_shared::models::protocol::PreviewSource;
+use super_voice_shared::models::recording_stop_mode::RecordingStopMode;
 
 use crate::{Buffer, RUNTIME};
 
@@ -143,8 +146,56 @@ impl From<Notice> for NotesNotice {
     }
 }
 
+/// A take recording into a note.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct TakePage {
+    /// Which note the words go to.
+    pub into: TakeInto,
+    /// When it started, as seconds since 1970, for the app's clock.
+    pub started: f64,
+    /// How long a take may run, in seconds. Takes here stop by hand only, so
+    /// theirs is that stop mode's limit.
+    pub limit_seconds: u64,
+    /// Stop was pressed; the transcript is on its way.
+    pub stopping: bool,
+    /// What the take has heard so far.
+    pub preview: String,
+    /// What the preview spans, when the daemon said.
+    pub preview_spans: Option<PreviewSpans>,
+}
+
+/// Which note a take's words go to.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum TakeInto {
+    /// A note of its own.
+    NewNote,
+    /// The end of the open note.
+    OpenNote,
+    /// The end of a note that isn't open, made at `created` (seconds since
+    /// 1970), so the page can say which one.
+    OtherNote { created: Option<i64> },
+}
+
+/// What a take's preview spans.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum PreviewSpans {
+    /// Everything said so far.
+    Everything,
+    /// Only the last few seconds.
+    LastFewSeconds,
+}
+
+impl From<PreviewSource> for PreviewSpans {
+    fn from(source: PreviewSource) -> Self {
+        match source {
+            PreviewSource::Stream => Self::Everything,
+            PreviewSource::Window => Self::LastFewSeconds,
+        }
+    }
+}
+
 /// Everything the page shows.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct NotesPage {
     /// Whether the folder has been read. Until it has, no notes means "not
     /// read yet", not "none".
@@ -153,10 +204,8 @@ pub struct NotesPage {
     pub notes: Vec<NoteSummary>,
     /// The note open in place of the list.
     pub open: Option<OpenNotePage>,
-    /// Whether a take is recording.
-    pub recording: bool,
-    /// What the take has heard so far.
-    pub preview: String,
+    /// The take recording into a note, if one is.
+    pub take: Option<TakePage>,
     /// Whether Delete was pressed once and waits for the second.
     pub confirming_delete: bool,
     /// Where the open note was last exported to.
@@ -330,15 +379,35 @@ fn snapshot(held: &Held) -> NotesPage {
             saved: !open.unsaved(),
             replaced: open.content.replaced,
         }),
-        recording: state.take.is_some(),
-        preview: state
-            .take
-            .as_ref()
-            .map_or_default(|take| take.preview.clone()),
+        take: state.take.as_ref().map(|take| take_page(state, take)),
         confirming_delete: state.confirming_delete,
         exported: state.exported.clone(),
         notice: held.notice.clone(),
         folder: notes::dir().display().to_string(),
+    }
+}
+
+fn take_page(state: &NotesState<Buffer>, take: &NoteTake) -> TakePage {
+    let into = match &take.target {
+        TakeTarget::New => TakeInto::NewNote,
+        TakeTarget::Append(id) if state.open.as_ref().is_some_and(|open| &open.id == id) => {
+            TakeInto::OpenNote
+        }
+        TakeTarget::Append(id) => TakeInto::OtherNote {
+            created: state.note(id).map(unix_seconds),
+        },
+    };
+    let since_1970 = SystemTime::now()
+        .checked_sub(take.started.elapsed())
+        .and_then(|started| started.duration_since(UNIX_EPOCH).ok())
+        .unwrap_or_default();
+    TakePage {
+        into,
+        started: since_1970.as_secs_f64(),
+        limit_seconds: RecordingStopMode::ManualOnly.take_limit().as_secs(),
+        stopping: take.stopping,
+        preview: take.preview.clone(),
+        preview_spans: take.preview_source.map(PreviewSpans::from),
     }
 }
 

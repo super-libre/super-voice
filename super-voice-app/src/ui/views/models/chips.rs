@@ -15,6 +15,7 @@ use crate::ui::icons;
 use crate::ui::messages::Message;
 
 use super::surface::muted_text_color;
+use super_voice_app_core::pages::library::Input;
 
 /// Accent chip marking a backend with a newer version — and the control that
 /// applies it.
@@ -46,9 +47,7 @@ pub(super) fn update_chip(
     )
     .padding([spacing.space_xxxs, spacing.space_xs])
     .class(super::surface::accent_button_class(radius))
-    .on_press(Message::ModelsPage(
-        crate::ui::messages::ModelsPageMessage::UpdateBackend(source.to_string()),
-    ))
+    .on_press(Message::ModelsPage(lib(Input::Update(source.to_string()))))
     .into();
 
     if tooltips {
@@ -814,4 +813,9 @@ mod role_group_tests {
             expected(&[("Text to speech", &["kokoro-82m"])])
         );
     }
+}
+
+/// A Library input, as the page's message.
+fn lib(input: Input) -> crate::ui::messages::ModelsPageMessage {
+    crate::ui::messages::ModelsPageMessage::Library(input)
 }

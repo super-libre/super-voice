@@ -20,8 +20,8 @@ use super::common::error_banner;
 use crate::core::app::AppModel;
 use crate::state::scripts::{self, Script};
 use crate::state::voices::{SampleOrigin, ScriptChoice, VoicesState};
-use crate::ui::languages::friendly_name;
 use crate::ui::messages::{Message, VoicesMessage};
+use super_voice_app_core::languages::friendly_name;
 use super_voice_app_core::pages::voices::Input;
 
 /// A press the page's logic handles.

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use crate::core::app::AppModel;
 use crate::daemon::client::v1::pipeline::language as model_lang;
-use crate::daemon::client::v1::settings::language as client;
 use crate::state::Stage;
 use crate::state::models::ContextPage;
-use crate::ui::messages::{DaemonMessage, LanguageMessage, Message};
+use crate::ui::messages::{LanguageMessage, Message};
 use cosmic::prelude::*;
 
 impl AppModel {
@@ -27,34 +26,6 @@ impl AppModel {
             LanguageMessage::LanguagePickerQueryChanged(q) => {
                 self.language.language_picker_query = q;
                 Task::none()
-            }
-            LanguageMessage::PrimaryLanguageLoaded(lang) => {
-                self.language.primary_language = lang;
-                Task::none()
-            }
-            LanguageMessage::PrimaryLanguagesLoaded(tags) => {
-                self.language.global_offers = tags;
-                Task::none()
-            }
-            LanguageMessage::PrimaryLanguageSelected(choice) => {
-                self.language.primary_language.clone_from(&choice);
-                self.core.window.show_context = false;
-                Task::perform(
-                    async move {
-                        match choice {
-                            Some(tag) => client::set_primary_language(tag).await,
-                            None => client::clear_primary_language().await,
-                        }
-                    },
-                    |res| match res {
-                        Ok(()) => {
-                            cosmic::Action::App(Message::Daemon(DaemonMessage::RefreshDaemonStatus))
-                        }
-                        Err(e) => cosmic::Action::App(Message::Language(
-                            LanguageMessage::LanguageError(e.to_string()),
-                        )),
-                    },
-                )
             }
             per_model @ (LanguageMessage::ModelLanguagesLoaded { .. }
             | LanguageMessage::ModelLanguageLoaded { .. }
@@ -139,36 +110,6 @@ impl AppModel {
                 unreachable!("handle_model_language_messages received {other:?}")
             }
         }
-    }
-
-    /// Fetch the global Primary Language from the daemon, and the tags it will
-    /// accept (call on connect).
-    ///
-    /// Both, because the picker needs both and neither is inferable here: the
-    /// value to show as chosen, and the vocabulary to choose from.
-    #[allow(clippy::unused_self)]
-    pub(in crate::core::app) fn load_primary_language(&self) -> Task<cosmic::Action<Message>> {
-        Task::batch([
-            Task::perform(client::get_primary_language(), |res| match res {
-                Ok(lang) => cosmic::Action::App(Message::Language(
-                    LanguageMessage::PrimaryLanguageLoaded(lang),
-                )),
-                Err(e) => cosmic::Action::App(Message::Language(LanguageMessage::LanguageError(
-                    e.to_string(),
-                ))),
-            }),
-            Task::perform(client::list_primary_languages(), |res| match res {
-                Ok(tags) => cosmic::Action::App(Message::Language(
-                    LanguageMessage::PrimaryLanguagesLoaded(tags),
-                )),
-                // A failed read leaves the picker empty rather than falling back
-                // to a list of our own, which is the thing this replaced.
-                Err(e) => {
-                    log::warn!("Could not read the global languages: {e}");
-                    cosmic::Action::None
-                }
-            }),
-        ])
     }
 
     /// Fetch a specific model's language resolution block from the daemon.

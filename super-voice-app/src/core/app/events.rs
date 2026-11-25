@@ -61,35 +61,13 @@ pub(super) fn message(event: Event) -> Option<Message> {
         Event::Status(notification) => {
             Message::Daemon(DaemonMessage::DaemonEventsReceived(vec![notification]))
         }
-        Event::Install(RegistryEvent::Progress {
-            install_id,
-            source,
-            phase,
-            bytes_done,
-            bytes_total,
-        }) => Message::ModelsPage(ModelsPageMessage::InstallProgress {
-            install_id,
-            source,
-            phase,
-            bytes_done,
-            bytes_total,
-        }),
-        Event::Install(RegistryEvent::Completed { source, .. }) => {
-            Message::ModelsPage(ModelsPageMessage::InstallCompleted { source })
-        }
-        Event::Install(RegistryEvent::Failed {
-            install_id,
-            source,
-            phase,
-            error,
-            reason,
-        }) => Message::ModelsPage(ModelsPageMessage::InstallFailed {
-            install_id,
-            source,
-            phase,
-            error,
-            reason,
-        }),
+        Event::Install(
+            event @ (RegistryEvent::Progress { .. }
+            | RegistryEvent::Completed { .. }
+            | RegistryEvent::Failed { .. }),
+        ) => Message::ModelsPage(ModelsPageMessage::Library(
+            super_voice_app_core::pages::library::Input::Event(event),
+        )),
         Event::Install(
             RegistryEvent::RefreshCompleted { .. } | RegistryEvent::RefreshFailed { .. },
         ) => return None,

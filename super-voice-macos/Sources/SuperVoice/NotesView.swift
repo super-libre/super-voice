@@ -31,17 +31,10 @@ struct NotesListView: View {
     var body: some View {
         Form {
             Section {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(t("new-note"))
-                        Text(t("recording-not-in-this-app-yet"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button(t("record")) {}
-                        .buttonStyle(.borderedProminent)
-                        .disabled(true)
+                if let take = model.page.take {
+                    TakeRows(model: model, take: take)
+                } else {
+                    RecordRow(model: model)
                 }
             } header: {
                 VStack(alignment: .leading, spacing: 4) {
@@ -80,6 +73,115 @@ struct NotesListView: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// The New note row: Record, or why it is off.
+struct RecordRow: View {
+    @ObservedObject var model: NotesModel
+    @ObservedObject var header = HeaderModel.shared
+    @ObservedObject var microphone = MicrophoneModel.shared
+
+    var body: some View {
+        // Something else holds the microphone (the Behavior tab's test, or
+        // dictation): the daemon would refuse a second take.
+        let busy = microphone.microphone.recording
+        // A take with no model ready to transcribe it would record and then
+        // fail, so Record stays off until speech to text is ready.
+        let unready = notReady(feature: .speechToText, readiness: header.header.speechToText)
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t("new-note"))
+                Text(busy ? t("another-recording-is-running") : unready?.words ?? t("press-record-and-speak"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(t("record")) { model.send(.record) }
+                .buttonStyle(.borderedProminent)
+                .disabled(busy || unready != nil)
+        }
+    }
+}
+
+/// A take recording: which note it goes to, how long it has run, whether it
+/// hears speech, Stop, the level, and the words so far. As in the settings
+/// app, and laid out as its recording test is.
+struct TakeRows: View {
+    @ObservedObject var model: NotesModel
+    @ObservedObject var microphone = MicrophoneModel.shared
+    let take: TakePage
+
+    var body: some View {
+        let heard = microphone.microphone
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(t("recording-elapsed", [
+                        "elapsed": clock(max(0, context.date.timeIntervalSince1970 - take.started)),
+                        "limit": clock(TimeInterval(take.limitSeconds)),
+                    ]))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                }
+            }
+            Spacer()
+            Text(heard.speech ? t("speech") : t("silence"))
+            Button(take.stopping ? t("stopping") : t("stop"), role: .destructive) { model.send(.stop) }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(take.stopping)
+        }
+        // Rows of their own rather than `LabeledContent`, which lays out as a
+        // form's row only inside a form: the open note shows these in a card.
+        HStack {
+            Text(t("audio-level"))
+            Spacer()
+            // A floor under any sound at all, so quiet speech still moves the
+            // meter.
+            ProgressView(value: Double(heard.level > 0 ? max(heard.level, 0.1) : 0))
+                .progressViewStyle(.linear)
+                .frame(width: 240)
+        }
+        // The newest words on one line, their end showing, so the rows don't
+        // move as they come; what they span goes under the row's name.
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t("live"))
+                if let spans = take.previewSpans {
+                    Text(spans.words)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 24)
+            Text(take.preview.isEmpty ? "\u{2014}" : take.preview)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .foregroundStyle(take.preview.isEmpty ? .secondary : .primary)
+        }
+    }
+
+    /// Which note the words go to. Anywhere but on the note itself, say which.
+    private var label: String {
+        switch take.into {
+        case .newNote: t("new-note")
+        case .openNote: t("dictate-more")
+        case let .otherNote(created):
+            created.map { t("adding-to-note", ["when": when($0)]) } ?? t("dictate-more")
+        }
+    }
+}
+
+extension PreviewSpans {
+    /// What the Live row says its words are.
+    var words: String {
+        switch self {
+        case .everything: t("everything-said-so-far")
+        case .lastFewSeconds: t("the-last-few-seconds")
+        }
     }
 }
 
@@ -128,6 +230,14 @@ struct OpenNoteView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if let take = model.page.take {
+                VStack(spacing: 10) {
+                    TakeRows(model: model, take: take)
+                }
+                .padding(12)
+                .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+            }
+
             TextEditor(text: $model.text)
                 .font(.body)
                 .focused($editing)
@@ -156,9 +266,7 @@ struct OpenNoteView: View {
                         .truncationMode(.middle)
                 }
                 Button(t("export")) { model.send(.export) }
-                Button(t("dictate-more")) {}
-                    .buttonStyle(.borderedProminent)
-                    .disabled(true)
+                DictateMoreButton(model: model)
             }
         }
         // The list's grouped cards' inset, so the page doesn't shift sideways
@@ -175,6 +283,28 @@ struct OpenNoteView: View {
             Button(t("delete"), role: .destructive) { model.send(.deleteConfirmed) }
             Button(t("cancel"), role: .cancel) { model.send(.deleteCancelled) }
         }
+    }
+}
+
+/// Dictate more, with why it is off beside it. It waits while any take holds
+/// the microphone, and until speech to text is ready.
+struct DictateMoreButton: View {
+    @ObservedObject var model: NotesModel
+    @ObservedObject var header = HeaderModel.shared
+    @ObservedObject var microphone = MicrophoneModel.shared
+
+    var body: some View {
+        let unready = notReady(feature: .speechToText, readiness: header.header.speechToText)
+        let free = model.page.take == nil && !microphone.microphone.recording && unready == nil
+        if let unready {
+            Text(unready.words)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        Button(t("dictate-more")) { model.send(.dictateMore) }
+            .buttonStyle(.borderedProminent)
+            .disabled(!free)
     }
 }
 

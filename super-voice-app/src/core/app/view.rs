@@ -269,8 +269,7 @@ impl AppModel {
         match page {
             Page::Customization => views::customization::page(
                 self.language.primary_language.as_deref(),
-                self.notification_method,
-                self.idle_unload_secs,
+                &self.settings,
                 self.action_error_for(crate::state::ErrorScope::Customization),
             ),
             Page::SpeechToTextBehavior => views::behavior::speech_to_text(self),

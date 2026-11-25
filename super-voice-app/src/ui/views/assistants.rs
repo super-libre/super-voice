@@ -17,6 +17,9 @@ use super_voice_shared::models::assistants::{
 use super::common::{error_banner, muted, page_layout, status_dot};
 use crate::state::assistants::{AssistantsState, ConnectDialog, KeyDialog};
 use crate::ui::messages::{AssistantsMessage, Message, ShellMessage};
+use super_voice_app_core::pages::assistants::{
+    self as page, Ago, Flag, Input, folder_name, shown_folder,
+};
 
 /// The name field in the dialog that makes a key, focused when it opens.
 #[must_use]
@@ -27,15 +30,13 @@ pub fn key_name_id() -> Id {
 /// What the assistant can do through Super Voice.
 fn does(id: AssistantId) -> String {
     match id {
-        AssistantId::ClaudeCode | AssistantId::OpenCode => crate::fl!("assistant-reads-replies"),
-        AssistantId::Codex | AssistantId::Antigravity => {
-            crate::fl!("assistant-reads-dictated-replies")
-        }
+        id if page::reads_every_reply(id) => crate::fl!("assistant-reads-replies"),
+        _ => crate::fl!("assistant-reads-dictated-replies"),
     }
 }
 
-fn message(message: AssistantsMessage) -> Message {
-    Message::Assistants(message)
+fn page_input(input: Input) -> Message {
+    Message::Assistants(AssistantsMessage::Page(input))
 }
 
 /// A state: a dot in its color and the word, on the neutral pill the window
@@ -59,41 +60,12 @@ fn connected_pill<'a>() -> Element<'a, Message> {
     )
 }
 
-/// The last part of a session's folder, which names it in its row.
-fn folder_name(folder: &str) -> String {
-    std::path::Path::new(folder).file_name().map_or_else(
-        || folder.to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    )
-}
-
-/// A folder as a terminal shows it: under the home folder, from `~`.
-fn shown_folder(folder: &str, home: Option<&std::path::Path>) -> String {
-    home.and_then(|home| std::path::Path::new(folder).strip_prefix(home).ok())
-        .map_or_else(
-            || folder.to_string(),
-            |rest| {
-                if rest.as_os_str().is_empty() {
-                    "~".to_string()
-                } else {
-                    format!("~/{}", rest.display())
-                }
-            },
-        )
-}
-
-/// When a session last spoke or listened: "Now" within the minute, then
-/// minutes, then hours. Nothing before it has, or for what is not a time.
+/// When a session last spoke or listened, in words.
 fn used_ago(last_used_at: Option<&str>, now: DateTime<Utc>) -> Option<String> {
-    let at = chrono::DateTime::parse_from_rfc3339(last_used_at?).ok()?;
-    let minutes = (now - at.with_timezone(&Utc)).num_minutes().max(0);
-    Some(match minutes {
-        0 => crate::fl!("used-now"),
-        1..=59 => crate::fl!("used-minutes-ago", minutes = minutes),
-        _ => {
-            let hours = minutes / 60;
-            crate::fl!("used-hours-ago", hours = hours)
-        }
+    Some(match page::used_ago(last_used_at, now)? {
+        Ago::Now => crate::fl!("used-now"),
+        Ago::Minutes(minutes) => crate::fl!("used-minutes-ago", minutes = minutes),
+        Ago::Hours(hours) => crate::fl!("used-hours-ago", hours = hours),
     })
 }
 
@@ -169,7 +141,7 @@ fn unconnected_row<'a>(assistant: &Assistant) -> Element<'a, Message> {
         item.description(does(id))
             .control(
                 button::suggested(crate::fl!("connect"))
-                    .on_press(message(AssistantsMessage::AskConnect(id))),
+                    .on_press(page_input(Input::AskConnect(id))),
             )
             .into()
     }
@@ -203,7 +175,7 @@ fn connected_row<'a>(
     .spacing(spacing.space_s)
     .align_y(Alignment::Center)
     .padding([spacing.space_xxs, 0]);
-    widget::list::button(content).on_press(message(AssistantsMessage::Open(id)))
+    widget::list::button(content).on_press(page_input(Input::Open(id)))
 }
 
 /// A connected assistant's own page, in the list's place: back to the list,
@@ -219,7 +191,7 @@ fn assistant_page<'a>(
 
     let back = button::text(crate::fl!("all-assistants"))
         .leading_icon(icon::from_name("go-previous-symbolic"))
-        .on_press(message(AssistantsMessage::Close));
+        .on_press(page_input(Input::Close));
     let mut description = does(id);
     // An assistant reads its config when it starts.
     if state.connected_here.contains(&id) {
@@ -243,7 +215,7 @@ fn assistant_page<'a>(
             settings::item::builder(crate::fl!("show-talk-above-prompt"))
                 .description(crate::fl!("show-talk-above-prompt-description"))
                 .toggler(assistant.show_talk, move |on| {
-                    message(AssistantsMessage::SetShowTalk(id, on))
+                    page_input(Input::SetFlag(id, Flag::ShowTalk, on))
                 }),
         );
     }
@@ -253,7 +225,7 @@ fn assistant_page<'a>(
             settings::item::builder(crate::fl!("autosend-dictated-prompts"))
                 .description(crate::fl!("autosend-dictated-prompts-description"))
                 .toggler(assistant.autosend_dictated_prompts, move |on| {
-                    message(AssistantsMessage::SetAutosendDictatedPrompts(id, on))
+                    page_input(Input::SetFlag(id, Flag::AutosendDictatedPrompts, on))
                 }),
         );
     }
@@ -263,7 +235,7 @@ fn assistant_page<'a>(
             settings::item::builder(crate::fl!("announce-when-needed"))
                 .description(crate::fl!("announce-when-needed-description", name = name))
                 .toggler(assistant.announce_when_needed, move |on| {
-                    message(AssistantsMessage::SetAnnounceWhenNeeded(id, on))
+                    page_input(Input::SetFlag(id, Flag::AnnounceWhenNeeded, on))
                 }),
         );
     }
@@ -271,7 +243,7 @@ fn assistant_page<'a>(
         settings::item::builder(crate::fl!("use-conversation-as-context"))
             .description(crate::fl!("use-conversation-as-context-description"))
             .toggler(assistant.conversation_context, move |on| {
-                message(AssistantsMessage::SetConversationContext(id, on))
+                page_input(Input::SetFlag(id, Flag::ConversationContext, on))
             }),
     );
     blocks.push(switches.into());
@@ -287,7 +259,7 @@ fn assistant_page<'a>(
     }
 
     let disconnect = button::standard(crate::fl!("disconnect")).on_press_maybe(
-        (!state.disconnecting.contains(&id)).then_some(message(AssistantsMessage::Disconnect(id))),
+        (!state.disconnecting.contains(&id)).then_some(page_input(Input::Disconnect(id))),
     );
     blocks.push(
         settings::section()
@@ -317,7 +289,7 @@ fn key_row(key: &CustomKey, today: NaiveDate) -> Element<'static, Message> {
         .description(made_on(&key.created_at, today))
         .control(
             button::standard(crate::fl!("remove"))
-                .on_press(message(AssistantsMessage::RemoveKey(key.id.clone()))),
+                .on_press(page_input(Input::RemoveKey(key.id.clone()))),
         )
         .into()
 }
@@ -330,8 +302,7 @@ fn another_assistant(list: &AssistantList) -> Element<'_, Message> {
             settings::item::builder(crate::fl!("any-mcp-assistant"))
                 .description(crate::fl!("any-mcp-assistant-description"))
                 .control(
-                    button::standard(crate::fl!("create-key"))
-                        .on_press(message(AssistantsMessage::AskKey)),
+                    button::standard(crate::fl!("create-key")).on_press(page_input(Input::AskKey)),
                 ),
         );
     let today = chrono::Local::now().date_naive();
@@ -434,12 +405,11 @@ fn connect_dialog(dialog: ConnectDialog, error: Option<&str>) -> Element<'_, Mes
     };
     question
         .primary_action(
-            button::suggested(connect)
-                .on_press_maybe(answer.then_some(message(AssistantsMessage::Connect))),
+            button::suggested(connect).on_press_maybe(answer.then_some(page_input(Input::Connect))),
         )
         .secondary_action(
             button::standard(crate::fl!("cancel"))
-                .on_press_maybe(answer.then_some(message(AssistantsMessage::CancelConnect))),
+                .on_press_maybe(answer.then_some(page_input(Input::CancelConnect))),
         )
         .into()
 }
@@ -451,8 +421,8 @@ fn name_field(name: &str, editable: bool) -> Element<'_, Message> {
         .width(Length::Fill);
     if editable {
         input = input
-            .on_input(|name| message(AssistantsMessage::KeyNameChanged(name)))
-            .on_submit(|_| message(AssistantsMessage::CreateKey));
+            .on_input(|name| page_input(Input::KeyNameChanged(name)))
+            .on_submit(|_| page_input(Input::CreateKey));
     }
     column![
         text::body(crate::fl!("name")),
@@ -509,13 +479,12 @@ fn key_dialog<'a>(dialog: &'a KeyDialog, error: Option<&'a str>) -> Element<'a, 
                     button::suggested(create).on_press_maybe(
                         dialog
                             .name_to_create()
-                            .map(|_| message(AssistantsMessage::CreateKey)),
+                            .map(|_| page_input(Input::CreateKey)),
                     ),
                 )
                 .secondary_action(
-                    button::standard(crate::fl!("cancel")).on_press_maybe(
-                        (!creating).then_some(message(AssistantsMessage::CloseKey)),
-                    ),
+                    button::standard(crate::fl!("cancel"))
+                        .on_press_maybe((!creating).then_some(page_input(Input::CloseKey))),
                 )
                 .into()
         }
@@ -525,8 +494,7 @@ fn key_dialog<'a>(dialog: &'a KeyDialog, error: Option<&'a str>) -> Element<'a, 
             .control(made_values(key))
             .control(muted(text::caption(crate::fl!("key-shown-only-now"))))
             .primary_action(
-                button::suggested(crate::fl!("done"))
-                    .on_press(message(AssistantsMessage::CloseKey)),
+                button::suggested(crate::fl!("done")).on_press(page_input(Input::CloseKey)),
             )
             .into(),
     }
@@ -534,42 +502,8 @@ fn key_dialog<'a>(dialog: &'a KeyDialog, error: Option<&'a str>) -> Element<'a, 
 
 #[cfg(test)]
 mod tests {
-    use super::{folder_name, made_on, shown_folder, used_ago};
-    use chrono::{NaiveDate, TimeZone, Utc};
-    use std::path::Path;
-
-    /// A session is named by its folder's last part, and shows the folder
-    /// from `~` when it is under the home folder.
-    #[test]
-    fn a_session_shows_its_folder() {
-        let home = Some(Path::new("/home/me"));
-        assert_eq!(folder_name("/home/me/super-voice"), "super-voice");
-        assert_eq!(folder_name("/"), "/");
-        assert_eq!(
-            shown_folder("/home/me/super-libre/super-voice", home),
-            "~/super-libre/super-voice"
-        );
-        assert_eq!(shown_folder("/home/me", home), "~");
-        assert_eq!(shown_folder("/home/meta/x", home), "/home/meta/x");
-        assert_eq!(shown_folder("/srv/site", None), "/srv/site");
-    }
-
-    /// When a session last spoke or listened reads as now, minutes or hours,
-    /// and as nothing before it has.
-    #[test]
-    fn a_session_shows_when_it_last_spoke_or_listened() {
-        let now = Utc.with_ymd_and_hms(2026, 11, 20, 10, 0, 0).unwrap();
-        // Without Fluent's isolation marks around the numbers.
-        let ago =
-            |at: &str| used_ago(Some(at), now).map(|ago| ago.replace(['\u{2068}', '\u{2069}'], ""));
-        assert_eq!(ago("2026-11-20T09:59:30Z").as_deref(), Some("Now"));
-        assert_eq!(ago("2026-11-20T09:57:00Z").as_deref(), Some("3 min ago"));
-        assert_eq!(ago("2026-11-20T07:30:00Z").as_deref(), Some("2 h ago"));
-        // A clock a little ahead of the app's is still now.
-        assert_eq!(ago("2026-11-20T10:00:05Z").as_deref(), Some("Now"));
-        assert_eq!(used_ago(None, now), None);
-        assert_eq!(ago("soon"), None);
-    }
+    use super::made_on;
+    use chrono::NaiveDate;
 
     /// A key's time is the daemon's in UTC, shown in local time; words that
     /// are not a time are shown as they are.

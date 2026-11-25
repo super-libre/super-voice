@@ -12,18 +12,25 @@ use super_voice_shared::models::self_update::SelfUpdateStatus;
 use super::common::{error_banner, page_layout};
 use super::models::{accent_button_class, pill_label_tinted, rounded_tooltip};
 use crate::core::app::AppModel;
-use crate::state::update::{RunPhase, UpdateState};
+use crate::state::update::{RunPhase, UpdateNotice, UpdateState};
 use crate::ui::messages::{Message, UpdateMessage};
 use crate::ui::press_guard::press_guard;
+use super_voice_app_core::pages::updates::Input;
 
-const INSTALL_SH_URL: &str =
-    "https://raw.githubusercontent.com/super-libre/super-voice/main/install.sh";
+fn update_input(input: Input) -> Message {
+    Message::Update(UpdateMessage::Page(input))
+}
 
-/// A tag is a prerelease iff it carries a semver `-<identifier>` suffix
-/// (e.g. `v0.2.3-beta.1`) — the same rule `updater::run_update_stream` uses
-/// to decide whether to pass `--beta` to the installer.
-fn tag_is_prerelease(tag: &str) -> bool {
-    tag.contains('-')
+/// What the page tells the user, in this app's words.
+fn notice_text(notice: &UpdateNotice) -> String {
+    match notice {
+        UpdateNotice::StatusUnread(e) => {
+            crate::fl!("update-status-could-not-read", error = e.as_str())
+        }
+        UpdateNotice::SettingUnsaved(e) => {
+            crate::fl!("update-setting-could-not-save", error = e.as_str())
+        }
+    }
 }
 
 /// The candidate tag to show/build messages around, falling back to a
@@ -35,15 +42,8 @@ fn tag_of(status: Option<&SelfUpdateStatus>) -> String {
         .unwrap_or_else(|| crate::fl!("the-latest-version"))
 }
 
-/// The curl-bootstrap command, with the `--beta` flag a prerelease tag needs.
-/// Shared by the two captions below so the command itself is written once.
 fn curl_bootstrap(tag: &str) -> String {
-    let beta_flag = if tag_is_prerelease(tag) {
-        " -s -- --beta"
-    } else {
-        ""
-    };
-    format!("curl -sSL {INSTALL_SH_URL} | bash{beta_flag}")
+    super_voice_app_core::pages::updates::install_command(tag)
 }
 
 /// The curl-bootstrap fallback shown when the daemon reports an update but
@@ -101,7 +101,7 @@ fn version_section(state: &UpdateState) -> Element<'_, Message> {
 
     let mut check_button = widget::button::standard(crate::fl!("check-now"));
     if state.can_check_now() {
-        check_button = check_button.on_press(Message::Update(UpdateMessage::CheckNow));
+        check_button = check_button.on_press(update_input(Input::CheckNow));
     }
 
     settings::section()
@@ -145,8 +145,7 @@ fn settings_section(state: &UpdateState) -> Element<'_, Message> {
                 .description(crate::fl!("check-daily-description"))
                 .control(press_guard(
                     widget::toggler(state.auto_check_enabled.unwrap_or(true)).on_toggle_maybe(
-                        (!run_active)
-                            .then_some(|b| Message::Update(UpdateMessage::AutoCheckToggled(b))),
+                        (!run_active).then_some(|b| update_input(Input::AutoCheckToggled(b))),
                     ),
                 )),
         )
@@ -158,10 +157,10 @@ fn settings_section(state: &UpdateState) -> Element<'_, Message> {
                     // the switch has already moved, and a second press would
                     // race the first.
                     press_guard(
-                        widget::toggler(state.beta_optin_shown())
-                            .on_toggle_maybe((!run_active && !state.beta_pending).then_some(|b| {
-                                Message::Update(UpdateMessage::BetaOptinToggled(b))
-                            })),
+                        widget::toggler(state.beta_optin_shown()).on_toggle_maybe(
+                            (!run_active && !state.beta_pending)
+                                .then_some(|b| update_input(Input::BetaOptinToggled(b))),
+                        ),
                     ),
                 ),
         )
@@ -198,7 +197,7 @@ fn update_body<'a>(
         }
         return if state.can_start_update() {
             widget::button::suggested(crate::fl!("update-to-tag", tag = tag.as_str()))
-                .on_press(Message::Update(UpdateMessage::StartUpdate))
+                .on_press(update_input(Input::StartUpdate))
                 .into()
         } else {
             column![
@@ -256,7 +255,7 @@ fn update_body<'a>(
             if run.cancellable() {
                 col = col.push(
                     widget::button::destructive(crate::fl!("cancel"))
-                        .on_press(Message::Update(UpdateMessage::CancelUpdate)),
+                        .on_press(update_input(Input::CancelUpdate)),
                 );
             }
             col.into()
@@ -269,7 +268,7 @@ fn update_body<'a>(
 /// future `StartUpdate` isn't permanently blocked.
 fn dismiss_button<'a>() -> Element<'a, Message> {
     widget::button::standard(crate::fl!("dismiss"))
-        .on_press(Message::Update(UpdateMessage::DismissRun))
+        .on_press(update_input(Input::DismissRun))
         .into()
 }
 
@@ -297,8 +296,8 @@ fn update_section<'a>(
 pub fn page(state: &UpdateState) -> Element<'_, Message> {
     let mut blocks: Vec<Element<'_, Message>> = Vec::new();
 
-    if let Some(message) = state.action_error.as_deref() {
-        blocks.push(error_banner(message));
+    if let Some(notice) = &state.notice {
+        blocks.push(error_banner(&notice_text(notice)));
     }
 
     blocks.push(version_section(state));
@@ -356,9 +355,7 @@ pub(crate) fn header_badge(app: &AppModel) -> Option<Element<'_, Message>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        checked_at_label, curl_fallback_caption, manual_install_caption, tag_is_prerelease,
-    };
+    use super::{checked_at_label, curl_fallback_caption, manual_install_caption};
 
     /// The daemon's timestamp, which the page used to show verbatim.
     #[test]
@@ -381,9 +378,6 @@ mod tests {
 
     #[test]
     fn a_prerelease_tag_carries_the_beta_flag_into_both_captions() {
-        assert!(tag_is_prerelease("v0.2.3-beta.1"));
-        assert!(!tag_is_prerelease("v0.2.3"));
-
         assert!(
             manual_install_caption("v0.2.3-beta.1")
                 .trim_end_matches('\u{2069}')

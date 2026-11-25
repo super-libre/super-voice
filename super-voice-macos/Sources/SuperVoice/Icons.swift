@@ -13,6 +13,7 @@ enum Icon: String {
     case brain
     case caretLeft = "caret-left"
     case caretRight = "caret-right"
+    case check
     case gear
     case graphicsCard = "graphics-card"
     case keyboard

@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! UI state for the self-update flow (the Updates page + header badge).
+//! The self-update flow's state (the Updates page and the header badge).
 //!
 //! Every state TRANSITION lives here as a pure method on [`UpdateState`] /
-//! [`UpdateRun`] so it's testable without constructing an `AppModel` (which
-//! can't be built outside the running app — private fields, no `Default`,
-//! no test harness). `core/app/handlers/update.rs` calls these methods to
-//! mutate state, then separately decides which `Task` (if any) to return —
-//! it owns the side effects, this module owns the logic.
+//! [`UpdateRun`], so it is testable without an app. Each app calls these
+//! methods to change the state, then decides which work to start: it owns
+//! the side effects, this module owns the logic.
 
-use crate::core::app::updater::{InstallerEvent, UpdateRunEvent};
+use crate::updater::{InstallerEvent, UpdateRunEvent};
 use super_voice_shared::models::self_update::SelfUpdateStatus;
 
 /// Self-update state: last known daemon status, a settings-toggle error
@@ -39,9 +37,19 @@ pub struct UpdateState {
     pub run: Option<UpdateRun>,
     /// Aborts the run's task stream. Only honored before the escalate
     /// phase — see [`UpdateRun::cancellable`].
-    pub run_abort: Option<cosmic::iced::task::Handle>,
-    /// Error from a settings toggle, shown in the page banner.
-    pub action_error: Option<String>,
+    pub run_abort: Option<futures_util::future::AbortHandle>,
+    /// What to tell the user on the page's banner.
+    pub notice: Option<UpdateNotice>,
+}
+
+/// Something to tell the user about updates. Each app says it in its own
+/// words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateNotice {
+    /// The status couldn't be read: the daemon's words.
+    StatusUnread(String),
+    /// A setting couldn't be changed: the daemon's words.
+    SettingUnsaved(String),
 }
 
 impl UpdateState {
@@ -76,14 +84,14 @@ impl UpdateState {
     /// `unsupported`, or `run`.
     pub fn apply_status_error(&mut self, msg: &str) {
         self.checking = false;
-        self.action_error = Some(crate::fl!("update-status-could-not-read", error = msg));
+        self.notice = Some(UpdateNotice::StatusUnread(msg.to_string()));
     }
 
     /// A settings-toggle write (`AutoCheckToggled`/`BetaOptinToggled`)
     /// failed. Distinct banner text from [`Self::apply_status_error`] so it
     /// names the right verb.
     pub fn apply_setting_error(&mut self, msg: &str) {
-        self.action_error = Some(crate::fl!("update-setting-could-not-save", error = msg));
+        self.notice = Some(UpdateNotice::SettingUnsaved(msg.to_string()));
     }
 
     /// A `Done`/`Failed` run has nothing further to preserve *once superseded
@@ -183,7 +191,7 @@ impl UpdateState {
     /// not to. **Check now** is their way to ask. Nor before the setting has
     /// loaded; [`UpdateMessage::AutoCheckLoaded`] asks again when it does.
     ///
-    /// [`UpdateMessage::AutoCheckLoaded`]: crate::ui::messages::UpdateMessage::AutoCheckLoaded
+    ///
     #[must_use]
     pub fn wants_first_check(&self) -> bool {
         self.status.as_ref().is_some_and(|s| s.checked_at.is_none())
@@ -388,8 +396,8 @@ pub enum RunPhase {
 
 #[cfg(test)]
 mod tests {
-    use super::{RunOutcome, RunPhase, UpdateRun, UpdateState};
-    use crate::core::app::updater::{InstallerEvent, UpdateRunEvent};
+    use super::{RunOutcome, RunPhase, UpdateNotice, UpdateRun, UpdateState};
+    use crate::updater::{InstallerEvent, UpdateRunEvent};
     use super_voice_shared::models::self_update::{InstallerAsset, SelfUpdateStatus};
 
     /// All non-terminal (mid-flight) phases — used to sweep invariants that
@@ -704,11 +712,8 @@ mod tests {
         update.apply_status_error("boom");
         assert!(!update.checking);
         assert_eq!(
-            update
-                .action_error
-                .as_deref()
-                .map(crate::i18n::without_isolation),
-            Some("Couldn't read the update status: boom".to_string())
+            update.notice,
+            Some(UpdateNotice::StatusUnread("boom".to_string()))
         );
     }
 
@@ -717,11 +722,8 @@ mod tests {
         let mut update = UpdateState::default();
         update.apply_setting_error("boom");
         assert_eq!(
-            update
-                .action_error
-                .as_deref()
-                .map(crate::i18n::without_isolation),
-            Some("Couldn't change that setting: boom".to_string())
+            update.notice,
+            Some(UpdateNotice::SettingUnsaved("boom".to_string()))
         );
     }
 

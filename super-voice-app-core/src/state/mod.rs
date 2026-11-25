@@ -16,12 +16,14 @@ pub mod notes;
 pub mod recording_test;
 pub mod registry;
 pub mod scripts;
+pub mod settings;
 pub mod shortcuts;
 pub mod speech;
 pub mod stage;
 pub mod stage_catalog;
 pub mod staged_picks;
 pub mod text_buffer;
+pub mod update;
 pub mod voice;
 pub mod voices;
 

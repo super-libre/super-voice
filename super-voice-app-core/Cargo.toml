@@ -29,6 +29,8 @@
     # What a backend says it supports, for the rules behind the capability chips.
     super-voice-registry-types = { path = "../super-voice-registry-types" }
     super-voice-shared = { path = "../super-voice-shared" }
+    # The self-updater downloads the installer with the engine's HTTP client.
+    super-engine-forge.workspace = true
     tokio.workspace = true
     urlencoding = "2.1.3"
 
@@ -44,6 +46,8 @@
     # OpenAPI document the daemon builds from its router. Taken from the crate
     # rather than a file so the tests need nothing generated first.
     super-voice-daemon = { path = "../super-voice-daemon" }
+    # A fake release server for the self-updater's download.
+    mockito = "1.7.2"
     # Test folders for the notes and clips, which remove themselves.
     tempfile = "3.27.0"
 

@@ -14,6 +14,7 @@ mod models_page;
 mod notes;
 mod recording;
 mod settings;
+pub(in crate::core::app) mod settings_page;
 mod shell;
 mod shortcuts;
 mod speech;

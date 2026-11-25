@@ -17,6 +17,7 @@ use super::chips::{
     update_offer, update_progress_chip,
 };
 use super::surface::{card_divider, card_surface, card_title_block, repo_button};
+use super_voice_app_core::pages::library::Input;
 use super_voice_registry_types::index::supports;
 
 /// The Library's Installed tab, as its filter toolbar and its cards: every
@@ -28,12 +29,12 @@ use super_voice_registry_types::index::supports;
 /// above the scroll area and only the cards scroll.
 pub(super) fn installed_split(app: &AppModel) -> (Element<'_, Message>, Element<'_, Message>) {
     let spacing = cosmic::theme::spacing();
-    let filters = &app.models_page.installed_filters;
+    let filters = &app.library.installed_filters;
 
     let cards: Vec<Element<'_, Message>> = app
         .backends
         .iter()
-        .filter(|b| installed_matches(b, filters))
+        .filter(|b| super_voice_app_core::pages::library::installed_matches(b, filters))
         .map(|backend| installed_card(backend, app))
         .collect();
 
@@ -55,28 +56,12 @@ pub(super) fn installed_split(app: &AppModel) -> (Element<'_, Message>, Element<
     (installed_toolbar(filters, cards_shown(app, filters)), body)
 }
 
-/// Whether an installed backend survives the Installed tab's filters.
-///
-/// Kept free of [`AppModel`] so the rule is directly unit-testable.
-fn installed_matches(backend: &BackendInfo, filters: &InstalledFilters) -> bool {
-    if let Some(online) = filters.online
-        && backend_is_online(backend) != online
-    {
-        return false;
-    }
-    crate::state::registry::admits(
-        filters.feature,
-        filters.role,
-        backend.models.iter().map(|m| m.role.as_str()),
-    )
-}
-
 /// "{shown} of {total}", matching the Browse tab's count.
 fn cards_shown(app: &AppModel, filters: &InstalledFilters) -> (usize, usize) {
     let shown = app
         .backends
         .iter()
-        .filter(|b| installed_matches(b, filters))
+        .filter(|b| super_voice_app_core::pages::library::installed_matches(b, filters))
         .count();
     (shown, app.backends.len())
 }
@@ -90,13 +75,13 @@ fn installed_toolbar<'a>(
 ) -> Element<'a, Message> {
     let spacing = cosmic::theme::spacing();
     let runs_on = super::chips::runs_on_chips(filters.online, |o| {
-        Message::ModelsPage(ModelsPageMessage::InstalledOnlineFilter(o))
+        Message::ModelsPage(lib(Input::InstalledOnline(o)))
     });
     let feature = super::chips::feature_filter_chips(filters.feature, |f| {
-        Message::ModelsPage(ModelsPageMessage::InstalledFeatureFilter(f))
+        Message::ModelsPage(lib(Input::InstalledFeature(f)))
     });
     let kind = super::chips::role_filter_chips(filters.role, |r| {
-        Message::ModelsPage(ModelsPageMessage::InstalledRoleFilter(r))
+        Message::ModelsPage(lib(Input::InstalledRole(r)))
     });
     let count = text::caption(crate::fl!(
         "filtered-count",
@@ -248,8 +233,13 @@ pub(super) fn installed_overflow_menu(source: &str) -> Element<'static, Message>
     let col = widget::column::with_capacity(1).push(super::surface::menu_item(
         icons::X,
         crate::fl!("uninstall"),
-        Message::ModelsPage(ModelsPageMessage::AskUninstall(source.to_string())),
+        Message::ModelsPage(lib(Input::AskUninstall(source.to_string()))),
     ));
 
     super::surface::menu_surface(col, 190.0)
+}
+
+/// A Library input, as the page's message.
+fn lib(input: Input) -> crate::ui::messages::ModelsPageMessage {
+    crate::ui::messages::ModelsPageMessage::Library(input)
 }

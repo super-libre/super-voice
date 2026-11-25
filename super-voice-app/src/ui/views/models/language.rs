@@ -14,8 +14,8 @@ use crate::core::app::AppModel;
 use crate::core::app::scene::{self, Target};
 use crate::daemon::backends::BackendInfo;
 use crate::state::Stage;
-use crate::ui::languages::friendly_name;
 use crate::ui::messages::{LanguageMessage, Message};
+use super_voice_app_core::languages::friendly_name;
 
 /// The language control for `selected_model`, rendered inline next to the
 /// model/device controls rather than on its own row.

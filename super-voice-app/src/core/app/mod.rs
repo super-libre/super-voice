@@ -7,7 +7,6 @@ pub(crate) mod scene;
 mod small_state;
 mod subscription;
 mod update;
-pub(crate) mod updater;
 mod view;
 use subscription::{UdpSubscriptionId, audio_events_subscription};
 
@@ -150,11 +149,12 @@ pub struct AppModel {
     /// clipboard.
     pub read_method: super_voice_shared::models::read_method::ReadMethod,
 
-    // Notification method
-    pub notification_method: super_voice_shared::models::notification_method::NotificationMethod,
-
-    /// Seconds an unused model stays loaded; `0` keeps models loaded.
-    pub idle_unload_secs: u64,
+    /// The Settings page: how failures are reported, and how long an unused
+    /// model stays loaded.
+    pub settings: super_voice_app_core::state::settings::SettingsState,
+    /// The Library page's own state: an uninstall waiting to be confirmed,
+    /// and the Installed tab's filters.
+    pub library: super_voice_app_core::pages::library::LibraryState,
 
     // Models page UI state (tabs, active-backend card selection/staging, menus).
     pub models_page: crate::state::models_page::ModelsPageState,
@@ -439,7 +439,11 @@ impl cosmic::Application for AppModel {
         {
             subs.push(
                 cosmic::iced::time::every(std::time::Duration::from_secs(ASSISTANTS_POLL_SECS))
-                    .map(|_| Message::Assistants(crate::ui::messages::AssistantsMessage::Refresh)),
+                    .map(|_| {
+                        Message::Assistants(crate::ui::messages::AssistantsMessage::Page(
+                            super_voice_app_core::pages::assistants::Input::Refresh,
+                        ))
+                    }),
             );
         }
         // The Notes tab's elapsed time while a note records.
@@ -589,7 +593,9 @@ impl AppModel {
             // Someone may have changed the shortcuts in the desktop's settings.
             crate::state::Page::Shortcuts => Task::batch([
                 Task::done(cosmic::Action::App(Message::Shortcuts(
-                    crate::ui::messages::ShortcutsMessage::Refresh,
+                    crate::ui::messages::ShortcutsMessage::Page(
+                        super_voice_app_core::pages::shortcuts::Input::Refresh,
+                    ),
                 ))),
                 self.update_title(),
             ]),
@@ -598,7 +604,9 @@ impl AppModel {
             // hand, since the page was last shown.
             crate::state::Page::Assistants => Task::batch([
                 Task::done(cosmic::Action::App(Message::Assistants(
-                    crate::ui::messages::AssistantsMessage::Refresh,
+                    crate::ui::messages::AssistantsMessage::Page(
+                        super_voice_app_core::pages::assistants::Input::Refresh,
+                    ),
                 ))),
                 self.update_title(),
             ]),

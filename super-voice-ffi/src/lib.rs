@@ -11,13 +11,21 @@ use std::sync::LazyLock;
 
 use super_voice_app_core::state::TextBuffer;
 
+pub mod assistants;
 pub mod behavior;
 pub mod clips;
 pub mod contexts;
 mod events;
+pub mod library;
+pub mod microphone;
+pub mod models;
 pub mod notes;
+pub mod recording_test;
+pub mod settings;
+pub mod shortcuts;
 pub mod speech;
 pub mod status;
+pub mod updates;
 pub mod voices;
 
 uniffi::setup_scaffolding!();

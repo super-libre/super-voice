@@ -11,17 +11,35 @@ final class HeaderModel: ObservableObject {
     static let shared = HeaderModel()
 
     @Published private(set) var header = HeaderStatus(
-        connected: false, gpus: [], speechToText: .none, textToSpeech: .none
+        connected: false, gpus: [], speechToText: .none, textToSpeech: .none, pipeline: []
     )
 
     private var store: StatusStore!
 
     private init() {
         let relay = StatusRelay { [weak self] header in
-            Task { @MainActor in self?.header = header }
+            Task { @MainActor in self?.show(header) }
         }
         store = StatusStore(observer: relay)
     }
+
+    private func show(_ header: HeaderStatus) {
+        #if DEBUG
+        if pretending { return }
+        #endif
+        self.header = header
+    }
+
+    #if DEBUG
+    private var pretending = false
+
+    /// Shows `header` from now on, whatever the daemon says: a made-up
+    /// scene's.
+    func pretend(_ header: HeaderStatus) {
+        pretending = true
+        self.header = header
+    }
+    #endif
 }
 
 /// Hands the store's calls, which come on its own threads, to the model.

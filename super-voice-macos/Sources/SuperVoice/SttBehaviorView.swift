@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Speech to text's Behavior tab: what stops a recording and whether its words
 // are typed as they are heard, how they are typed, the sounds around it, and
-// the typing test. As in the settings app; its recording test isn't here yet.
+// the tests that record and type. As in the settings app.
 
 import SuperVoiceCore
 import SwiftUI
@@ -82,6 +82,7 @@ struct SttBehaviorView: View {
                 }
 
                 Section {
+                    RecordingTestRows()
                     VStack(alignment: .leading, spacing: 6) {
                         Labelled(t("typing-test"), t("types-a-short-string-into-the-field"))
                         HStack {
@@ -111,9 +112,6 @@ struct SttBehaviorView: View {
                     } label: {
                         Labelled(t("test-another-window"), t("counts-down-before-typing-so-you-can"))
                     }
-                    Text(t("recording-not-in-this-app-yet"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 } header: {
                     Text(t("test"))
                 }
@@ -152,6 +150,66 @@ struct Labelled: View {
             Text(detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The recording test: what the microphone hears, the button that starts and
+/// stops a take, its level, its words as they come, then its transcript.
+struct RecordingTestRows: View {
+    @ObservedObject var model = RecordingTestModel.shared
+
+    var body: some View {
+        let page = model.page
+        LabeledContent(t("status")) {
+            HStack {
+                Text(page.recording ? (page.speech ? t("speech") : t("silence")) : t("not-recording"))
+                if page.recording {
+                    Button(t("stop-recording"), role: .destructive) { model.send(.stop) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                } else {
+                    Button(t("test-recording")) { model.send(.start) }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+        LabeledContent(t("audio-level")) {
+            // A floor under any sound at all, so quiet speech still moves the
+            // meter.
+            ProgressView(value: Double(page.level > 0 ? max(page.level, 0.1) : 0))
+                .progressViewStyle(.linear)
+                .frame(width: 240)
+        }
+        // The newest words on one line, their end showing, so the rows don't
+        // move as they come; what they span goes under the row's name.
+        HStack(alignment: .firstTextBaseline) {
+            if let spans = page.previewSpans {
+                Labelled(t("live"), spans.words)
+            } else {
+                Text(t("live"))
+            }
+            Spacer(minLength: 24)
+            Text(page.preview.isEmpty ? "\u{2014}" : page.preview)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .foregroundStyle(page.preview.isEmpty ? .secondary : .primary)
+        }
+        ScrollView {
+            Text(transcript(page.heard))
+                .foregroundStyle(page.heard == nil ? .secondary : .primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+        .frame(height: 66)
+    }
+
+    private func transcript(_ heard: TestHeard?) -> String {
+        switch heard {
+        case nil: t("transcriptions-will-appear-here-after-test-recordings")
+        case let .words(text): text
+        case .nothing: t("no-speech-detected")
+        case let .failed(message): t("the-recording-failed", ["error": message])
         }
     }
 }

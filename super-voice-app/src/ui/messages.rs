@@ -8,10 +8,7 @@
 //! `match`es its sub-enum exhaustively — so a newly added variant is a compile
 //! error at both ends instead of silently falling through to `Task::none()`.
 
-use super_voice_shared::models::assistants::{AssistantId, AssistantList, NewKey};
-use super_voice_shared::models::notification_method::NotificationMethod;
 use super_voice_shared::models::read_method::ReadMethod;
-use super_voice_shared::models::shortcuts::{ShortcutId, ShortcutList};
 
 use cosmic::widget::segmented_button;
 
@@ -40,8 +37,8 @@ pub enum Message {
     Shortcuts(ShortcutsMessage),
     /// The Assistants page, and its two dialogs.
     Assistants(AssistantsMessage),
-    NotificationMethod(NotificationMethodMessage),
-    IdleUnload(IdleUnloadMessage),
+    /// The Settings page: the language, failure notices and Sleep When Idle.
+    Settings(SettingsMessage),
     Backend(BackendMessage),
     /// The Contexts page: the dictation contexts, and which one is in force.
     Contexts(ContextsMessage),
@@ -202,6 +199,9 @@ pub enum ModelMessage {
 /// select/config, and the registry / download-tab install lifecycle.
 #[derive(Debug, Clone)]
 pub enum ModelsPageMessage {
+    /// The Library's logic: the catalog and its filters, and installing,
+    /// updating and uninstalling. See `super_voice_app_core::pages::library`.
+    Library(super_voice_app_core::pages::library::Input),
     /// Activate a Models-page tab (Installed / Download) in the tab bar.
     ModelsTabActivated(segmented_button::Entity),
     /// Open a pipeline step's card on the Models page.
@@ -216,68 +216,6 @@ pub enum ModelsPageMessage {
     RefreshGpuInfo,
     /// GPU inventory + memory loaded from the daemon (empty when none detected).
     GpuInfoLoaded(Vec<super_voice_shared::models::protocol::GpuInfo>),
-    // Registry / Download-tab messages
-    /// User clicked Install on a Download-tab card.
-    InstallBackend(String),
-    /// Daemon accepted the install request.
-    InstallAccepted { source: String, install_id: String },
-    /// Install POST failed (couldn't start).
-    InstallFailedToStart { source: String, error: String },
-    /// SSE: registry.install.progress
-    InstallProgress {
-        install_id: String,
-        source: String,
-        phase: super_voice_shared::registry::events::InstallPhase,
-        bytes_done: Option<u64>,
-        bytes_total: Option<u64>,
-    },
-    /// SSE: registry.install.completed
-    InstallCompleted { source: String },
-    /// SSE: registry.install.failed
-    InstallFailed {
-        install_id: String,
-        source: String,
-        phase: super_voice_shared::registry::events::InstallPhase,
-        error: super_voice_shared::registry::events::InstallError,
-        /// The daemon's reason in words, when it has one.
-        reason: Option<String>,
-    },
-    /// User clicked Update on an Installed-tab card.
-    UpdateBackend(String),
-    /// User chose Uninstall in a card's menu: ask before doing it.
-    AskUninstall(String),
-    /// User answered the uninstall question with Cancel.
-    CancelUninstall,
-    /// User confirmed the uninstall.
-    UninstallBackend(String),
-    /// An uninstall request failed; carries the backend `source` and a
-    /// human-readable error to surface on the installed card.
-    UninstallFailed { source: String, error: String },
-    /// User clicked Retry on the Download-tab empty state, or any other refresh trigger.
-    RefreshRegistry,
-    /// Initial fetch of /registry/backend/list succeeded.
-    RegistryListLoaded(super_voice_shared::registry::RegistryListResponse),
-    /// Initial fetch of /registry/backend/list failed.
-    RegistryListFailed(String),
-    /// The catalog listed, but the refresh asked for before it failed: the
-    /// list is the copy the daemon saved, and may be out of date.
-    RegistryListStale(super_voice_shared::registry::RegistryListResponse, String),
-    /// User typed in the search box.
-    RegistrySearchChanged(String),
-    /// User toggled "show incompatible".
-    RegistryIncludeIncompatible(bool),
-    /// User chose an online filter.
-    RegistryOnlineFilter(Option<bool>),
-    /// User chose which feature a Browse entry must serve.
-    RegistryFeatureFilter(crate::state::registry::FeatureFilter),
-    /// User chose which kind of model a Browse entry must serve.
-    RegistryRoleFilter(crate::state::registry::RoleFilter),
-    /// User chose an online filter for the Installed tab.
-    InstalledOnlineFilter(Option<bool>),
-    /// User chose which feature an installed backend must serve.
-    InstalledFeatureFilter(crate::state::registry::FeatureFilter),
-    /// User chose which kind of model an installed backend must serve.
-    InstalledRoleFilter(crate::state::registry::RoleFilter),
     /// Toggle the per-row overflow ("⋯") menu on an installed-backend card,
     /// keyed by backend `source`. Opening one closes any other.
     ToggleInstalledMenu(String),
@@ -526,66 +464,18 @@ pub enum VoiceMessage {
 /// The Shortcuts page.
 #[derive(Debug, Clone)]
 pub enum ShortcutsMessage {
-    /// Ask the daemon where each shortcut stands.
-    Refresh,
-    /// The daemon's answer to a refresh.
-    Loaded(Result<ShortcutList, String>),
-    /// Add this shortcut.
-    Add(ShortcutId),
-    /// Remove this shortcut.
-    Remove(ShortcutId),
-    /// The daemon's answer to an add or a remove: the list, or why not.
-    Changed(Result<ShortcutList, String>),
+    /// Something the page's logic handles. See
+    /// `super_voice_app_core::pages::shortcuts`.
+    Page(super_voice_app_core::pages::shortcuts::Input),
 }
 
 /// The Assistants page, and its two dialogs: Connect, and a key for another
 /// assistant.
 #[derive(Debug, Clone)]
 pub enum AssistantsMessage {
-    /// Ask the daemon where each assistant stands.
-    Refresh,
-    /// The daemon's answer to a refresh.
-    Loaded(Result<AssistantList, String>),
-    /// The daemon's answer to a change: the list, or what to show.
-    Changed(Result<AssistantList, String>),
-    /// Open the Connect dialog for this assistant.
-    AskConnect(AssistantId),
-    /// Open a connected assistant's own page: its switches and sessions.
-    Open(AssistantId),
-    /// Back from an assistant's page to the list.
-    Close,
-    /// The Connect dialog's Cancel.
-    CancelConnect,
-    /// The Connect dialog's Connect.
-    Connect,
-    /// The daemon's answer to a connect: the list, or why not.
-    Connected(AssistantId, Result<AssistantList, String>),
-    /// Disconnect this assistant.
-    Disconnect(AssistantId),
-    /// The daemon's answer to a disconnect: the list, or why not.
-    Disconnected(AssistantId, Result<AssistantList, String>),
-    /// Whether Super Voice says aloud when this assistant needs the user.
-    SetAnnounceWhenNeeded(AssistantId, bool),
-    /// Whether this assistant's `listen` calls are heard with the context
-    /// they bring from the conversation.
-    SetConversationContext(AssistantId, bool),
-    /// Whether this assistant's plugin shows Talk above its prompt.
-    SetShowTalk(AssistantId, bool),
-    /// Whether this assistant's plugin sends a prompt dictated into it by
-    /// itself, after a countdown.
-    SetAutosendDictatedPrompts(AssistantId, bool),
-    /// Open the dialog that makes a key for another assistant.
-    AskKey,
-    /// The key's name, as typed.
-    KeyNameChanged(String),
-    /// The key dialog's Create.
-    CreateKey,
-    /// The daemon's answer to Create: the key, or why not.
-    KeyCreated(Result<NewKey, String>),
-    /// The key dialog's Cancel, or Done once the key is shown.
-    CloseKey,
-    /// Revoke the key made by hand with this id.
-    RemoveKey(String),
+    /// Something the page's logic handles. See
+    /// `super_voice_app_core::pages::assistants`.
+    Page(super_voice_app_core::pages::assistants::Input),
 }
 
 /// The Read aloud tab: where the shortcut reads from, and its test.
@@ -600,20 +490,12 @@ pub enum ReadMethodMessage {
     TestFailed(String),
 }
 
-/// Notification-method setting.
+/// The Settings page.
 #[derive(Debug, Clone)]
-pub enum NotificationMethodMessage {
-    Changed(NotificationMethod),
-    Loaded(NotificationMethod),
-    Error(String),
-}
-
-/// Idle-unload setting: seconds an unused model stays loaded, `0` for always.
-#[derive(Debug, Clone)]
-pub enum IdleUnloadMessage {
-    Changed(u64),
-    Loaded(u64),
-    Error(String),
+pub enum SettingsMessage {
+    /// Something the page's logic handles. See
+    /// `super_voice_app_core::pages::settings`.
+    Page(super_voice_app_core::pages::settings::Input),
 }
 
 /// Backend catalog + per-backend secret/option configuration.
@@ -693,12 +575,6 @@ pub enum LanguageMessage {
     },
     CloseLanguagePicker,
     LanguagePickerQueryChanged(String),
-    /// Global Primary Language loaded from the daemon (None = unset).
-    PrimaryLanguageLoaded(Option<String>),
-    /// The tags the global setting accepts, from `GET /settings/language/list`.
-    PrimaryLanguagesLoaded(Vec<String>),
-    /// User picked a global language (None = clear → DELETE).
-    PrimaryLanguageSelected(Option<String>),
     /// Per-model resolution block (`/stt/pipeline/{stage}/model/{model}/language`)
     /// loaded from the daemon for `(source, model)`.
     /// The languages a model can be pinned to, from
@@ -755,58 +631,20 @@ pub enum RecordingMessage {
     Microphone(super_voice_app_core::events::Event),
 }
 
-/// How a beta-opt-in toggle ended. Three cases because each leaves the UI
-/// somewhere different: only a failed *write* may snap the toggle back — a
-/// failed re-check means the setting did change and only the candidate
-/// version is unknown, so reverting the switch would misreport the daemon.
-#[derive(Debug, Clone)]
-pub enum BetaOptinOutcome {
-    /// Saved, and the re-check returned a fresh status (`None` = the daemon
-    /// predates `/v1/update`).
-    Applied(Option<super_voice_shared::models::self_update::SelfUpdateStatus>),
-    /// The setting write itself failed; nothing changed daemon-side.
-    WriteFailed(String),
-    /// Saved, but the follow-up re-check failed. The toggle stands; only the
-    /// banner reports it.
-    CheckFailed(String),
-}
-
 /// Self-update: status load/check, the two settings toggles, the apply-flow
 /// run (installer download + spawn + JSON progress stream), and the
 /// `UpdateAvailable` SSE-driven refetch.
 #[derive(Debug, Clone)]
 pub enum UpdateMessage {
-    StatusLoaded(Option<super_voice_shared::models::self_update::SelfUpdateStatus>),
-    StatusError(String),
-    CheckNow,
-    AutoCheckLoaded(bool),
-    AutoCheckToggled(bool),
-    BetaOptinToggled(bool),
-    /// The beta-opt-in write and its follow-up re-check settled. Ends the
-    /// lock the toggle took when it was pressed; `enabled` is the value that
-    /// was requested, so a failed write knows what to snap back from.
-    BetaOptinApplied {
-        enabled: bool,
-        outcome: BetaOptinOutcome,
-    },
+    /// Something the page's logic handles. See
+    /// `super_voice_app_core::pages::updates`.
+    Page(super_voice_app_core::pages::updates::Input),
     /// Open the Updates page (from the header bar's "Update available"
     /// badge). Routed through the nav model so the page's status refetch
     /// happens exactly as it does when the sidebar entry is clicked.
     OpenUpdatesPage,
-    /// A settings-toggle write (`AutoCheckToggled`/`BetaOptinToggled`)
-    /// failed. Distinct from `StatusError` (a fetch/check failure) so the
-    /// banner names the right verb ("update a setting" vs. "fetch status").
-    SettingError(String),
-    StartUpdate,
-    CancelUpdate,
-    RunEvent(crate::core::app::updater::UpdateRunEvent),
+    /// Start the app again after an update.
     RestartApp,
-    AvailableEventReceived,
-    /// User dismissed a finished (`Done`/`Failed`) run's panel without
-    /// restarting — clears it so the page returns to the idle CTA (or a
-    /// future `StartUpdate` is no longer blocked). No-op on an in-flight run;
-    /// that goes through `CancelUpdate` instead.
-    DismissRun,
 }
 
 /// The Contexts tab, and which context each backend uses (set from the
@@ -889,8 +727,7 @@ message_from! {
     ReadMethod => ReadMethodMessage,
     Shortcuts => ShortcutsMessage,
     Assistants => AssistantsMessage,
-    NotificationMethod => NotificationMethodMessage,
-    IdleUnload => IdleUnloadMessage,
+    Settings => SettingsMessage,
     Backend => BackendMessage,
     Contexts => ContextsMessage,
     Notes => NotesMessage,

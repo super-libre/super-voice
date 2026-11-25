@@ -46,6 +46,24 @@ struct ContentView: View {
         if ["clips", "voices", "tts-behavior"].contains(where: Snapshot.scene.hasPrefix) {
             return .textToSpeech
         }
+        if Snapshot.scene.hasPrefix("models") {
+            return .models
+        }
+        if Snapshot.scene.hasPrefix("settings") {
+            return .settings
+        }
+        if Snapshot.scene.hasPrefix("assistants") {
+            return .assistants
+        }
+        if Snapshot.scene.hasPrefix("updates") {
+            return .updates
+        }
+        if Snapshot.scene.hasPrefix("shortcuts") {
+            return .shortcuts
+        }
+        if Snapshot.scene.hasPrefix("library") {
+            return .library
+        }
         #endif
         return .speechToText
     }
@@ -70,14 +88,24 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
             switch selection {
+            case .models:
+                ModelsView()
+            case .settings:
+                SettingsView(model: SettingsModel.shared)
+            case .assistants:
+                AssistantsView(model: AssistantsModel.shared)
+            case .updates:
+                UpdatesView(model: UpdatesModel.shared)
+            case .shortcuts:
+                ShortcutsView(model: ShortcutsModel.shared)
+            case .library:
+                LibraryView(model: LibraryModel.shared)
             case .speechToText:
                 SpeechToTextView(notes: notes)
             case .textToSpeech:
                 TextToSpeechView(clips: ClipsModel.shared, voices: VoicesModel.shared, speech: SpeechModel.shared)
-            case let other?:
-                NotYetView(title: other.title, icon: other.icon)
             case nil:
-                NotYetView(title: "Super Voice", icon: .microphone)
+                Color.clear
             }
         }
         .toolbar {
@@ -109,8 +137,7 @@ struct GroupDivider: View {
     }
 }
 
-/// Speech to text's tabs, at the top of the page as in the settings app. Only
-/// Notes is here so far.
+/// Speech to text's tabs, at the top of the page as in the settings app.
 struct SpeechToTextView: View {
     @ObservedObject var notes: NotesModel
 
@@ -209,24 +236,5 @@ extension ToolbarContent {
         } else {
             self
         }
-    }
-}
-
-/// A page this app doesn't have yet.
-struct NotYetView: View {
-    let title: String
-    let icon: Icon
-
-    var body: some View {
-        ContentUnavailableView {
-            Label {
-                Text(title)
-            } icon: {
-                IconView(icon: icon, size: 40)
-            }
-        } description: {
-            Text(t("page-not-in-this-app-yet"))
-        }
-        .navigationTitle(title)
     }
 }

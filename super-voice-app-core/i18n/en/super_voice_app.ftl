@@ -840,6 +840,7 @@ progress-loading-on = Loading on { $device }…
 progress-loading-on-cpu = Loading { $model } on the CPU…
 progress-loading-on-gpu = Loading { $model } on the GPU…
 
-# The macOS app, while its pages arrive
-page-not-in-this-app-yet = This page is in the Linux app, and not here yet.
-recording-not-in-this-app-yet = Recording isn't in this app yet. Use the Linux app, or the shortcut.
+# The macOS app's own words
+backend = Backend
+stage-could-not-change = Couldn't change { $stage }: { $error }
+stage-could-not-read = Couldn't read { $stage }: { $error }

@@ -49,74 +49,6 @@ impl AppModel {
         message: ModelsPageMessage,
     ) -> Task<cosmic::Action<Message>> {
         match message {
-            ModelsPageMessage::RefreshRegistry => {
-                // Reachable from the toolbar menu, which has to go once it has
-                // been used: a menu left standing over the list it just acted
-                // on reads as though the click missed.
-                self.models_page.browse_menu_open = false;
-                // Refresh the index, then fetch the full annotated catalog;
-                // filtering is client-side so the toggles never need a round-trip.
-                crate::core::app::handlers::tasks::fetch_registry_catalog(true)
-            }
-
-            ModelsPageMessage::RegistryListLoaded(resp) => {
-                self.registry.backends = resp.backends;
-                self.registry.generated_at = Some(resp.generated_at);
-                self.registry.last_refresh = Some(crate::state::registry::RefreshOutcome::Ok);
-                Task::none()
-            }
-
-            ModelsPageMessage::RegistryListFailed(err) => {
-                self.registry.last_refresh =
-                    Some(crate::state::registry::RefreshOutcome::Failed(err));
-                Task::none()
-            }
-
-            ModelsPageMessage::RegistryListStale(resp, err) => {
-                log::warn!("Couldn't refresh the backend catalog: {err}");
-                self.registry.backends = resp.backends;
-                self.registry.generated_at = Some(resp.generated_at);
-                self.registry.last_refresh = Some(crate::state::registry::RefreshOutcome::Stale);
-                Task::none()
-            }
-
-            ModelsPageMessage::RegistrySearchChanged(s) => {
-                self.registry.filters.search = s;
-                Task::none()
-            }
-
-            ModelsPageMessage::RegistryIncludeIncompatible(b) => {
-                // The full catalog (incl. incompatible entries) is already
-                // fetched; this is a pure client-side filter.
-                self.registry.filters.include_incompatible = b;
-                Task::none()
-            }
-
-            ModelsPageMessage::RegistryOnlineFilter(o) => {
-                self.registry.filters.online = o;
-                Task::none()
-            }
-            ModelsPageMessage::RegistryFeatureFilter(f) => {
-                self.registry.filters.feature = f;
-                Task::none()
-            }
-            ModelsPageMessage::RegistryRoleFilter(r) => {
-                self.registry.filters.role = r;
-                Task::none()
-            }
-            ModelsPageMessage::InstalledOnlineFilter(o) => {
-                self.models_page.installed_filters.online = o;
-                Task::none()
-            }
-            ModelsPageMessage::InstalledFeatureFilter(f) => {
-                self.models_page.installed_filters.feature = f;
-                Task::none()
-            }
-            ModelsPageMessage::InstalledRoleFilter(r) => {
-                self.models_page.installed_filters.role = r;
-                Task::none()
-            }
-
             ModelsPageMessage::ImportBackendFromDir => pick_folder_task(),
 
             ModelsPageMessage::ImportBackendFromDirPicked(picked) => {
@@ -262,16 +194,18 @@ impl AppModel {
                         }
                     },
                     move |res| {
-                        cosmic::Action::App(Message::ModelsPage(match res {
-                            Ok(a) => ModelsPageMessage::InstallAccepted {
+                        super::library_action(match res {
+                            Ok(a) => super_voice_app_core::pages::library::Input::InstallAccepted {
                                 source: k1.clone(),
                                 install_id: a.install_id,
                             },
-                            Err(e) => ModelsPageMessage::InstallFailedToStart {
-                                source: k2.clone(),
-                                error: e.to_string(),
-                            },
-                        }))
+                            Err(e) => {
+                                super_voice_app_core::pages::library::Input::InstallFailedToStart {
+                                    source: k2.clone(),
+                                    error: e.to_string(),
+                                }
+                            }
+                        })
                     },
                 )
             }

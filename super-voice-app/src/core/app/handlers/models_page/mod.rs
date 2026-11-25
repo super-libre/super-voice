@@ -3,6 +3,8 @@
 mod install;
 mod registry;
 
+pub(in crate::core::app) use install::library_action;
+
 use crate::core::app::AppModel;
 use crate::daemon::client::get_gpu_info;
 use crate::state::{ContextPage, DaemonStatus, ModelsTab};
@@ -32,35 +34,9 @@ impl AppModel {
             | ModelsPageMessage::ToggleInstalledMenu(_)
             | ModelsPageMessage::CloseInstalledMenu => self.handle_models_backend_config(message),
 
-            ModelsPageMessage::InstallBackend(_)
-            | ModelsPageMessage::InstallAccepted { .. }
-            | ModelsPageMessage::InstallFailedToStart { .. }
-            | ModelsPageMessage::UpdateBackend(_) => self.handle_models_install_lifecycle(message),
+            ModelsPageMessage::Library(input) => self.library_input(input),
 
-            ModelsPageMessage::AskUninstall(_)
-            | ModelsPageMessage::CancelUninstall
-            | ModelsPageMessage::UninstallBackend(_)
-            | ModelsPageMessage::UninstallFailed { .. } => self.handle_models_uninstall(message),
-
-            ModelsPageMessage::InstallProgress { .. }
-            | ModelsPageMessage::InstallCompleted { .. }
-            | ModelsPageMessage::InstallFailed { .. } => {
-                self.handle_models_install_progress(message)
-            }
-
-            ModelsPageMessage::RefreshRegistry
-            | ModelsPageMessage::RegistryListLoaded(_)
-            | ModelsPageMessage::RegistryListFailed(_)
-            | ModelsPageMessage::RegistryListStale(..)
-            | ModelsPageMessage::RegistrySearchChanged(_)
-            | ModelsPageMessage::RegistryIncludeIncompatible(_)
-            | ModelsPageMessage::RegistryOnlineFilter(_)
-            | ModelsPageMessage::RegistryFeatureFilter(_)
-            | ModelsPageMessage::RegistryRoleFilter(_)
-            | ModelsPageMessage::InstalledOnlineFilter(_)
-            | ModelsPageMessage::InstalledFeatureFilter(_)
-            | ModelsPageMessage::InstalledRoleFilter(_)
-            | ModelsPageMessage::ImportBackendFromDir
+            ModelsPageMessage::ImportBackendFromDir
             | ModelsPageMessage::ImportBackendFromDirPicked(_)
             | ModelsPageMessage::RegistryCustomRepoInputChanged(_)
             | ModelsPageMessage::ToggleBrowseMenu

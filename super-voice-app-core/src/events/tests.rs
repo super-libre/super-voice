@@ -125,3 +125,32 @@ fn a_level_is_on_the_meters_scale() {
         })
     ));
 }
+
+/// Either feature's settings change names the setting.
+#[test]
+fn a_settings_change_names_its_setting() {
+    let changed =
+        |payload| notification(&event("daemon_status_changed", payload)).map(Event::Status);
+    let stt = changed(serde_json::json!({
+        "status": "settings_changed",
+        "setting": "idle_unload",
+        "timestamp": "2026-05-22T12:35:14Z",
+    }))
+    .expect("an event");
+    assert_eq!(setting_changed(&stt), Some("idle_unload"));
+    let tts = changed(serde_json::json!({
+        "feature": "tts",
+        "status": "settings_changed",
+        "setting": "voice",
+        "timestamp": "2026-05-22T12:35:14Z",
+    }))
+    .expect("an event");
+    assert_eq!(setting_changed(&tts), Some("voice"));
+    let ready = changed(serde_json::json!({
+        "status": "ready",
+        "timestamp": "2026-05-22T12:35:14Z",
+    }))
+    .expect("an event");
+    assert_eq!(setting_changed(&ready), None);
+    assert_eq!(setting_changed(&Event::Connected), None);
+}
