@@ -14,8 +14,13 @@
 // the daemon has answered (speaking, or why not); `contexts`, speech to
 // text's Contexts tab; `contexts-edit`, a new context typed into its editor;
 // `contexts-saved`, that context saved, which writes to the daemon the app is
-// pointed at; or `stt-behavior`, speech to text's Behavior tab with its
-// settings read.
+// pointed at; `stt-behavior`, speech to text's Behavior tab with its settings
+// read; `stt-behavior-recorded`, its recording test run once against the
+// daemon and shot when the take is over (its transcript, or why not),
+// scrolled to the test at the bottom of the tab; `notes-take`, the list with a made-up take recording a new note; or
+// `note-take`, the newest note open with a made-up take adding to it. A take
+// scene's take, level and words are made up in the app, for the layout: a
+// real one needs a microphone and a model.
 // Once the page is in that state, the window is drawn into the file at one
 // size and the app quits. The app draws its own window rather than a screen
 // capture taking it: that needs no Screen Recording permission, so it works
@@ -39,6 +44,7 @@ enum Snapshot {
     private static var taken = false
     private static var opened = false
     private static var edited = false
+    private static var pretended = false
 
     /// What the `edited` scene adds to the note.
     static let addition = "Added by the edited scene."
@@ -79,6 +85,28 @@ enum Snapshot {
             guard open.saved, open.text.hasSuffix(addition) else { return }
         case "notes":
             guard page.open == nil else { return }
+        case "notes-take", "note-take":
+            if scene == "note-take" && page.open == nil {
+                if !opened, let newest = page.notes.first {
+                    opened = true
+                    model.send(.open(id: newest.id))
+                }
+                return
+            }
+            if !pretended {
+                pretended = true
+                var shown = page
+                shown.take = TakePage(
+                    into: scene == "notes-take" ? .newNote : .openNote,
+                    started: Date().timeIntervalSince1970 - 12,
+                    limitSeconds: 600,
+                    stopping: false,
+                    preview: "Pick up milk, eggs and the good bread on the way home",
+                    previewSpans: .everything
+                )
+                model.pretend(shown)
+                MicrophoneModel.shared.pretend(Microphone(recording: true, level: 0.55, speech: true))
+            }
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
             // Shot from their own pages; see `clipsShown`, `voicesShown` and
             // `speechShown`.
@@ -228,9 +256,29 @@ enum Snapshot {
     /// settings are read, for `stt-behavior`.
     static func sttBehaviorShown(_ page: BehaviorPage) {
         guard path != nil, !taken, scene.hasPrefix("stt-behavior"), page.loaded else { return }
-        guard scene == "stt-behavior" else {
+        switch scene {
+        case "stt-behavior":
+            break
+        case "stt-behavior-recorded":
+            // Shot from the test; see `recordingTestShown`.
+            if !opened {
+                opened = true
+                RecordingTestModel.shared.send(.start)
+            }
+            return
+        default:
             fail("no scene is called \(scene)")
         }
+        taken = true
+        Task { await take() }
+    }
+
+    /// The recording test showed `page`: shoot it once its take is over, for
+    /// `stt-behavior-recorded`.
+    static func recordingTestShown(_ page: RecordingTestPage) {
+        guard path != nil, !taken, scene == "stt-behavior-recorded", opened,
+              page.heard != nil, !page.recording
+        else { return }
         taken = true
         Task { await take() }
     }
@@ -258,6 +306,11 @@ enum Snapshot {
         window.makeKeyAndOrderFront(nil)
         // A moment for the new size's layout, and the list's rows, to draw.
         try? await Task.sleep(for: .milliseconds(700))
+        // The recording test is at the bottom of its tab, below the window.
+        if scene == "stt-behavior-recorded" {
+            scrollToBottom(in: window.contentView)
+            try? await Task.sleep(for: .milliseconds(300))
+        }
         // The frame view, so the title bar is in the shot too.
         // Not in front, the window draws without its accent colours: a shot
         // of that is not what the app looks like, so it is refused, unless
@@ -304,6 +357,23 @@ enum Snapshot {
         // was for.
         try? await Task.sleep(for: .seconds(2))
         exit(0)
+    }
+
+    /// Scroll the tallest scroll view under `view` to its end.
+    private static func scrollToBottom(in view: NSView?) {
+        func scrollViews(_ view: NSView) -> [NSScrollView] {
+            (view as? NSScrollView).map { [$0] } ?? [] + view.subviews.flatMap(scrollViews)
+        }
+        guard let view,
+              let scroller = scrollViews(view).max(by: {
+                  ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0)
+              }),
+              let document = scroller.documentView
+        else { fail("no scroll view to scroll to the test") }
+        let clip = scroller.contentView
+        let end = document.isFlipped ? max(0, document.frame.height - clip.bounds.height) : 0
+        clip.scroll(to: NSPoint(x: 0, y: end))
+        scroller.reflectScrolledClipView(clip)
     }
 
     private static func fail(_ why: String) -> Never {

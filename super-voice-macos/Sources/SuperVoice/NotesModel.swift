@@ -13,7 +13,7 @@ final class NotesModel: ObservableObject {
 
     /// What the store last said the page shows.
     @Published private(set) var page = NotesPage(
-        loaded: false, notes: [], open: nil, recording: false, preview: "",
+        loaded: false, notes: [], open: nil, take: nil,
         confirmingDelete: false, exported: nil, notice: nil, folder: notesFolder()
     )
 
@@ -61,6 +61,14 @@ final class NotesModel: ObservableObject {
         Snapshot.shown(page, model: self)
         #endif
     }
+
+    #if DEBUG
+    /// Shows `page` as if the store had sent it: the take scenes' made-up
+    /// take.
+    func pretend(_ page: NotesPage) {
+        self.page = page
+    }
+    #endif
 
     private func askWhereToExport(name: String, text: String) {
         let panel = NSSavePanel()

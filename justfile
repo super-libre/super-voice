@@ -556,11 +556,15 @@ macos-swift-app config="release":
 # `tts-behavior-spoken`, a sentence spoken there (or the daemon's refusal);
 # `contexts`, speech to text's Contexts tab; `contexts-edit`, a new context
 # typed into its editor; `contexts-saved`, that context saved to the daemon;
-# and `stt-behavior`, speech to text's Behavior tab. It reads a copy of the sample notes and clips in
+# `stt-behavior`, speech to text's Behavior tab; `stt-behavior-recorded`, its
+# recording test run once against the daemon, scrolled down to it; and
+# `notes-take` and
+# `note-take`, a made-up take recording a new note or adding to the open one,
+# for the layout. It reads a copy of the sample notes and clips in
 # super-voice-macos/Fixtures, never yours, so `edited` changes only the copy.
 # The voices are the daemon's.
 #
-# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved|stt-behavior]
+# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved|stt-behavior|stt-behavior-recorded|notes-take|note-take]
 macos-swift-shot out scene="notes": (macos-swift-app "debug")
     #!/usr/bin/env bash
     set -euo pipefail

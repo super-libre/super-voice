@@ -842,4 +842,3 @@ progress-loading-on-gpu = Chargement de { $model } sur le GPU…
 
 # The macOS app, while its pages arrive
 page-not-in-this-app-yet = Cette page est dans l'application Linux, pas encore ici.
-recording-not-in-this-app-yet = L'enregistrement n'est pas encore dans cette application. Utilisez l'application Linux, ou le raccourci.
