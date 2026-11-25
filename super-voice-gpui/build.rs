@@ -26,11 +26,17 @@ fn main() {
         date.unwrap_or_default()
     );
 
-    // Built again when the checked-out commit moves.
-    if let Some(dir) = git(&["rev-parse", "--git-dir"]) {
-        let dir = Path::new(&dir);
-        for watched in ["HEAD", "refs/heads"] {
-            let path = dir.join(watched);
+    // Built again when the checked-out commit moves: HEAD, the branch it
+    // names, and packed-refs, where a branch can live instead. `--git-path`
+    // finds each one in a worktree too, whose branches are in the main
+    // checkout's git dir.
+    let mut watched = vec!["HEAD".to_string(), "packed-refs".to_string()];
+    if let Some(branch) = git(&["symbolic-ref", "-q", "HEAD"]) {
+        watched.push(branch);
+    }
+    for name in watched {
+        if let Some(path) = git(&["rev-parse", "--git-path", &name]) {
+            let path = Path::new(&path);
             if path.exists() {
                 println!("cargo:rerun-if-changed={}", path.display());
             }
