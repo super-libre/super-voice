@@ -108,6 +108,10 @@ struct ContentView: View {
                 Color.clear
             }
         }
+        // A Models card with nothing to fill its stage sends the user here.
+        .onReceive(NotificationCenter.default.publisher(for: .openLibrary)) { _ in
+            selection = .library
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HeaderPills(model: header)

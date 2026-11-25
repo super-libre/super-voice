@@ -19,7 +19,9 @@
 // daemon and shot when the take is over (its transcript, or why not),
 // scrolled to the test at the bottom of the tab; `models`, the Models page
 // once the daemon has said what fills each stage; `models-running`, that page
-// with made-up stages (running, asleep, not loaded), for the layout;
+// with made-up stages (running, asleep, not loaded) and its transcription
+// card's model running, for the layout; `models-download`, that card
+// downloading its model; `models-staged`, a model staged that may not fit;
 // `settings`, the Settings page once its settings are read;
 // `settings-languages`, that page with the language picker up; `assistants`,
 // the Assistants page once the daemon has listed them; `assistants-key`, a
@@ -120,7 +122,7 @@ enum Snapshot {
                 model.pretend(shown)
                 MicrophoneModel.shared.pretend(Microphone(recording: true, level: 0.55, speech: true))
             }
-        case "models", "models-running", "settings", "settings-languages", "assistants", "assistants-key",
+        case "models", "models-running", "models-download", "models-staged", "settings", "settings-languages", "assistants", "assistants-key",
              "assistants-connected", "updates", "shortcuts", "library", "library-browse",
              "library-sample", "library-sample-browse":
             // Shot from its own page; see `modelsShown`.
@@ -400,7 +402,7 @@ enum Snapshot {
     /// fills each stage, for `models`.
     static func modelsShown(_ header: HeaderStatus) {
         guard path != nil, !taken, scene.hasPrefix("models") else { return }
-        if scene == "models-running" {
+        if scene != "models" {
             var shown = header
             shown.connected = true
             shown.speechToText = .ready
@@ -420,20 +422,63 @@ enum Snapshot {
                 ),
             ]
             HeaderModel.shared.pretend(shown)
-            ModelsModel.shared.pretend(ModelsPage(cards: [
-                StageCard(
-                    stage: .transcription, source: "whisper",
-                    backends: [Choice(id: "whisper", name: "Whisper"), Choice(id: "qwen", name: "Qwen")],
-                    model: "large-v3-turbo", models: ["base", "small", "large-v3-turbo"], loaded: true,
-                    device: "metal", devices: [Choice(id: "metal", name: "Metal"), Choice(id: "cpu", name: "CPU")],
-                    busy: false
-                ),
-            ], notice: nil))
+            ModelsModel.shared.pretend(ModelsPage(cards: [madeUpCard(scene)], notice: nil))
         } else if header.pipeline.isEmpty {
             return
         }
         taken = true
         Task { await take() }
+    }
+
+    /// A made-up transcription card for `scene`: `models-running`, its model
+    /// up on Metal; `models-download`, a model downloading; `models-staged`, a
+    /// model staged that may not fit on the GPU.
+    private static func madeUpCard(_ scene: String) -> StageCard {
+        let whisper = CardBackend(
+            source: "github.com/super-libre/super-voice-whisper", name: "Whisper", version: "0.2.1",
+            description: "Local Whisper speech to text.",
+            repository: "https://github.com/super-libre/super-voice-whisper",
+            chips: BackendChips(gpu: true, cpu: true, online: false), models: 3
+        )
+        let qwen = CardBackend(
+            source: "github.com/super-libre/super-voice-qwen-asr", name: "Qwen ASR", version: "0.1.0",
+            description: "", repository: "https://github.com/super-libre/super-voice-qwen-asr",
+            chips: BackendChips(gpu: true, cpu: true, online: false), models: 1
+        )
+        let devices = [Choice(id: "metal", name: "Metal"), Choice(id: "cpu", name: "CPU")]
+        let notes = CardNotes(memory: nil, fallback: nil, warning: nil, unmet: [])
+        var card = StageCard(
+            stage: .transcription, source: whisper.source, backends: [whisper, qwen], backend: whisper,
+            model: .running(model: "large-v3-turbo", idle: false),
+            models: ["base", "small", "large-v3-turbo"], devices: devices, device: "metal",
+            notes: notes, progress: .none, canLoad: false, reloadable: false, busy: false
+        )
+        switch scene {
+        case "models-download":
+            card.model = .staging(model: "large-v3-turbo")
+            card.progress = .download(
+                line: t("provision-model-progress", [
+                    "value0": t("downloading"), "value1": "large-v3-turbo",
+                    "value2": "2", "value3": "3", "value4": "42.0",
+                ]),
+                fraction: 0.42,
+                bytes: t("download-size", ["mb": "690.5", "total": "1624.0"])
+            )
+        case "models-staged":
+            card.model = .staging(model: "large-v3-turbo")
+            card.canLoad = true
+            card.notes = CardNotes(
+                memory: t("model-needs-memory", ["size": t("size-gb", ["size": "3.1"])]),
+                fallback: nil,
+                warning: t("model-memory-warning", [
+                    "value0": t("memory-size", ["gib": "3.1"]), "value1": t("memory-size", ["gib": "2.0"]),
+                ]),
+                unmet: []
+            )
+        default:
+            break
+        }
+        return card
     }
 
     /// The recording test showed `page`: shoot it once its take is over, for
