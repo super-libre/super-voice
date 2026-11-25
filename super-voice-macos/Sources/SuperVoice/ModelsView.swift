@@ -66,6 +66,7 @@ struct ModelsView: View {
         if let notice = models.page.notice {
             NoticeBanner(text: notice)
         }
+        ModelDetailsNotices()
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 FeatureRow(
@@ -461,13 +462,47 @@ struct CardModelRows: View {
     }
 }
 
-/// Where a model's language and voice rows go on a card.
+/// The shown model's language, when it has more than one, and for synthesis
+/// its voice.
 struct ModelDetailsSlot: View {
     let stage: PipelineStage
     let card: StageCard
+    @ObservedObject private var details = ModelDetailsModel.shared
 
     var body: some View {
-        EmptyView()
+        if let source = card.source, let model = card.model.name {
+            let known = details.language(stage).map {
+                $0.source == source && $0.model == model && $0.label != nil
+            } ?? false
+            if known {
+                LabeledRow(label: t("language")) {
+                    ModelLanguageButton(stage: stage, source: source, model: model)
+                }
+            } else {
+                // Draws nothing until the language is read, which it asks for.
+                ModelLanguageButton(stage: stage, source: source, model: model)
+            }
+            if stage == .synthesis {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(t("voice"))
+                    Spacer()
+                    ModelVoicePicker(source: source, model: model)
+                        .labelsHidden()
+                        .frame(maxWidth: 360, alignment: .trailing)
+                }
+            }
+        }
+    }
+}
+
+extension CardModel {
+    /// The model a card shows, running or staged.
+    var name: String? {
+        switch self {
+        case let .running(model, _): model
+        case let .staging(model): model
+        case .empty: nil
+        }
     }
 }
 
