@@ -3,5 +3,6 @@
 //! it. Each returns a value, not words: every app says it its own way.
 
 pub mod backends;
+pub mod gpu;
 pub mod memory;
 pub mod status;
