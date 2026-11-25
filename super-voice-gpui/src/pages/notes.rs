@@ -152,6 +152,16 @@ impl PageView for NotesPage {
         true
     }
 
+    // A take recording holds the window: it stops, its words are written,
+    // then the window closes (the core's `FinishBeforeExit`).
+    fn closing(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.state.take.is_none() {
+            return false;
+        }
+        self.send(Input::FinishBeforeExit, window, cx);
+        true
+    }
+
     fn commands(&self, _: &App) -> Vec<PaletteCommand> {
         let notes = t("notes");
         std::iter::once(PaletteCommand::new(
@@ -254,7 +264,7 @@ impl CorePage for NotesPage {
                 None
             }
             Effect::Exit => {
-                window.remove_window();
+                self.shared.nav.finished_closing(Page::Notes, window, cx);
                 None
             }
         }

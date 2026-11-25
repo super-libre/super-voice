@@ -39,6 +39,16 @@ impl Navigator {
         });
     }
 
+    /// `page` has finished the work it held the window open for
+    /// ([`crate::pages::PageView::closing`]): the window closes once every
+    /// page that waited has.
+    pub fn finished_closing(&self, page: Page, window: &mut Window, cx: &mut App) {
+        let shell = self.0.clone();
+        window.defer(cx, move |window, cx| {
+            _ = shell.update(cx, |shell, cx| shell.finished_closing(page, window, cx));
+        });
+    }
+
     /// Show `page`, then run its command `id` (one of its palette commands'
     /// ids), once the current update is done.
     pub fn go_and_run(&self, page: Page, id: String, window: &mut Window, cx: &mut App) {

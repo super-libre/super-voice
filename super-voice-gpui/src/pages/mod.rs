@@ -100,6 +100,16 @@ pub trait PageView: Render + Sized + 'static {
         false
     }
 
+    /// The window is asked to close (its close button, or the desktop's).
+    /// `true` when the page has work in flight it must finish first, such as
+    /// a take recording: it finishes, then says so with
+    /// [`crate::shared::Navigator::finished_closing`], and the window closes
+    /// once every page that waited has. The shell closes it anyway after a
+    /// short wait, so a stuck daemon can't keep it open.
+    fn closing(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> bool {
+        false
+    }
+
     /// The commands the page offers the palette (Ctrl+K), whatever page is
     /// shown. The palette lists them under their group, then shows this page
     /// and calls [`Self::run`] with the id of the one picked.
@@ -234,6 +244,10 @@ impl PageHandle {
         self.calls.back(window, cx)
     }
 
+    pub fn closing(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.calls.closing(window, cx)
+    }
+
     #[must_use]
     pub fn commands(&self, cx: &App) -> Vec<PaletteCommand> {
         self.calls.commands(cx)
@@ -265,6 +279,7 @@ trait PageCalls {
     fn heard(&self, event: &Event, window: &mut Window, cx: &mut App);
     fn shown(&self, window: &mut Window, cx: &mut App);
     fn back(&self, window: &mut Window, cx: &mut App) -> bool;
+    fn closing(&self, window: &mut Window, cx: &mut App) -> bool;
     fn commands(&self, cx: &App) -> Vec<PaletteCommand>;
     fn run(&self, id: &str, window: &mut Window, cx: &mut App);
     fn sidebar_mark(&self, cx: &App) -> Option<SidebarMark>;
@@ -288,6 +303,10 @@ impl<T: PageView> PageCalls for Entity<T> {
 
     fn back(&self, window: &mut Window, cx: &mut App) -> bool {
         self.update(cx, |page, cx| page.back(window, cx))
+    }
+
+    fn closing(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.update(cx, |page, cx| page.closing(window, cx))
     }
 
     fn commands(&self, cx: &App) -> Vec<PaletteCommand> {

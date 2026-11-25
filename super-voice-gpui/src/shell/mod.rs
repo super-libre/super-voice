@@ -103,6 +103,17 @@ pub const KEYS: &[&str] = &[
     "copy-command",
 ];
 
+/// How long the window waits, asked to close, for the pages finishing their
+/// work ([`crate::pages::PageView::closing`]) before it closes anyway.
+const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The window was asked to close, and waits for these pages to finish.
+struct Closing {
+    waiting: Vec<Page>,
+    /// Closes the window after [`CLOSE_WAIT`] whatever the pages say.
+    _give_up: gpui_kit::Task<()>,
+}
+
 /// The services the window runs on: whether the daemon answers, how ready
 /// each feature is, and the daemon's events.
 pub struct Services {
@@ -123,6 +134,8 @@ pub struct Shell {
     palette: palette::Palette,
     /// The drawer is open (narrow windows).
     drawer_open: bool,
+    /// The window was asked to close and waits for pages to finish.
+    closing: Option<Closing>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -166,6 +179,13 @@ impl Shell {
                 crate::theme::follow_system(window, cx);
             }));
         }
+        // The desktop's close (Alt+F4, the traffic light) asks the pages
+        // first, as the title bar's close button does.
+        let weak = cx.weak_entity();
+        window.on_window_should_close(cx, move |window, cx| {
+            weak.update(cx, |shell, cx| shell.close(window, cx))
+                .unwrap_or(true)
+        });
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         Self {
@@ -175,6 +195,7 @@ impl Shell {
             events,
             palette: palette::Palette::new(window, cx),
             drawer_open: false,
+            closing: None,
             focus,
             _subscriptions: subscriptions,
         }
@@ -189,6 +210,49 @@ impl Shell {
         }
         self.handle(page).shown(window, cx);
         cx.notify();
+    }
+
+    /// The window is asked to close: `true` when it may close now. A page
+    /// with work in flight (a take recording) holds it until it says it has
+    /// finished, or [`CLOSE_WAIT`] is up; meanwhile it is shown, and a second
+    /// ask changes nothing.
+    pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.closing.is_some() {
+            return false;
+        }
+        let waiting: Vec<Page> = self
+            .pages
+            .clone()
+            .into_iter()
+            .filter(|(_, handle)| handle.closing(window, cx))
+            .map(|(page, _)| page)
+            .collect();
+        let Some(&first) = waiting.first() else {
+            return true;
+        };
+        self.go(first, window, cx);
+        let give_up = cx.spawn_in(window, async move |_, cx| {
+            cx.background_executor().timer(CLOSE_WAIT).await;
+            log::warn!("Closing before every page finished its work");
+            _ = cx.update(|window, _| window.remove_window());
+        });
+        self.closing = Some(Closing {
+            waiting,
+            _give_up: give_up,
+        });
+        false
+    }
+
+    /// `page` finished the work it held the window open for: close it once
+    /// no page waits.
+    pub fn finished_closing(&mut self, page: Page, window: &mut Window, _: &mut Context<Self>) {
+        let Some(closing) = self.closing.as_mut() else {
+            return;
+        };
+        closing.waiting.retain(|waiting| *waiting != page);
+        if closing.waiting.is_empty() {
+            window.remove_window();
+        }
     }
 
     fn handle(&self, page: Page) -> &PageHandle {
