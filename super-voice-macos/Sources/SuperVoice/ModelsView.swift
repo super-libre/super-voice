@@ -321,7 +321,7 @@ struct UpdateChip: View {
 
     var body: some View {
         if let backend = library.page.installed.first(where: { $0.source == source }) {
-            if backend.installing {
+            if case .running = backend.update {
                 ProgressView().controlSize(.mini)
             } else if let version = backend.updateTo {
                 Button(t("update-to-version", ["version": version])) {

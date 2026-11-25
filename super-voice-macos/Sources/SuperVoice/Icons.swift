@@ -13,6 +13,7 @@ enum Icon: String {
     case brain
     case caretLeft = "caret-left"
     case caretRight = "caret-right"
+    case chatText = "chat-text"
     case check
     case cloud
     case cpu
@@ -25,6 +26,7 @@ enum Icon: String {
     case robot
     case speakerHigh = "speaker-high"
     case stop
+    case userSound = "user-sound"
     case warning
     case x
 

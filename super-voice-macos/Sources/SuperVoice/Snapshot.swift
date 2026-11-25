@@ -35,7 +35,8 @@
 // listed them; `library`, the Library page's Installed tab; `library-browse`,
 // its Browse tab once the catalog is read (or why not); `library-sample` and
 // `library-sample-browse`, both tabs with made-up backends, for the layout;
-// `notes-take`, the list with a made-up take recording a new note; or
+// `library-add`, the "Install manually" sheet over them, previewing a
+// made-up backend; `notes-take`, the list with a made-up take recording a new note; or
 // `note-take`, the newest note open with a made-up take adding to it. A take
 // scene's take, level and words are made up in the app, for the layout: a
 // real one needs a microphone and a model.
@@ -127,7 +128,8 @@ enum Snapshot {
             }
         case "models", "models-running", "models-download", "models-staged", "settings", "settings-languages", "assistants", "assistants-key",
              "assistants-connected", "updates", "shortcuts", "library", "library-browse",
-             "library-sample", "library-sample-browse", "model-language", "model-voice":
+             "library-sample", "library-sample-browse", "model-language", "model-voice",
+             "library-add":
             // Shot from its own page; see `modelsShown`.
             return
         case _ where ["clips", "voices", "tts-behavior", "contexts", "stt-behavior"].contains(where: scene.hasPrefix):
@@ -368,37 +370,91 @@ enum Snapshot {
     }
 
     /// The Library page showed `page`: shoot it once the catalog is read
-    /// (or why not), for `library` and `library-browse`.
+    /// (or why not), for `library` and `library-browse`; with made-up
+    /// backends for `library-sample` and `library-sample-browse`, and with the
+    /// "Install manually" sheet up over them, previewing one, for
+    /// `library-add`.
     static func libraryShown(_ page: LibraryPage) {
         guard path != nil, !taken, scene.hasPrefix("library"), page.catalogLoaded else { return }
-        if scene.hasPrefix("library-sample") {
+        if scene.hasPrefix("library-sample") || scene == "library-add" {
             var shown = page
             shown.catalogError = nil
+            shown.catalogUpdated = "2026-11-20T09:30:00Z"
             shown.installedTotal = 2
             shown.installed = [
                 InstalledRow(source: "github.com/super-libre/super-stt-whisper", name: "Whisper", version: "0.2.1",
-                             description: "Local Whisper speech to text.", online: false, models: 6,
-                             updateTo: "0.2.2", installing: false, uninstallError: nil),
+                             description: "Local Whisper speech to text.", online: false,
+                             capabilities: [.gpu, .cpu, .contexts],
+                             modelGroups: [LibraryModelGroup(kind: .transcription, names: [
+                                 "tiny", "base", "small", "medium", "large-v3", "large-v3-turbo",
+                             ])],
+                             repository: "https://github.com/super-libre/super-stt-whisper",
+                             updateTo: nil, update: .running(phase: .downloading, fraction: 0.6),
+                             uninstallError: nil),
                 InstalledRow(source: "github.com/super-libre/super-tts-kokoro", name: "Kokoro", version: "0.1.4",
-                             description: "Fast local text to speech.", online: false, models: 1,
-                             updateTo: nil, installing: false, uninstallError: nil),
+                             description: "Fast local text to speech.", online: false,
+                             capabilities: [.cpu, .voiceCloning],
+                             modelGroups: [LibraryModelGroup(kind: .synthesis, names: ["kokoro-82m"])],
+                             repository: "https://github.com/super-libre/super-tts-kokoro",
+                             updateTo: "0.1.5", update: .idle, uninstallError: nil),
             ]
             shown.catalog = [
                 CatalogRow(source: "github.com/super-libre/super-stt-qwen-asr", name: "Qwen", version: "0.1.0",
                            description: "Local Qwen3-ASR speech to text with streamed previews.", online: false,
-                           models: 2, compatible: true, incompatibleReason: nil, needsVersion: nil,
+                           capabilities: [.gpu, .cpu, .contexts],
+                           modelGroups: [
+                               LibraryModelGroup(kind: .transcription, names: ["qwen3-asr-0.6b", "qwen3-asr-1.7b"]),
+                               LibraryModelGroup(kind: .postProcessing, names: ["qwen3-0.6b-tidy"]),
+                           ],
+                           repository: "https://github.com/super-libre/super-stt-qwen-asr", needsKey: false,
+                           compatible: true, incompatibleReason: nil, needsVersion: nil,
                            install: .running(phase: .downloading, fraction: 0.42)),
                 CatalogRow(source: "github.com/super-libre/super-stt-deepgram", name: "Deepgram", version: "0.3.0",
-                           description: "Deepgram's speech to text, online.", online: true, models: 3,
+                           description: "Deepgram's speech to text, online.", online: true,
+                           capabilities: [.cloud(hosts: ["api.deepgram.com"], userUrl: false)],
+                           modelGroups: [LibraryModelGroup(kind: .transcription, names: [
+                               "nova-3", "nova-2", "enhanced",
+                           ])],
+                           repository: "https://github.com/super-libre/super-stt-deepgram", needsKey: true,
                            compatible: true, incompatibleReason: nil, needsVersion: nil, install: .idle),
                 CatalogRow(source: "github.com/super-libre/super-stt-voxtral", name: "Voxtral", version: "0.4.0",
-                           description: "Mistral's Voxtral, local.", online: false, models: 2,
+                           description: "Mistral's Voxtral, local.", online: false, capabilities: [.gpu],
+                           modelGroups: [LibraryModelGroup(kind: .transcription, names: [
+                               "voxtral-mini", "voxtral-small",
+                           ])],
+                           repository: "https://github.com/super-libre/super-stt-voxtral", needsKey: false,
                            compatible: true, incompatibleReason: nil, needsVersion: "v0.4.0", install: .idle),
             ]
+            if scene == "library-add" {
+                let url = "https://github.com/someone/super-stt-parakeet"
+                shown.add = AddSheet(
+                    open: true, source: .repository, url: url, folder: "",
+                    preview: .ready(backend: AddPreviewBackend(
+                        source: "github.com/someone/super-stt-parakeet", name: "Parakeet", version: "0.2.0",
+                        description: "NVIDIA's Parakeet speech to text, local.", incompatible: nil,
+                        capabilities: [.gpu, .cpu],
+                        runsAs: .subprocess, needs: [], reaches: ["huggingface.co"],
+                        builtFor: "aarch64-apple-darwin, metal", license: "Apache-2.0",
+                        models: [
+                            AddPreviewModel(name: "parakeet-tdt-0.6b-v2", kind: .transcription,
+                                            gpu: true, cpu: true, online: false),
+                            AddPreviewModel(name: "parakeet-tdt-0.6b-v3", kind: .transcription,
+                                            gpu: true, cpu: true, online: false),
+                        ]
+                    )),
+                    install: .idle, installable: "Parakeet"
+                )
+            }
             LibraryModel.shared.pretend(shown)
         }
         taken = true
-        Task { await take() }
+        // A moment for the sheet to come up.
+        Task {
+            if scene == "library-add" {
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            await take()
+        }
     }
 
     /// The Models page showed `header`: shoot it once the daemon has said what
