@@ -466,8 +466,11 @@ impl cosmic::Application for AppModel {
         // of one that has played out.
         if self.clips.making.is_some() || self.clips.playing.is_some() {
             subs.push(
-                cosmic::iced::time::every(std::time::Duration::from_millis(200))
-                    .map(|_| Message::Clips(crate::ui::messages::ClipsMessage::Tick)),
+                cosmic::iced::time::every(std::time::Duration::from_millis(200)).map(|_| {
+                    Message::Clips(crate::ui::messages::ClipsMessage::Page(
+                        super_voice_app_core::pages::clips::Input::Tick,
+                    ))
+                }),
             );
         }
         // The Assistants page's open sessions, while it is shown: they start,

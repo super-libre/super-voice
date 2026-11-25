@@ -19,7 +19,6 @@ pub use super_voice_app_core::state::{
 
 /// The Clips tab's state, with libcosmic's editor for the next clip.
 pub mod clips {
-    pub use super_voice_app_core::state::clips::*;
     pub type ClipsState = super_voice_app_core::state::clips::ClipsState<super::Editor>;
 }
 

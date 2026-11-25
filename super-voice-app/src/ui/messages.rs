@@ -1056,51 +1056,15 @@ pub enum NotesMessage {
 /// exported by the app.
 #[derive(Debug, Clone)]
 pub enum ClipsMessage {
-    /// Read the folder. Sent whenever the tab is opened.
-    Reload,
-    /// What the folder holds, newest first, or why it could not be read.
-    Loaded(Result<Vec<crate::clips::Clip>, String>),
-
-    /// A keystroke, motion or click in the text of the next clip.
+    /// Something the page's logic handles: a press, or the answer to work it
+    /// started. See `super_voice_app_core::pages::clips`.
+    Page(super_voice_app_core::pages::clips::Input),
+    /// A keystroke, motion or click in the draft's editor, which the app
+    /// applies to its own buffer.
     DraftEdit(cosmic::widget::text_editor::Action),
-    /// Make a clip of the text.
+    /// Make a clip of the draft, in the voice text to speech uses, which the
+    /// app names.
     Make,
-    /// The clip was made and kept, or could not be.
-    Made(Result<crate::clips::Clip, String>),
-    /// Stop making the clip.
-    Cancel,
-    /// Time passed while making or playing: the counters move on, and a clip
-    /// that has played to its end is let go.
-    Tick,
-
-    /// Play the clip with this id, stopping any other.
-    Play(String),
-    /// Its audio was read, and can play.
-    Ready {
-        id: String,
-        result: Result<(Vec<f32>, u32), String>,
-    },
-    /// Stop the clip playing.
-    Stop,
-
-    /// Ask where to export the clip with this id, and copy it there.
-    Export(String),
-    /// Where it went, `None` when the dialog was closed.
-    Exported {
-        id: String,
-        result: Result<Option<String>, String>,
-    },
-
-    /// First press of a clip's Delete: asks to confirm.
-    DeleteRequested(String),
-    DeleteCancelled,
-    /// Second press: delete it.
-    DeleteConfirmed(String),
-    /// It was deleted, or could not be.
-    Deleted {
-        id: String,
-        result: Result<(), String>,
-    },
 }
 
 macro_rules! message_from {
