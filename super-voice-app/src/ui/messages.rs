@@ -9,7 +9,6 @@
 //! error at both ends instead of silently falling through to `Task::none()`.
 
 use super_voice_shared::models::read_method::ReadMethod;
-use super_voice_shared::models::shortcuts::{ShortcutId, ShortcutList};
 
 use cosmic::widget::segmented_button;
 
@@ -524,16 +523,9 @@ pub enum VoiceMessage {
 /// The Shortcuts page.
 #[derive(Debug, Clone)]
 pub enum ShortcutsMessage {
-    /// Ask the daemon where each shortcut stands.
-    Refresh,
-    /// The daemon's answer to a refresh.
-    Loaded(Result<ShortcutList, String>),
-    /// Add this shortcut.
-    Add(ShortcutId),
-    /// Remove this shortcut.
-    Remove(ShortcutId),
-    /// The daemon's answer to an add or a remove: the list, or why not.
-    Changed(Result<ShortcutList, String>),
+    /// Something the page's logic handles. See
+    /// `super_voice_app_core::pages::shortcuts`.
+    Page(super_voice_app_core::pages::shortcuts::Input),
 }
 
 /// The Assistants page, and its two dialogs: Connect, and a key for another

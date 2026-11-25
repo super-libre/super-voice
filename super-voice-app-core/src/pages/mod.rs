@@ -15,6 +15,7 @@ pub mod contexts;
 pub mod notes;
 pub mod recording_test;
 pub mod settings;
+pub mod shortcuts;
 pub mod speech;
 pub mod updates;
 pub mod voices;

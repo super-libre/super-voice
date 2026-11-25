@@ -590,7 +590,9 @@ impl AppModel {
             // Someone may have changed the shortcuts in the desktop's settings.
             crate::state::Page::Shortcuts => Task::batch([
                 Task::done(cosmic::Action::App(Message::Shortcuts(
-                    crate::ui::messages::ShortcutsMessage::Refresh,
+                    crate::ui::messages::ShortcutsMessage::Page(
+                        super_voice_app_core::pages::shortcuts::Input::Refresh,
+                    ),
                 ))),
                 self.update_title(),
             ]),

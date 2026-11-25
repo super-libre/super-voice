@@ -8,9 +8,8 @@ use cosmic::Element;
 use cosmic::iced::Alignment;
 use cosmic::iced::widget::{Space, row};
 use cosmic::widget::{button, settings, text};
-use super_voice_shared::models::shortcuts::{
-    Shortcut, ShortcutId, ShortcutList, ShortcutMethod, ShortcutState,
-};
+use super_voice_app_core::pages::shortcuts::{self as page, ChangedIn, Input, Row};
+use super_voice_shared::models::shortcuts::{Shortcut, ShortcutId, ShortcutList};
 
 use super::common::{error_banner, page_layout};
 use crate::state::shortcuts::ShortcutsState;
@@ -30,48 +29,37 @@ fn name(id: ShortcutId) -> (String, String) {
     }
 }
 
-/// Whether `desktop`, an `XDG_CURRENT_DESKTOP`, names GNOME.
-fn is_gnome(desktop: &str) -> bool {
-    desktop.split(':').any(|d| d.eq_ignore_ascii_case("GNOME"))
-}
-
 /// One shortcut's row: what it does and where it stands, with its keys once
 /// it is set up and a Remove button where the daemon can remove it, or the
 /// button that adds it.
 fn row_for(shortcut: &Shortcut, list: &ShortcutList) -> Element<'static, Message> {
     let (title, does) = name(shortcut.id);
     let item = settings::item::builder(title);
-    let keys = shortcut.keys.clone();
-    let command = shortcut.command.clone();
-    match shortcut.state {
+    let id = shortcut.id;
+    match page::row(shortcut, list) {
         // The daemon removes it from COSMIC's file, has KDE Plasma's
         // shortcut service forget it, and takes it out of GNOME's record.
-        // Through the portal elsewhere it cannot: the portal has no unbind,
-        // and the desktop keeps it in its own settings, so that is where it
-        // is changed or removed.
-        ShortcutState::Installed if list.removable => {
-            // GNOME keeps an app's shortcuts on the app's page in its
-            // Settings, not with its keyboard settings.
-            let set_up = if list.method == ShortcutMethod::Cosmic {
-                crate::fl!("shortcut-set-up")
-            } else if is_gnome(&list.desktop) {
-                crate::fl!("shortcut-set-up-gnome")
-            } else {
-                crate::fl!("shortcut-set-up-desktop")
+        Row::Removable { keys, changed_in } => {
+            let set_up = match changed_in {
+                ChangedIn::Cosmic => crate::fl!("shortcut-set-up"),
+                ChangedIn::Gnome => crate::fl!("shortcut-set-up-gnome"),
+                ChangedIn::Desktop => crate::fl!("shortcut-set-up-desktop"),
             };
             item.description(format!("{does} {set_up}"))
                 .control(
                     row![
                         text::body(keys),
                         button::standard(crate::fl!("remove"))
-                            .on_press(Message::Shortcuts(ShortcutsMessage::Remove(shortcut.id))),
+                            .on_press(page_input(Input::Remove(id))),
                     ]
                     .spacing(12)
                     .align_y(Alignment::Center),
                 )
                 .into()
         }
-        ShortcutState::Installed => item
+        // Through the portal elsewhere the daemon cannot: the portal has no
+        // unbind, and the desktop keeps it in its own settings.
+        Row::Added { keys } => item
             .description(format!(
                 "{does} {}",
                 crate::fl!("shortcut-change-in-desktop")
@@ -86,28 +74,32 @@ fn row_for(shortcut: &Shortcut, list: &ShortcutList) -> Element<'static, Message
                 .align_y(Alignment::Center),
             )
             .into(),
-        ShortcutState::Missing => {
+        Row::Missing { keys } => {
             let state = crate::fl!("shortcut-missing", keys = keys);
             item.description(format!("{does} {state}"))
                 .control(
                     button::standard(crate::fl!("add-shortcut"))
-                        .on_press(Message::Shortcuts(ShortcutsMessage::Add(shortcut.id))),
+                        .on_press(page_input(Input::Add(id))),
                 )
                 .into()
         }
-        ShortcutState::Taken => {
+        Row::Taken { keys, command } => {
             let state = crate::fl!("shortcut-taken", keys = keys, command = command);
             item.description(format!("{does} {state}"))
                 .control(Space::new())
                 .into()
         }
-        ShortcutState::Manual => {
+        Row::Elsewhere { command } => {
             let state = crate::fl!("shortcut-elsewhere", command = command);
             item.description(format!("{does} {state}"))
                 .control(Space::new())
                 .into()
         }
     }
+}
+
+fn page_input(input: Input) -> Message {
+    Message::Shortcuts(ShortcutsMessage::Page(input))
 }
 
 pub fn page<'a>(state: &ShortcutsState, action_error: Option<&'a str>) -> Element<'a, Message> {
@@ -123,18 +115,4 @@ pub fn page<'a>(state: &ShortcutsState, action_error: Option<&'a str>) -> Elemen
         blocks.push(section.into());
     }
     page_layout(crate::fl!("shortcuts"), settings::view_column(blocks))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_gnome;
-
-    #[test]
-    fn gnome_is_found_in_a_desktop_list() {
-        assert!(is_gnome("GNOME"));
-        assert!(is_gnome("ubuntu:GNOME"));
-        assert!(!is_gnome("KDE"));
-        assert!(!is_gnome("GNOME-Flashback-less"));
-        assert!(!is_gnome(""));
-    }
 }
