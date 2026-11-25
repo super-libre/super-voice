@@ -18,6 +18,7 @@ pub mod contexts;
 mod events;
 pub mod library;
 pub mod microphone;
+pub mod models;
 pub mod notes;
 pub mod recording_test;
 pub mod settings;

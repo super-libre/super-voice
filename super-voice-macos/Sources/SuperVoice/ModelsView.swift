@@ -1,18 +1,71 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The Models page: each feature's pipeline as a row of steps, as in the
 // settings app, and under the rows the open step's card. Each step says which
-// backend fills its stage and how its model stands. The card shows what runs;
-// choosing a backend or a model isn't in this app yet.
+// backend fills its stage and how its model stands. The card picks the
+// backend, its model and where it runs, and loads or unloads it.
 
 import SuperVoiceCore
 import SwiftUI
 
+@MainActor
+final class ModelsModel: ObservableObject {
+    static let shared = ModelsModel()
+
+    @Published private(set) var page = ModelsPage(cards: [], notice: nil)
+
+    private var store: ModelsStore!
+
+    private init() {
+        let relay = ModelsRelay { [weak self] page in Task { @MainActor in self?.show(page) } }
+        store = ModelsStore(observer: relay)
+    }
+
+    private func show(_ page: ModelsPage) {
+        #if DEBUG
+        if pretending { return }
+        #endif
+        self.page = page
+    }
+
+    #if DEBUG
+    private var pretending = false
+
+    /// Shows `page` from now on, whatever the store says: a made-up scene's.
+    func pretend(_ page: ModelsPage) {
+        pretending = true
+        self.page = page
+    }
+    #endif
+
+    func send(_ action: ModelsAction) {
+        store.send(action: action)
+    }
+}
+
+/// Hands the store's calls, which come on its own threads, to the model.
+final class ModelsRelay: ModelsObserver {
+    let onChange: @Sendable (ModelsPage) -> Void
+
+    init(onChange: @escaping @Sendable (ModelsPage) -> Void) {
+        self.onChange = onChange
+    }
+
+    func changed(page: ModelsPage) {
+        onChange(page)
+    }
+}
+
 struct ModelsView: View {
     @ObservedObject var header = HeaderModel.shared
+    @ObservedObject var models = ModelsModel.shared
     @State private var open: PipelineStage = .transcription
 
     var body: some View {
         let steps = header.header.pipeline
+        VStack(spacing: 0) {
+        if let notice = models.page.notice {
+            NoticeBanner(text: notice)
+        }
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 FeatureRow(
@@ -41,16 +94,20 @@ struct ModelsView: View {
                 Divider()
                 Text(open.name)
                     .font(.title2.bold())
-                StageCard(stage: open, step: steps.first { $0.stage == open })
-                Text(t("choosing-models-not-in-this-app-yet"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                StageCardView(
+                    models: models,
+                    stage: open,
+                    step: steps.first { $0.stage == open },
+                    card: models.page.cards.first { $0.stage == open }
+                )
             }
             // The other pages' grouped cards' inset.
             .padding(.horizontal, 28)
             .padding(.vertical)
         }
+        }
         .navigationTitle(t("models"))
+        .onAppear { models.send(.reload) }
         #if DEBUG
         .onAppear { Snapshot.modelsShown(header.header) }
         .onChange(of: steps.count) { _, _ in Snapshot.modelsShown(header.header) }
@@ -161,38 +218,82 @@ struct StepButton: View {
     }
 }
 
-/// The open step's card: what fills the stage and how it stands.
-struct StageCard: View {
+/// The open step's card: which backend fills the stage, which of its models
+/// runs and on what, how it stands, and Load or Unload. It waits while a
+/// change runs.
+struct StageCardView: View {
+    @ObservedObject var models: ModelsModel
     let stage: PipelineStage
     let step: PipelineStep?
+    let card: StageCard?
 
     var body: some View {
+        let busy = card?.busy ?? true
         VStack(spacing: 10) {
-            CardRow(label: t("backend"), value: step?.backend ?? stage.emptyTitle)
-            if step?.backend != nil, let step {
-                Divider()
-                switch step.model {
-                case let .running(name, device):
-                    CardRow(label: t("model"), value: name)
-                    if let device {
-                        Divider()
-                        CardRow(label: t("runs-on"), value: device)
+            PickerRow(label: t("backend")) {
+                Picker(t("backend"), selection: Binding(
+                    get: { card?.source },
+                    set: { models.send(.pickBackend(stage: stage, source: $0)) }
+                )) {
+                    Text(stage.emptyTitle).tag(String?.none)
+                    ForEach(card?.backends ?? [], id: \.id) { backend in
+                        Text(backend.name).tag(String?.some(backend.id))
                     }
-                case let .idle(name):
-                    CardRow(label: t("model"), value: name)
-                case .notLoaded:
-                    CardRow(label: t("model"), value: t("not-loaded"))
+                }
+                .disabled(busy)
+            }
+            if let card, card.source != nil {
+                Divider()
+                PickerRow(label: t("model")) {
+                    Picker(t("model"), selection: Binding(
+                        get: { card.model },
+                        set: { model in if let model { models.send(.pickModel(stage: stage, model: model)) } }
+                    )) {
+                        if card.model == nil {
+                            Text("\u{2014}").tag(String?.none)
+                        }
+                        ForEach(card.models, id: \.self) { Text($0).tag(String?.some($0)) }
+                    }
+                    .disabled(busy || card.models.isEmpty)
+                }
+                if !card.devices.isEmpty {
+                    Divider()
+                    PickerRow(label: t("runs-on")) {
+                        Picker(t("runs-on"), selection: Binding(
+                            get: { card.device ?? "" },
+                            set: { models.send(.pickDevice(stage: stage, device: $0)) }
+                        )) {
+                            ForEach(card.devices, id: \.id) { Text($0.name).tag($0.id) }
+                        }
+                        .disabled(busy)
+                    }
                 }
             }
             Divider()
             HStack {
                 Text(t("status"))
                 Spacer()
-                Circle()
-                    .fill((step?.readiness ?? .none).color)
-                    .frame(width: 8, height: 8)
-                Text((step?.readiness ?? .none).words)
-                    .foregroundStyle(.secondary)
+                if busy, card != nil {
+                    ProgressView().controlSize(.small)
+                    Text(t("loading-progress"))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Circle()
+                        .fill((step?.readiness ?? .none).color)
+                        .frame(width: 8, height: 8)
+                    Text((step?.readiness ?? .none).words)
+                        .foregroundStyle(.secondary)
+                }
+                if let card, card.model != nil {
+                    if card.loaded {
+                        Button(t("unload")) { models.send(.unload(stage: stage)) }
+                            .disabled(busy)
+                    } else {
+                        Button(t("load-model")) { models.send(.load(stage: stage)) }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(busy)
+                    }
+                }
             }
         }
         .padding(12)
@@ -200,18 +301,21 @@ struct StageCard: View {
     }
 }
 
-struct CardRow: View {
+/// A card's row: its name, and the menu on the right at its own width.
+struct PickerRow<Content: View>: View {
     let label: String
-    let value: String
+    @ViewBuilder let content: Content
 
     var body: some View {
         HStack {
             Text(label)
             Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            // A width of its own: sized to fit, a menu takes its first item's,
+            // and cuts a longer choice short.
+            content
+                .labelsHidden()
+                .frame(minWidth: 200, alignment: .trailing)
+                .fixedSize()
         }
     }
 }

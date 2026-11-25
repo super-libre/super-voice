@@ -420,6 +420,15 @@ enum Snapshot {
                 ),
             ]
             HeaderModel.shared.pretend(shown)
+            ModelsModel.shared.pretend(ModelsPage(cards: [
+                StageCard(
+                    stage: .transcription, source: "whisper",
+                    backends: [Choice(id: "whisper", name: "Whisper"), Choice(id: "qwen", name: "Qwen")],
+                    model: "large-v3-turbo", models: ["base", "small", "large-v3-turbo"], loaded: true,
+                    device: "metal", devices: [Choice(id: "metal", name: "Metal"), Choice(id: "cpu", name: "CPU")],
+                    busy: false
+                ),
+            ], notice: nil))
         } else if header.pipeline.isEmpty {
             return
         }

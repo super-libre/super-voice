@@ -843,4 +843,5 @@ progress-loading-on-gpu = Loading { $model } on the GPU…
 # The macOS app, while its pages arrive
 page-not-in-this-app-yet = This page is in the Linux app, and not here yet.
 backend = Backend
-choosing-models-not-in-this-app-yet = Choosing a backend or a model isn't in this app yet.
+stage-could-not-change = Couldn't change { $stage }: { $error }
+stage-could-not-read = Couldn't read { $stage }: { $error }
