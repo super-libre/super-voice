@@ -100,17 +100,31 @@ pub fn update(state: &mut ShortcutsState, input: Input) -> Outcome {
             effects: vec![Effect::List],
             ..Outcome::default()
         },
-        Input::Add(id) => Outcome {
-            effects: vec![Effect::Add(id)],
-            clear_notice: true,
-            notice: None,
-        },
-        Input::Remove(id) => Outcome {
-            effects: vec![Effect::Remove(id)],
-            clear_notice: true,
-            notice: None,
-        },
-        Input::Loaded(Ok(list)) | Input::Changed(Ok(list)) => {
+        // One change at a time: the desktop may be asking the user about the
+        // first, and its button waits for the answer.
+        Input::Add(_) | Input::Remove(_) if state.changing.is_some() => Outcome::default(),
+        Input::Add(id) => {
+            state.changing = Some(id);
+            Outcome {
+                effects: vec![Effect::Add(id)],
+                clear_notice: true,
+                notice: None,
+            }
+        }
+        Input::Remove(id) => {
+            state.changing = Some(id);
+            Outcome {
+                effects: vec![Effect::Remove(id)],
+                clear_notice: true,
+                notice: None,
+            }
+        }
+        Input::Loaded(Ok(list)) => {
+            state.list = Some(list);
+            Outcome::default()
+        }
+        Input::Changed(Ok(list)) => {
+            state.changing = None;
             state.list = Some(list);
             Outcome::default()
         }
@@ -121,7 +135,10 @@ pub fn update(state: &mut ShortcutsState, input: Input) -> Outcome {
         // Read the list again: what failed may have changed something. The
         // user turning the shortcut down in the desktop's own dialog is their
         // answer, not a failure: the page offers to add it again.
-        Input::Changed(Err(e)) => changed_failed(e),
+        Input::Changed(Err(e)) => {
+            state.changing = None;
+            changed_failed(e)
+        }
         input => update_listener(state, input),
     }
 }
@@ -276,6 +293,48 @@ pub enum KeyPress {
     NeedsModifier,
     /// A key the listener cannot use: keep listening.
     Unusable,
+}
+
+/// What a key press records, as a toolkit names it: the modifiers held and
+/// the key's name, such as `r`, `1`, `space`, `f5`, `up` or `pageup` (GPUI's
+/// names, which the binding grammar reads in any case).
+#[must_use]
+pub fn key_press_named(modifiers: hotkey::Modifiers, key: &str) -> KeyPress {
+    // A `+` would read as a separator, and an empty key as no key.
+    if key.is_empty() || key.contains('+') {
+        return KeyPress::Unusable;
+    }
+    let mut written = String::new();
+    for (modifier, name) in [
+        (hotkey::Modifiers::CONTROL, "ctrl"),
+        (hotkey::Modifiers::OPTION, "alt"),
+        (hotkey::Modifiers::SHIFT, "shift"),
+        (hotkey::Modifiers::COMMAND, "cmd"),
+    ] {
+        if modifiers.contains(modifier) {
+            written.push_str(name);
+            written.push('+');
+        }
+    }
+    written.push_str(key);
+    let Ok(binding) = hotkey::Binding::parse(&written) else {
+        return KeyPress::Unusable;
+    };
+    match binding.check_usable() {
+        Ok(()) => KeyPress::Keys {
+            binding: binding.to_string(),
+            symbols: binding.symbols(),
+        },
+        Err(hotkey::BindingError::NoModifier) => KeyPress::NeedsModifier,
+        Err(_) => KeyPress::Unusable,
+    }
+}
+
+/// What a daemon event means for the page: another client changed the
+/// listener's keys.
+#[must_use]
+pub fn heard(event: &crate::events::Event) -> Option<Input> {
+    (crate::events::setting_changed(event) == Some(hotkey::SETTING)).then_some(Input::HotkeyChanged)
 }
 
 /// What a key press on a Mac records: `key_code` is an `NSEvent`'s
@@ -551,6 +610,60 @@ mod tests {
         assert!(matches!(key_press(0x60, 0), KeyPress::Keys { .. }));
         // A key code the listener has no key for.
         assert_eq!(key_press(0x3f, 1 << 18), KeyPress::Unusable);
+    }
+
+    #[test]
+    fn a_named_key_press_records_keys_or_keeps_listening() {
+        use hotkey::Modifiers;
+        assert_eq!(
+            key_press_named(Modifiers::COMMAND | Modifiers::SHIFT, "r"),
+            KeyPress::Keys {
+                binding: "shift+cmd+KeyR".into(),
+                symbols: "⇧⌘R".into(),
+            }
+        );
+        assert_eq!(
+            key_press_named(Modifiers::CONTROL | Modifiers::OPTION, "space"),
+            KeyPress::Keys {
+                binding: "ctrl+alt+Space".into(),
+                symbols: "⌃⌥Space".into(),
+            }
+        );
+        assert_eq!(
+            key_press_named(Modifiers::NONE, "r"),
+            KeyPress::NeedsModifier
+        );
+        assert!(matches!(
+            key_press_named(Modifiers::NONE, "f5"),
+            KeyPress::Keys { .. }
+        ));
+        assert_eq!(key_press_named(Modifiers::CONTROL, "+"), KeyPress::Unusable);
+        assert_eq!(key_press_named(Modifiers::CONTROL, ""), KeyPress::Unusable);
+        assert_eq!(
+            key_press_named(Modifiers::CONTROL, "nosuchkey"),
+            KeyPress::Unusable
+        );
+    }
+
+    /// A change waits for the desktop's answer, and a second press meanwhile
+    /// is ignored.
+    #[test]
+    fn one_change_at_a_time() {
+        let mut state = ShortcutsState::default();
+        let added = update(&mut state, Input::Add(ShortcutId::Dictate));
+        assert_eq!(added.effects, [Effect::Add(ShortcutId::Dictate)]);
+        assert_eq!(state.changing, Some(ShortcutId::Dictate));
+        assert!(
+            update(&mut state, Input::Remove(ShortcutId::ReadAloud))
+                .effects
+                .is_empty()
+        );
+        update(&mut state, Input::Changed(Err("shortcut_refused".into())));
+        assert_eq!(state.changing, None);
+        assert_eq!(
+            update(&mut state, Input::Remove(ShortcutId::ReadAloud)).effects,
+            [Effect::Remove(ShortcutId::ReadAloud)]
+        );
     }
 
     #[test]
