@@ -116,23 +116,31 @@ struct LibraryView: View {
     }
 }
 
-/// The two filters every tab has: the feature, and where it runs.
+/// The two filters every tab has: the feature, and where it runs. `installed`
+/// picks the Installed tab's, else the Browse tab's.
 struct LibraryFilters: View {
-    let feature: FeatureChoice
-    let runsOn: RunsOnChoice
-    let setFeature: (FeatureChoice) -> Void
-    let setRunsOn: (RunsOnChoice) -> Void
+    @ObservedObject var model: LibraryModel
+    let installed: Bool
 
     var body: some View {
+        let page = model.page
+        let feature = installed ? page.installedFeature : page.feature
+        let runsOn = installed ? page.installedRunsOn : page.runsOn
         HStack(spacing: 16) {
-            Picker(t("feature"), selection: Binding(get: { feature }, set: setFeature)) {
+            Picker(t("feature"), selection: Binding(
+                get: { feature },
+                set: { model.send(installed ? .installedFeature(choice: $0) : .feature(choice: $0)) }
+            )) {
                 Text(t("all")).tag(FeatureChoice.all)
                 Text(t("speech-to-text")).tag(FeatureChoice.speechToText)
                 Text(t("text-to-speech")).tag(FeatureChoice.textToSpeech)
             }
             .pickerStyle(.segmented)
             .fixedSize()
-            Picker(t("runs-on"), selection: Binding(get: { runsOn }, set: setRunsOn)) {
+            Picker(t("runs-on"), selection: Binding(
+                get: { runsOn },
+                set: { model.send(installed ? .installedRunsOn(choice: $0) : .runsOn(choice: $0)) }
+            )) {
                 Text(t("all")).tag(RunsOnChoice.all)
                 Text(t("local")).tag(RunsOnChoice.local)
                 Text(t("cloud")).tag(RunsOnChoice.cloud)
@@ -160,12 +168,7 @@ struct InstalledTab: View {
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                LibraryFilters(
-                    feature: page.installedFeature,
-                    runsOn: page.installedRunsOn,
-                    setFeature: { model.send(.installedFeature(choice: $0)) },
-                    setRunsOn: { model.send(.installedRunsOn(choice: $0)) }
-                )
+                LibraryFilters(model: model, installed: true)
                 .textCase(nil)
                 .padding(.bottom, 6)
             }
@@ -254,12 +257,7 @@ struct BrowseTab: View {
                         Button(t("refresh-catalog")) { model.send(.refreshCatalog) }
                     }
                     HStack {
-                        LibraryFilters(
-                            feature: page.feature,
-                            runsOn: page.runsOn,
-                            setFeature: { model.send(.feature(choice: $0)) },
-                            setRunsOn: { model.send(.runsOn(choice: $0)) }
-                        )
+                        LibraryFilters(model: model, installed: false)
                         Spacer()
                         Toggle(t("show-incompatible"), isOn: Binding(
                             get: { page.includeIncompatible },

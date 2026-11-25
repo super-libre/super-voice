@@ -104,10 +104,8 @@ struct ContentView: View {
                 SpeechToTextView(notes: notes)
             case .textToSpeech:
                 TextToSpeechView(clips: ClipsModel.shared, voices: VoicesModel.shared, speech: SpeechModel.shared)
-            case let other?:
-                NotYetView(title: other.title, icon: other.icon)
             case nil:
-                NotYetView(title: "Super Voice", icon: .microphone)
+                Color.clear
             }
         }
         .toolbar {
@@ -238,24 +236,5 @@ extension ToolbarContent {
         } else {
             self
         }
-    }
-}
-
-/// A page this app doesn't have yet.
-struct NotYetView: View {
-    let title: String
-    let icon: Icon
-
-    var body: some View {
-        ContentUnavailableView {
-            Label {
-                Text(title)
-            } icon: {
-                IconView(icon: icon, size: 40)
-            }
-        } description: {
-            Text(t("page-not-in-this-app-yet"))
-        }
-        .navigationTitle(title)
     }
 }

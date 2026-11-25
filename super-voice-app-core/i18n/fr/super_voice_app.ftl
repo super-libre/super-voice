@@ -840,8 +840,7 @@ progress-loading-on = Chargement sur { $device }…
 progress-loading-on-cpu = Chargement de { $model } sur le processeur…
 progress-loading-on-gpu = Chargement de { $model } sur le GPU…
 
-# The macOS app, while its pages arrive
-page-not-in-this-app-yet = Cette page est dans l'application Linux, pas encore ici.
+# The macOS app's own words
 backend = Moteur
 stage-could-not-change = Impossible de changer { $stage } : { $error }
 stage-could-not-read = Impossible de lire { $stage } : { $error }
