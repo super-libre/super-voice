@@ -10,4 +10,5 @@
 
 pub mod clips;
 pub mod notes;
+pub mod speech;
 pub mod voices;

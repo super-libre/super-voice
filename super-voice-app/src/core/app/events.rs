@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use super_voice_app_core::events::Event;
+use super_voice_app_core::pages::speech;
 use super_voice_shared::registry::events::RegistryEvent;
 
 use crate::state::DaemonStatus;
@@ -48,12 +49,15 @@ pub(super) fn message(event: Event) -> Option<Message> {
         Event::Speaking {
             is_speaking,
             utterance_id,
-        } => Message::Speech(SpeechMessage::WidgetSpeakingState {
+        } => Message::Speech(SpeechMessage::Page(speech::Input::Speaking {
             is_speaking,
             utterance_id,
-        }),
+        })),
         Event::PlaybackLevel { level, is_speech } => {
-            Message::Speech(SpeechMessage::WidgetAudioLevel { level, is_speech })
+            Message::Speech(SpeechMessage::Page(speech::Input::Level {
+                level,
+                is_speech,
+            }))
         }
         Event::Status(notification) => {
             Message::Daemon(DaemonMessage::DaemonEventsReceived(vec![notification]))

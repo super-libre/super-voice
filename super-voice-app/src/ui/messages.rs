@@ -488,34 +488,12 @@ pub enum StageMessage {
     BlockFailed { stage: BlockStage, message: String },
 }
 
-/// Text to speech's Speech tab: a test utterance, and what the daemon says it
-/// is speaking.
+/// Text to speech's speech test.
 #[derive(Debug, Clone)]
 pub enum SpeechMessage {
-    /// The text in the Speech tab's test field changed.
-    TestTextChanged(String),
-    /// Speak whatever is in the test field.
-    Speak,
-    /// The daemon accepted the utterance and returned its id.
-    SpeakStarted(String),
-    /// The daemon refused it; carries the message for the tab's banner.
-    SpeakFailed(String),
-    /// Stop the utterance now playing.
-    StopSpeaking,
-    /// `playback_frequency_bands` event from the daemon's `/events` stream —
-    /// already converted to (`display_level_percent`, `is_speech`) so the tab
-    /// can drive its meter.
-    WidgetAudioLevel { level: f32, is_speech: bool },
-    /// `speaking_state` event from `/events` — the coarse flag the tab projects
-    /// into a `SpeakingStatus`, plus the utterance it describes.
-    ///
-    /// The id travels with it because the daemon speaks for whoever asked: an
-    /// utterance this tab did not start still turns the badge on, and the id
-    /// is the only way the tab can tell the two apart.
-    WidgetSpeakingState {
-        is_speaking: bool,
-        utterance_id: Option<String>,
-    },
+    /// Something the test's logic handles: a press, what the daemon said, or
+    /// the answer to work it started. See `super_voice_app_core::pages::speech`.
+    Page(super_voice_app_core::pages::speech::Input),
 }
 
 /// The Voices tab: the cloned-voice library, and the recording or import that
