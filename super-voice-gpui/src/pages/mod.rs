@@ -19,6 +19,7 @@
 
 mod about;
 mod assistants;
+mod contexts;
 mod notes;
 mod placeholder;
 mod settings;
@@ -50,6 +51,7 @@ pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> 
         Page::Settings => PageHandle::new::<settings::SettingsPage>(page, shared, window, cx),
         Page::Updates => PageHandle::new::<updates::UpdatesPage>(page, shared, window, cx),
         Page::Notes => PageHandle::new::<notes::NotesPage>(page, shared, window, cx),
+        Page::Contexts => PageHandle::new::<contexts::ContextsPage>(page, shared, window, cx),
         _ => PageHandle::new::<placeholder::Placeholder>(page, shared, window, cx),
     }
 }
