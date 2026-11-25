@@ -967,3 +967,14 @@ hearing-silence = Silence
 microphone-closed = Not recording
 test-transcript-shows-here = The words of a test recording show here.
 typing-countdown = Typing in { $secs }…
+
+# Text to speech's pages: Clips, Voices and Behavior
+test-the-speech = Test the speech
+stop-speaking = Stop speaking
+read-aloud-now = Read aloud now
+speech-speaking = Speaking
+speech-starting = Starting
+speech-not-speaking = Not speaking
+speech-output-level = Output level
+tts-behavior-description = Choose what Read aloud reads, and hear how speech sounds.
+tts-behavior-description-test-only = Type something to hear how speech sounds.

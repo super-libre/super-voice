@@ -967,3 +967,14 @@ hearing-silence = Silence
 microphone-closed = Pas d'enregistrement
 test-transcript-shows-here = Les mots d'un enregistrement de test s'affichent ici.
 typing-countdown = Saisie dans { $secs }…
+
+# Text to speech's pages: Clips, Voices and Behavior
+test-the-speech = Tester la parole
+stop-speaking = Arrêter la lecture
+read-aloud-now = Lire à voix haute maintenant
+speech-speaking = Lecture en cours
+speech-starting = Démarrage
+speech-not-speaking = Silencieux
+speech-output-level = Niveau de sortie
+tts-behavior-description = Choisissez ce que lit « Lire à voix haute », et écoutez la voix.
+tts-behavior-description-test-only = Saisissez un texte pour entendre la voix.
