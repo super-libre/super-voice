@@ -4,7 +4,9 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
+    # gpui-app is the long-lived branch the GPUI app is built on; pull
+    # requests into it get the same checks as those into main.
+    branches: [main, gpui-app]
 
 # A newer push to a pull request makes the run on its older commit moot, so
 # that run is cancelled. A push to main or develop gets a group of its own:
