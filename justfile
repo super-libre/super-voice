@@ -654,7 +654,17 @@ app-shot out page="stt-models" mode="light" width="1200" scenes="":
     exe=$(cargo build -p super-voice-gpui --features screenshot --bin {{ app_name }} \
         --message-format=json-render-diagnostics \
         | sed -n 's|.*"executable":"\([^"]*/{{ app_name }}\)".*|\1|p')
-    exec "$exe" --shot "$out" "{{ page }}" "{{ mode }}" "{{ width }}" "{{ scenes }}"
+    # The shot runs cut off from everything real: a socket where no daemon
+    # listens and empty folders of its own. A page's made-up state can still
+    # send an input that would reach the daemon (a key press that starts a
+    # recording); here it fails instead of reaching yours, and nothing it
+    # writes lands among your notes, clips or keys.
+    iso=$(mktemp -d)
+    trap 'rm -rf "$iso"' EXIT
+    SUPER_VOICE_HTTP_SOCKET="$iso/no-daemon.sock" \
+        XDG_DATA_HOME="$iso/data" XDG_CONFIG_HOME="$iso/config" \
+        XDG_STATE_HOME="$iso/state" XDG_CACHE_HOME="$iso/cache" \
+        "$exe" --shot "$out" "{{ page }}" "{{ mode }}" "{{ width }}" "{{ scenes }}"
 
 # Run the daemon for testing purposes.
 #

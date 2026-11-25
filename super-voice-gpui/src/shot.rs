@@ -6,6 +6,9 @@
 //!
 //! The daemon is never asked: a new binary asking the daemon for a token
 //! would bring up the consent dialog on the desktop the shot is taken on.
+//! The window's connection is fixed, but a page's input can still reach for
+//! the daemon (a key press that starts a recording), so `just app-shot` runs
+//! the shot against a socket where no daemon listens, with folders of its own.
 //! Everything the window shows is made up instead ("pretend"): the shell's
 //! here (the daemon connected, each feature's readiness, the GPU), each
 //! page's in its `PageView::pretend`. `scenes`, comma-separated, pick
