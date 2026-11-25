@@ -579,10 +579,62 @@ run-app *args:
     set -euo pipefail
 
     # The app's own lines down to debug, and none of the toolkit's. A RUST_LOG
-    # of your own wins, e.g. `RUST_LOG=super_voice_gpui=trace just run-app`.
+    # of your own wins, e.g. `RUST_LOG=super_voice_app=trace just run-app`.
     exec env RUST_BACKTRACE=full \
-        RUST_LOG="${RUST_LOG:-super_voice_gpui=debug,super_voice_app_core=debug,super_voice_shared=debug}" \
+        RUST_LOG="${RUST_LOG:-super_voice_app=debug,super_voice_app_core=debug,super_voice_shared=debug}" \
         cargo run {{ app_select }} {{ args }}
+
+# Run the app with hot reload, for working on it. On every save `dx` (the
+# Dioxus CLI) compiles what changed and patches it into the running app, which
+# draws again: a view's code, its layout, its words. A change it cannot patch
+# (a struct's fields, `main`, what runs once at start) is rebuilt and the app
+# restarted. Theme edits in super-voice-gpui/themes/ apply at once too.
+#
+# Needs `dx` 0.7.10, the version of the subsecond crate the app links (see
+# super-voice-gpui/Cargo.toml): `cargo binstall dioxus-cli@0.7.10`, or the
+# release's prebuilt binary; DX=/path/to/dx to use one off the PATH. It
+# builds into its own profile (target/*/desktop-dev, around 10 GB), apart
+# from `just run-app`'s.
+#
+# Usage: just app-watch [dx serve flags]
+app-watch *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dx="${DX:-dx}"
+    want=0.7.10
+    if ! command -v "$dx" >/dev/null 2>&1 || ! "$dx" --version | grep -q "^dioxus $want "; then
+        echo "app-watch needs the Dioxus CLI, dx $want (the app links subsecond $want)." >&2
+        echo "  cargo binstall dioxus-cli@$want" >&2
+        echo "  or https://github.com/DioxusLabs/dioxus/releases/tag/v$want" >&2
+        echo "Then run this again, or point DX at it." >&2
+        exit 1
+    fi
+    export SUPER_VOICE_THEMES_DIR="{{ justfile_directory() }}/super-voice-gpui/themes"
+    export RUST_LOG="${RUST_LOG:-super_voice_app=debug,super_voice_app_core=debug,super_voice_shared=debug}"
+    exec "$dx" serve --hot-patch -p super-voice-gpui --bin {{ app_name }} --features hotpatch {{ args }}
+
+# Draw the app's window off screen into `out`, a PNG: no display, no window
+# on the desktop, through GPUI's headless renderer (wgpu on Linux, Metal on
+# macOS). `page` is one of the sidebar's pages (stt-models, notes, contexts,
+# stt-behavior, tts-models, clips, voices, tts-behavior, library, shortcuts,
+# assistants, settings, updates, about); `mode` is light or dark. The daemon
+# is not asked: the status bar shows it connected.
+#
+# Usage: just app-shot <out.png> [page] [light|dark]
+app-shot out page="stt-models" mode="light":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="{{ out }}"
+    case "$out" in
+        /*) ;;
+        *) out="{{ invocation_directory() }}/$out" ;;
+    esac
+    # The app with its `screenshot` feature, which `just run-app` leaves out.
+    # Cargo reports where it put it, which follows `CARGO_TARGET_DIR`.
+    exe=$(cargo build -p super-voice-gpui --features screenshot --bin {{ app_name }} \
+        --message-format=json-render-diagnostics \
+        | sed -n 's|.*"executable":"\([^"]*/{{ app_name }}\)".*|\1|p')
+    exec "$exe" --shot "$out" "{{ page }}" "{{ mode }}"
 
 # Run the daemon for testing purposes.
 #

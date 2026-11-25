@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! `super-voice-app-shot <out.png> [page] [light|dark]`: draw the app's window
-//! off screen, through GPUI's headless renderer (wgpu on Linux, Metal on
+//! `super-voice-app --shot <out.png> [page] [light|dark]`, with the
+//! `screenshot` feature: draw the app's window off screen, through GPUI's headless renderer (wgpu on Linux, Metal on
 //! macOS), and save it as a PNG. No display, no window on the desktop.
 //!
 //! The daemon is never asked: the status bar shows it connected. A new binary
@@ -8,7 +8,6 @@
 //! desktop the shot is taken on. `just app-shot` runs this.
 
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::sync::Arc;
 
 use gpui_kit::component::ThemeMode;
@@ -17,20 +16,26 @@ use gpui_kit::{
     AppContext as _, Bounds, HeadlessAppContext, WindowBounds, WindowOptions, px, size,
 };
 use super_voice_app_core::state::connection::DaemonStatus;
-use super_voice_gpui::connection::Connection;
-use super_voice_gpui::pages::Page;
-use super_voice_gpui::shell::Shell;
 
-fn main() -> ExitCode {
+use crate::connection::Connection;
+use crate::pages::Page;
+use crate::shell::Shell;
+
+/// The flag that selects this mode.
+pub const FLAG: &str = "--shot";
+
+/// Take the shot the command line asks for. The exit code: 0 with the PNG
+/// written, 1 when it could not be drawn, 2 for a malformed command line.
+pub fn run() -> i32 {
     super_voice_shared::logging::init_with(log::LevelFilter::Warn);
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args().skip(2).collect();
     let usage = || {
         let pages: Vec<&str> = Page::ALL.iter().map(|page| page.slug()).collect();
         eprintln!(
-            "usage: super-voice-app-shot <out.png> [page] [light|dark]\npages: {}",
+            "usage: super-voice-app {FLAG} <out.png> [page] [light|dark]\npages: {}",
             pages.join(" ")
         );
-        ExitCode::from(2)
+        2
     };
     let Some(out) = args.first().map(PathBuf::from) else {
         return usage();
@@ -50,11 +55,11 @@ fn main() -> ExitCode {
     match shoot(&out, page, mode) {
         Ok(()) => {
             println!("{}", out.display());
-            ExitCode::SUCCESS
+            0
         }
         Err(e) => {
             eprintln!("no screenshot: {e:#}");
-            ExitCode::FAILURE
+            1
         }
     }
 }
@@ -62,14 +67,14 @@ fn main() -> ExitCode {
 fn shoot(out: &std::path::Path, page: Page, mode: ThemeMode) -> anyhow::Result<()> {
     let mut cx = HeadlessAppContext::with_platform(
         gpui_kit::platform::current_platform(true).text_system(),
-        Arc::new(super_voice_gpui::assets::Assets),
+        Arc::new(crate::assets::Assets),
         gpui_kit::platform::current_headless_renderer,
     );
     cx.update(|cx| {
-        super_voice_gpui::setup(cx);
-        super_voice_gpui::theme::set_mode(mode, cx);
+        crate::setup(cx);
+        crate::theme::set_mode(mode, cx);
     });
-    let (width, height) = super_voice_gpui::WINDOW_SIZE;
+    let (width, height) = crate::WINDOW_SIZE;
     let (handle, _) = cx.update(|cx| {
         let connection = cx.new(|_| Connection::fixed(DaemonStatus::Connected));
         let options = WindowOptions {
@@ -79,7 +84,7 @@ fn shoot(out: &std::path::Path, page: Page, mode: ThemeMode) -> anyhow::Result<(
             })),
             show: false,
             focus: false,
-            ..super_voice_gpui::window_options(cx)
+            ..crate::window_options(cx)
         };
         gpui_kit::open_window(options, cx, |window, cx| {
             cx.new(|cx| Shell::new(page, connection, false, window, cx))

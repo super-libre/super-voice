@@ -14,7 +14,7 @@
 ## Build, Test, and Development Commands
 - Build release: `just build-release` (or `cargo build --release`).
 - Lint (clippy, pedantic): `just check` (or `cargo clippy --all-features`).
-- Run UI app: `just run-app`.
+- Run UI app: `just run-app`; with hot reload, `just app-watch`; a screenshot off screen, `just app-shot out.png [page] [light|dark]` (never open the app on the owner's desktop to look at it).
 - Run daemon: `just run-daemon` (the model is config / `POST /v1` state, not a flag).
 - Run the COSMIC applet: `just run` in a super-cosmic-applet checkout.
 - Install locally: `just install-daemon`, `just install-app`, `just install-applet` (builds the applet from a super-cosmic-applet checkout: `SHARED_APPLET_DIR`, else `../super-cosmic-applet`).

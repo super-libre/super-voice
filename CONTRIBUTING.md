@@ -240,6 +240,8 @@ re-add, not on toggling the switch.
 ```bash
 just run-daemon         # run the daemon in the foreground
 just run-app            # run the app
+just app-watch          # run the app with hot reload (needs dx 0.7.10, see the recipe)
+just app-shot out.png [page] [light|dark]  # draw the app's window into a PNG, off screen
 just run-applet         # run the COSMIC applet
 just audit              # security audit (cargo audit)
 ```

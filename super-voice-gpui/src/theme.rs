@@ -9,7 +9,7 @@
 
 use std::path::PathBuf;
 
-use gpui_kit::component::{Theme, ThemeMode, ThemeRegistry};
+use gpui_kit::component::{Theme, ThemeRegistry};
 use gpui_kit::{App, Window};
 
 /// The theme for a light appearance.
@@ -63,7 +63,8 @@ pub fn follow_system(window: &mut Window, cx: &mut App) {
 }
 
 /// Light or dark, whatever the system has.
-pub fn set_mode(mode: ThemeMode, cx: &mut App) {
+#[cfg(feature = "screenshot")]
+pub fn set_mode(mode: gpui_kit::component::ThemeMode, cx: &mut App) {
     Theme::change(mode, None, cx);
 }
 

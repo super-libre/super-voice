@@ -16,16 +16,13 @@
     name = "super-voice-app"
     path = "src/main.rs"
 
-# The window drawn off screen into a PNG (`just app-shot`). It needs GPUI's
-# headless renderer, which comes with the kit's test support, so it builds
-# only with the `screenshot` feature.
-[[bin]]
-    name = "super-voice-app-shot"
-    path = "src/bin/shot.rs"
-    required-features = ["screenshot"]
-
 [features]
+    # `super-voice-app --shot`: the window drawn off screen into a PNG
+    # (`just app-shot`, src/shot.rs). It needs GPUI's headless renderer, which
+    # comes with the kit's test support, so release builds leave it out.
     screenshot = ["dep:image", "gpui-kit/test-support"]
+    # Hot-patching while developing: `just app-watch` (src/hot.rs).
+    hotpatch = ["dep:dioxus-devtools", "dep:subsecond"]
 
 [dependencies]
     # The UI: GPUI, which gpui-kit re-exports, and the kit's components.
@@ -52,6 +49,11 @@
     # For the screenshot binary: the image crate GPUI's screenshots are made
     # with, to save one as a PNG.
     image = { version = "0.25", default-features = false, features = ["png"], optional = true }
+    # For `hotpatch`: Dioxus's hot-patching engine, and its link to `dx serve`.
+    # At the version of the `dx` that serves the patches, which `just
+    # app-watch` checks: a patch from another version does not apply.
+    dioxus-devtools = { version = "=0.7.10", optional = true }
+    subsecond = { version = "=0.7.10", optional = true }
 
 [dev-dependencies]
     # Reads the built-in theme file in a test.

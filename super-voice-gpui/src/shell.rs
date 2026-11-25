@@ -13,8 +13,8 @@ use gpui_kit::component::sidebar::{
 use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::{ActiveTheme as _, TitleBar, h_flex, v_flex};
 use gpui_kit::{
-    Context, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
-    Render, SharedString, Styled as _, Subscription, Window, div, img, px,
+    AnyElement, Context, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div, img, px,
 };
 use super_voice_app_core::state::connection::DaemonStatus;
 
@@ -24,6 +24,7 @@ use crate::pages::{Page, Section};
 use crate::{t, t_with};
 
 /// The message keys the shell shows besides the pages' and headings' names.
+#[cfg(test)]
 pub const KEYS: &[&str] = &[
     "app-title",
     "daemon-connected",
@@ -163,6 +164,14 @@ impl Shell {
 
 impl Render for Shell {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Through the hot-patch table, so a patch reaches everything drawn
+        // from here (`just app-watch`).
+        crate::hot::call(|| self.frame(cx))
+    }
+}
+
+impl Shell {
+    fn frame(&self, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .size_full()
             .bg(cx.theme().background)
@@ -184,6 +193,7 @@ impl Render for Shell {
                     .child(self.content(cx)),
             )
             .child(self.status_bar(cx))
+            .into_any_element()
     }
 }
 

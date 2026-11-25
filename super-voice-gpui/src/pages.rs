@@ -110,7 +110,8 @@ impl Page {
     }
 
     /// A name for the page that stays the same in every language, for
-    /// `just app-shot` and the element ids.
+    /// `just app-shot`.
+    #[cfg(any(test, feature = "screenshot"))]
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
@@ -132,6 +133,7 @@ impl Page {
     }
 
     /// The page named `slug`, as [`Self::slug`] gives it.
+    #[cfg(any(test, feature = "screenshot"))]
     #[must_use]
     pub fn from_slug(slug: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|page| page.slug() == slug)
