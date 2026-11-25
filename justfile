@@ -584,7 +584,7 @@ macos-swift-app config="release": (macos-swift-build config)
 # super-voice-macos/Fixtures, never yours, so `edited` changes only the copy.
 # The voices are the daemon's.
 #
-# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved|stt-behavior|stt-behavior-recorded|models|models-running|models-download|models-staged|model-language|model-voice|settings|settings-languages|assistants|assistants-key|assistants-connected|updates|shortcuts|library|library-browse|library-sample|library-sample-browse|library-add|configure|notes-take|note-take|connection|connection-denied|header]
+# Usage: just macos-swift-shot notes.png [notes|note|edited|clips|clips-playing|voices|voices-pending|tts-behavior|tts-behavior-spoken|contexts|contexts-edit|contexts-saved|stt-behavior|stt-behavior-recorded|models|models-running|models-download|models-staged|model-language|model-voice|settings|settings-languages|assistants|assistants-key|assistants-connected|updates|shortcuts|shortcuts-mac|library|library-browse|library-sample|library-sample-browse|library-add|configure|notes-take|note-take|connection|connection-denied|header]
 macos-swift-shot out scene="notes": (macos-swift-app "debug")
     #!/usr/bin/env bash
     set -euo pipefail

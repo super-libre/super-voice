@@ -236,6 +236,7 @@ const RESPONSE_KEYS: &[(&str, &str, &[&str])] = &[
         "get",
         &["available_languages"],
     ),
+    ("/v1/settings/hotkey", "get", &["hotkey"]),
     ("/v1/stt/pipeline", "get", &["pipeline"]),
     ("/v1/backend/list", "get", &["backends"]),
     ("/v1/gpu_info", "get", &["gpu_info"]),

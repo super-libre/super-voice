@@ -32,7 +32,8 @@
 // pointed at; `assistants-connected`, a made-up connected Claude Code's own
 // page with two sessions, for the layout; `updates`, the Updates page once
 // its status is read; `shortcuts`, the Shortcuts page once the daemon has
-// listed them; `library`, the Library page's Installed tab; `library-browse`,
+// said its keys; `shortcuts-mac`, that page with made-up keys (⇧⌘R) and the
+// shortcut's service not registered, for the layout; `library`, the Library page's Installed tab; `library-browse`,
 // its Browse tab once the catalog is read (or why not); `library-sample` and
 // `library-sample-browse`, both tabs with made-up backends, for the layout;
 // `library-add`, the "Install manually" sheet over them, previewing a
@@ -165,7 +166,7 @@ enum Snapshot {
             updates.headerBadge = true
             UpdatesModel.shared.pretend(updates)
         case "models", "models-running", "models-download", "models-staged", "settings", "settings-languages", "assistants", "assistants-key",
-             "assistants-connected", "updates", "shortcuts", "library", "library-browse",
+             "assistants-connected", "updates", "shortcuts", "shortcuts-mac", "library", "library-browse",
              "library-sample", "library-sample-browse", "model-language", "model-voice",
              "library-add", "configure":
             // Shot from its own page; see `modelsShown`.
@@ -399,10 +400,22 @@ enum Snapshot {
         Task { await take() }
     }
 
-    /// The Shortcuts page showed `page`: shoot it once the daemon has listed
-    /// them, for `shortcuts`.
+    /// The Shortcuts page showed `page`: shoot it once the daemon has said
+    /// the shortcut's keys, for `shortcuts`, or at once with made-up keys,
+    /// for `shortcuts-mac`.
     static func shortcutsShown(_ page: ShortcutsPage) {
-        guard path != nil, !taken, scene == "shortcuts", page.loaded else { return }
+        guard path != nil, !taken, scene.hasPrefix("shortcuts") else { return }
+        if scene == "shortcuts-mac" {
+            // Made up, for the layout: keys other than the default, so Reset
+            // is on, and the service offering Register.
+            ShortcutsModel.shared.pretend(ShortcutsPage(
+                loaded: false, shortcuts: [],
+                hotkey: HotkeyKeys(binding: "shift+cmd+KeyR", symbols: "⇧⌘R", isDefault: false),
+                listener: .notRegistered, notice: nil
+            ))
+        } else if page.hotkey == nil {
+            return
+        }
         taken = true
         Task { await take() }
     }
