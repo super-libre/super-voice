@@ -9,6 +9,11 @@
 //! download or load in flight reads as [`Readiness::Loading`] from the
 //! daemon's events, which a read of the stage can't show.
 //!
+//! Speech to text also needs the daemon to be allowed to type: on macOS,
+//! Device Control (Accessibility before macOS 27). While the daemon says it
+//! may not ([`ReadinessState::can_type`]), speech to text needs setup,
+//! whatever its model; a dictation then goes to the clipboard.
+//!
 //! The Models page holds more (each backend's secrets, the voice a synthesis
 //! model speaks in) and says more on its cards; this is the summary the
 //! window keeps whatever page is open.
@@ -114,6 +119,9 @@ pub struct ReadinessState {
     pub operations: ModelOperations,
     /// The machine's GPUs, as the daemon last reported them.
     pub gpus: Vec<GpuInfo>,
+    /// Whether the daemon may type into other apps, as its status last said:
+    /// `None` when it can't tell (Linux) or hasn't said.
+    pub can_type: Option<bool>,
 }
 
 /// What happened.
@@ -130,6 +138,11 @@ pub enum Input {
     Viewed(Stage, Result<StageState, String>),
     /// The GPUs were read.
     GpusRead(Vec<GpuInfo>),
+    /// Ask again whether the daemon may type: the app shows how to let it,
+    /// and asks every 2 s until it may.
+    CheckTyping,
+    /// The daemon said whether it may type, or why it couldn't be asked.
+    TypingRead(Result<Option<bool>, String>),
     /// The daemon said something about a model.
     Heard(NotificationEvent),
 }
@@ -141,6 +154,8 @@ pub enum Effect {
     ReadStage(Stage),
     /// Read the GPUs ([`run_read_gpus`]).
     ReadGpus,
+    /// Read whether the daemon may type ([`run_read_typing`]).
+    ReadTyping,
 }
 
 /// What an input came to.
@@ -162,7 +177,8 @@ pub fn update(known: &mut ReadinessState, input: Input) -> Outcome {
             Vec::new()
         }
         Input::Tick if known.connected => vec![Effect::ReadGpus],
-        Input::Tick => Vec::new(),
+        Input::CheckTyping if known.connected => vec![Effect::ReadTyping],
+        Input::Tick | Input::CheckTyping => Vec::new(),
         Input::Viewed(stage, Ok(view)) => {
             known.views.insert(stage, view);
             Vec::new()
@@ -175,6 +191,15 @@ pub fn update(known: &mut ReadinessState, input: Input) -> Outcome {
             known.gpus = gpus;
             Vec::new()
         }
+        Input::TypingRead(Ok(can_type)) => {
+            known.can_type = can_type;
+            Vec::new()
+        }
+        // Left as it was: one failed read says nothing about the permission.
+        Input::TypingRead(Err(e)) => {
+            log::debug!("couldn't ask whether the daemon may type: {e}");
+            Vec::new()
+        }
         Input::Heard(event) => heard(known, &event),
     };
     Outcome { effects }
@@ -184,7 +209,7 @@ fn read_all() -> Vec<Effect> {
     Feature::ALL
         .map(|feature| Effect::ReadStage(feature.stage()))
         .into_iter()
-        .chain([Effect::ReadGpus])
+        .chain([Effect::ReadGpus, Effect::ReadTyping])
         .collect()
 }
 
@@ -227,9 +252,30 @@ fn heard(known: &mut ReadinessState, event: &NotificationEvent) -> Vec<Effect> {
     effects
 }
 
-/// How ready `feature` is.
+/// How ready `feature` is. Speech to text needs setup while the daemon may
+/// not type, unless its model is on its way or failed, which say more.
 #[must_use]
 pub fn readiness(known: &ReadinessState, feature: Feature) -> Readiness {
+    let model = model_readiness(known, feature);
+    match model {
+        Readiness::Ready | Readiness::Idle | Readiness::NotLoaded | Readiness::NoBackend
+            if feature == Feature::SpeechToText && typing_blocked(known) =>
+        {
+            Readiness::NeedsSetup
+        }
+        _ => model,
+    }
+}
+
+/// Whether the daemon said it may not type into other apps. Not known is not
+/// blocked: Linux can't tell, and an older daemon doesn't say.
+#[must_use]
+pub fn typing_blocked(known: &ReadinessState) -> bool {
+    known.connected && known.can_type == Some(false)
+}
+
+/// How ready `feature`'s model is.
+fn model_readiness(known: &ReadinessState, feature: Feature) -> Readiness {
     if !known.connected {
         return Readiness::Unknown;
     }
@@ -258,7 +304,7 @@ pub fn readiness(known: &ReadinessState, feature: Feature) -> Readiness {
 /// up or on its way: what the palette's "Load large-v3-turbo" loads.
 #[must_use]
 pub fn model_to_load(known: &ReadinessState, feature: Feature) -> Option<&str> {
-    match readiness(known, feature) {
+    match model_readiness(known, feature) {
         Readiness::NotLoaded => known.views.get(&feature.stage())?.model.as_deref(),
         _ => None,
     }
@@ -296,6 +342,11 @@ pub async fn run_read_stage(stage: Stage) -> Input {
             .await
             .map_err(|e| e.to_string()),
     )
+}
+
+/// Ask the daemon whether it may type.
+pub async fn run_read_typing() -> Input {
+    Input::TypingRead(client::get_can_type().await.map_err(|e| e.to_string()))
 }
 
 /// Read the machine's GPUs from the daemon.
@@ -357,6 +408,7 @@ mod tests {
                 Effect::ReadStage(Stage::Transcription),
                 Effect::ReadStage(Stage::Synthesis),
                 Effect::ReadGpus,
+                Effect::ReadTyping,
             ]
         );
         // Read, but no answer yet.
@@ -468,6 +520,82 @@ mod tests {
         update(&mut state, Input::Lost);
         assert_eq!(readiness(&state, Feature::SpeechToText), Readiness::Unknown);
         assert!(update(&mut state, Input::Tick).effects.is_empty());
+    }
+
+    /// While the daemon may not type, speech to text needs setup whatever its
+    /// model, and text to speech is untouched. A model on its way or failed
+    /// still says so. Not knowing (Linux) is not blocked.
+    #[test]
+    fn speech_to_text_needs_setup_while_the_daemon_may_not_type() {
+        let mut state = reached();
+        for stage in [Stage::Transcription, Stage::Synthesis] {
+            update(
+                &mut state,
+                Input::Viewed(stage, Ok(view(Some("w"), true, ModelState::Loaded))),
+            );
+        }
+        update(&mut state, Input::TypingRead(Ok(None)));
+        assert_eq!(readiness(&state, Feature::SpeechToText), Readiness::Ready);
+
+        update(&mut state, Input::TypingRead(Ok(Some(false))));
+        assert!(typing_blocked(&state));
+        assert_eq!(
+            readiness(&state, Feature::SpeechToText),
+            Readiness::NeedsSetup
+        );
+        assert_eq!(readiness(&state, Feature::TextToSpeech), Readiness::Ready);
+
+        // A read that fails changes nothing.
+        update(&mut state, Input::TypingRead(Err("busy".into())));
+        assert!(typing_blocked(&state));
+
+        state.operations.start(
+            Stage::Transcription,
+            ModelOperationState::Loading {
+                target_model: "large-v3-turbo".into(),
+                cause: LoadCause::Reported,
+                load: None,
+            },
+        );
+        assert_eq!(readiness(&state, Feature::SpeechToText), Readiness::Loading);
+        state.operations.set_ready(Stage::Transcription);
+
+        update(&mut state, Input::TypingRead(Ok(Some(true))));
+        assert_eq!(readiness(&state, Feature::SpeechToText), Readiness::Ready);
+    }
+
+    /// The 2 s check asks only while the daemon answers; losing it forgets
+    /// what it said.
+    #[test]
+    fn typing_is_checked_only_while_the_daemon_answers() {
+        let mut state = reached();
+        assert_eq!(
+            update(&mut state, Input::CheckTyping).effects,
+            [Effect::ReadTyping]
+        );
+        update(&mut state, Input::TypingRead(Ok(Some(false))));
+        update(&mut state, Input::Lost);
+        assert!(!typing_blocked(&state));
+        assert!(update(&mut state, Input::CheckTyping).effects.is_empty());
+    }
+
+    /// A model not loaded can still be loaded from the palette while typing
+    /// needs setup.
+    #[test]
+    fn a_model_can_be_loaded_while_typing_needs_setup() {
+        let mut state = reached();
+        update(
+            &mut state,
+            Input::Viewed(
+                Stage::Transcription,
+                Ok(view(Some("w"), false, ModelState::NotLoaded)),
+            ),
+        );
+        update(&mut state, Input::TypingRead(Ok(Some(false))));
+        assert_eq!(
+            model_to_load(&state, Feature::SpeechToText),
+            Some("large-v3-turbo")
+        );
     }
 
     #[test]

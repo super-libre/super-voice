@@ -67,6 +67,9 @@ impl Readiness {
                 Effect::ReadGpus => {
                     effects::spawn(page::run_read_gpus(), cx, Self::send).detach();
                 }
+                Effect::ReadTyping => {
+                    effects::spawn(page::run_read_typing(), cx, Self::send).detach();
+                }
             }
         }
         if self.state.connected {

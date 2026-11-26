@@ -25,6 +25,7 @@ pub mod read_aloud;
 pub mod readiness;
 pub mod recording_test;
 pub mod settings;
+pub mod setup;
 pub mod shortcuts;
 pub mod speech;
 pub mod updates;

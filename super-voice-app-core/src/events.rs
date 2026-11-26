@@ -28,7 +28,9 @@ use crate::daemon::client::SETTINGS_SCOPES;
 /// `speaking_state` the speaking badge (`playback_events`),
 /// `playback_frequency_bands` the playback meter (`audio_visualization`), and
 /// `daemon_status_changed` / `download_progress` / `registry_install` the
-/// model-switch progress and the Library's install cards (`daemon_status`).
+/// model-switch progress and the Library's install cards (`daemon_status`),
+/// and `typing_failed` the toast for a dictation that went to the clipboard
+/// (`global_transcriptions`, since it carries the words).
 pub const TOPICS: &[&str] = &[
     "recording_state",
     "frequency_bands",
@@ -37,6 +39,7 @@ pub const TOPICS: &[&str] = &[
     "daemon_status_changed",
     "download_progress",
     "registry_install",
+    "typing_failed",
 ];
 
 /// Something the daemon said, or the stream itself.
@@ -70,6 +73,41 @@ pub enum Event {
     Status(NotificationEvent),
     /// A backend install moved on, finished or failed.
     Install(RegistryEvent),
+    /// A dictation was transcribed and could not be typed.
+    TypingFailed(TypingFailed),
+}
+
+/// A dictation the daemon could not type: why, whether its words are on the
+/// clipboard, and the words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypingFailed {
+    pub reason: TypingFailure,
+    pub copied: bool,
+    pub text: String,
+}
+
+/// Why a dictation was not typed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypingFailure {
+    /// The daemon may not type: Device Control (Accessibility) is off.
+    NotAllowed,
+    /// Another app held secure keyboard entry.
+    SecureInput,
+    /// Anything else.
+    Failed,
+}
+
+impl TypingFailure {
+    /// The reason the daemon names; one this app doesn't know is
+    /// [`Self::Failed`].
+    #[must_use]
+    pub fn from_wire(reason: &str) -> Self {
+        match reason {
+            "not_allowed" => Self::NotAllowed,
+            "secure_input" => Self::SecureInput,
+            _ => Self::Failed,
+        }
+    }
 }
 
 /// The daemon's `/events` stream, as [`Event`]s, until the user refuses this
@@ -136,6 +174,15 @@ pub fn parse(event: &WidgetEvent) -> Option<Event> {
         {
             notification(event).map(Event::Status)
         }
+        "typing_failed" => Some(Event::TypingFailed(TypingFailed {
+            reason: TypingFailure::from_wire(p.get("reason").and_then(Value::as_str).unwrap_or("")),
+            copied: flag(p, "copied"),
+            text: p
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        })),
         "registry_install" => match serde_json::from_value::<RegistryEvent>(p.clone()) {
             Ok(RegistryEvent::RefreshCompleted { .. } | RegistryEvent::RefreshFailed { .. }) => {
                 None
