@@ -28,6 +28,7 @@ mod about;
 mod assistants;
 mod clips;
 mod contexts;
+mod finish_setup;
 mod library;
 mod models;
 mod notes;
@@ -76,6 +77,9 @@ pub fn build(page: Page, shared: &Shared, window: &mut Window, cx: &mut App) -> 
             PageHandle::new::<models::ModelsPage>(page, shared, window, cx)
         }
         Page::Library => PageHandle::new::<library::LibraryPage>(page, shared, window, cx),
+        Page::FinishSetup => {
+            PageHandle::new::<finish_setup::FinishSetupPage>(page, shared, window, cx)
+        }
     }
 }
 
@@ -147,6 +151,10 @@ pub trait PageView: Render + Sized + 'static {
 /// The Notes page's command that records a new note, which Ctrl+R (Cmd+R
 /// on macOS) runs from anywhere in the window.
 pub const NEW_NOTE: &str = "new-note";
+
+/// Speech to text › Models' command that shows the Typed step, where the
+/// card says how to let the daemon type: the toast's Allow typing.
+pub const ALLOW_TYPING: &str = "allow-typing";
 
 /// A command in the palette.
 #[derive(Clone)]
@@ -222,6 +230,8 @@ pub enum SidebarMark {
     /// A bare dot in the theme's info colour: an update is ready. Not a
     /// status dot, so not one of their colours.
     Update,
+    /// A yellow dot: something needs setting up (Finish setup).
+    NeedsSetup,
 }
 
 /// A built page, as the window holds it: its view, and its [`PageView`]
@@ -390,21 +400,30 @@ pub fn next_to_catch_up(pages: impl IntoIterator<Item = (Page, bool)>) -> Option
 /// A heading in the sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
+    /// Finish setup, above the features, with no heading, and only while
+    /// something is missing.
+    Setup,
     SpeechToText,
     TextToSpeech,
     General,
 }
 
 impl Section {
-    pub const ALL: [Self; 3] = [Self::SpeechToText, Self::TextToSpeech, Self::General];
+    pub const ALL: [Self; 4] = [
+        Self::Setup,
+        Self::SpeechToText,
+        Self::TextToSpeech,
+        Self::General,
+    ];
 
     /// The heading's message key.
     #[must_use]
     pub const fn key(self) -> &'static str {
         match self {
+            // No heading of its own; its page is General's, in a breadcrumb.
+            Self::Setup | Self::General => "general",
             Self::SpeechToText => "speech-to-text",
             Self::TextToSpeech => "text-to-speech",
-            Self::General => "general",
         }
     }
 
@@ -414,7 +433,7 @@ impl Section {
         match self {
             Self::SpeechToText => Some(Feature::SpeechToText),
             Self::TextToSpeech => Some(Feature::TextToSpeech),
-            Self::General => None,
+            Self::Setup | Self::General => None,
         }
     }
 
@@ -429,6 +448,8 @@ impl Section {
 /// One page of the app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
+    /// What macOS has to allow, while something is missing.
+    FinishSetup,
     SttModels,
     Notes,
     Contexts,
@@ -446,7 +467,8 @@ pub enum Page {
 }
 
 impl Page {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
+        Self::FinishSetup,
         Self::SttModels,
         Self::Notes,
         Self::Contexts,
@@ -467,6 +489,7 @@ impl Page {
     #[must_use]
     pub const fn section(self) -> Section {
         match self {
+            Self::FinishSetup => Section::Setup,
             Self::SttModels | Self::Notes | Self::Contexts | Self::SttBehavior => {
                 Section::SpeechToText
             }
@@ -486,6 +509,7 @@ impl Page {
     #[must_use]
     pub const fn key(self) -> &'static str {
         match self {
+            Self::FinishSetup => "finish-setup",
             Self::SttModels | Self::TtsModels => "models",
             Self::Notes => "notes",
             Self::Contexts => "contexts",
@@ -507,6 +531,7 @@ impl Page {
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {
+            Self::FinishSetup => "finish-setup",
             Self::SttModels => "stt-models",
             Self::Notes => "notes",
             Self::Contexts => "contexts",
@@ -570,7 +595,7 @@ impl Page {
     #[must_use]
     pub fn full_name(self) -> SharedString {
         match self.section() {
-            Section::General => crate::t(self.key()),
+            Section::Setup | Section::General => crate::t(self.key()),
             section => format!("{} › {}", crate::t(section.key()), crate::t(self.key())).into(),
         }
     }
@@ -579,6 +604,7 @@ impl Page {
     #[must_use]
     pub fn icon(self) -> Icon {
         match self {
+            Self::FinishSetup => Phosphor::ListChecks.into(),
             Self::SttModels | Self::TtsModels => Phosphor::Brain.into(),
             Self::Notes => Phosphor::NotePencil.into(),
             Self::Contexts => Phosphor::ChatText.into(),
@@ -632,6 +658,7 @@ mod tests {
         assert_eq!(
             read,
             [
+                Page::FinishSetup,
                 Page::SttBehavior,
                 Page::TtsModels,
                 Page::TtsBehavior,

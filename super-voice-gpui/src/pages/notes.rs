@@ -431,7 +431,12 @@ impl NotesPage {
         if self.state.take.is_some() || self.microphone.recording {
             return Some(t("another-recording-is-running"));
         }
-        let readiness = self.shared.readiness.read(cx).of(Feature::SpeechToText);
+        // A note types nothing, so typing that needs setup doesn't stop it.
+        let readiness = self
+            .shared
+            .readiness
+            .read(cx)
+            .model_of(Feature::SpeechToText);
         (!matches!(readiness, FeatureReadiness::Ready | FeatureReadiness::Idle))
             .then(|| t("speech-to-text-is-not-ready"))
     }

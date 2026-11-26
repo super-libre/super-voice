@@ -27,11 +27,13 @@ use gpui_kit::{
 use super_voice_app_core::events::Event;
 use super_voice_app_core::pages::connection::Input as ConnectionInput;
 use super_voice_app_core::pages::readiness::Input as ReadinessInput;
+use super_voice_app_core::pages::setup::{self, Input as SetupInput};
 
 use crate::connection::{Connection, ConnectionEvent};
 use crate::daemon_events::{DaemonEvent, DaemonEvents};
 use crate::pages::{self, Page, PageHandle};
 use crate::readiness::Readiness;
+use crate::setup::Setup;
 use crate::shared::{Navigator, Shared};
 use crate::ui::width::{self, WindowSize};
 
@@ -129,6 +131,11 @@ pub const KEYS: &[&str] = &[
     "socket",
     "copy",
     "copy-command",
+    "finish-setup",
+    "typing-failed-title",
+    "typing-failed-body",
+    "typing-failed-not-copied",
+    "allow-typing",
 ];
 
 /// How long the window waits, asked to close, for the pages finishing their
@@ -145,6 +152,10 @@ const RESUBSCRIBED_AFTER: std::time::Duration = std::time::Duration::from_secs(3
 /// a minute for one client; a Models page alone makes a dozen).
 const CATCH_UP_EVERY: std::time::Duration = std::time::Duration::from_millis(400);
 
+/// What the toast for a dictation that went to the clipboard is keyed on:
+/// a new one replaces the one before.
+struct TypingFailedToast;
+
 /// The window was asked to close, and waits for these pages to finish.
 struct Closing {
     waiting: Vec<Page>,
@@ -158,6 +169,7 @@ pub struct Services {
     pub connection: Entity<Connection>,
     pub readiness: Entity<Readiness>,
     pub events: Entity<DaemonEvents>,
+    pub setup: Entity<Setup>,
 }
 
 /// The open window, for what reaches it from outside its elements: the menu
@@ -205,6 +217,9 @@ pub struct Shell {
     reached_at: Option<Instant>,
     /// Reads the pages left behind, one at a time.
     catch_up: Option<gpui_kit::Task<()>>,
+    /// Asks the daemon every 2 s whether it may type, while it may not and
+    /// the fix is on screen.
+    typing_check: Option<gpui_kit::Task<()>>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -223,6 +238,7 @@ impl Shell {
             connection,
             readiness,
             events,
+            setup,
         } = services;
         cx.set_global(crate::connection::Current(connection.clone()));
         let current = Current {
@@ -233,6 +249,7 @@ impl Shell {
         let shared = Shared {
             connection: connection.clone(),
             readiness: readiness.clone(),
+            setup: setup.clone(),
             nav: Navigator(cx.weak_entity()),
         };
         let pages: Vec<(Page, PageHandle)> = Page::ALL
@@ -242,7 +259,18 @@ impl Shell {
 
         let mut subscriptions = vec![
             cx.observe(&connection, |_, _, cx| cx.notify()),
-            cx.observe(&readiness, |_, _, cx| cx.notify()),
+            cx.observe_in(&readiness, window, |shell, _, window, cx| {
+                shell.typing_changed(window, cx);
+                cx.notify();
+            }),
+            cx.observe(&setup, |_, _, cx| cx.notify()),
+            // Back in front, maybe from System Settings: read again whether
+            // macOS shows notifications, and whether the daemon may type.
+            cx.observe_window_activation(window, |shell, window, cx| {
+                if window.is_window_active() {
+                    shell.window_active(cx);
+                }
+            }),
             cx.subscribe_in(&connection, window, Self::on_connection),
             cx.subscribe_in(&events, window, Self::on_daemon_event),
         ];
@@ -272,6 +300,7 @@ impl Shell {
             closing: None,
             reached_at: None,
             catch_up: None,
+            typing_check: None,
             focus,
             _subscriptions: subscriptions,
         }
@@ -290,7 +319,74 @@ impl Shell {
             self.handle(page).reach_if_stale(window, cx);
         }
         self.handle(page).shown(window, cx);
+        self.check_typing_while_shown(cx);
         cx.notify();
+    }
+
+    /// The readiness changed: tell the setup whether the daemon may type,
+    /// open Finish setup if this is the first launch and it may not, and ask
+    /// again every 2 s while the fix is on screen.
+    fn typing_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let readiness = self.shared.readiness.read(cx);
+        let can_type = readiness.can_type();
+        let blocked = readiness.typing_blocked();
+        let opens = self.shared.setup.update(cx, |setup, cx| {
+            setup.send(SetupInput::Typing { can_type }, cx);
+            let first = setup.first_launch();
+            setup::opens_on_setup(&mut setup.state, first, blocked)
+        });
+        if opens {
+            self.go(Page::FinishSetup, window, cx);
+        }
+        self.check_typing_while_shown(cx);
+    }
+
+    /// The window came to the front: read again what the user may have
+    /// switched on in System Settings meanwhile.
+    fn window_active(&mut self, cx: &mut Context<Self>) {
+        self.shared
+            .setup
+            .update(cx, |setup, cx| setup.send(SetupInput::WindowActive, cx));
+        if self.shared.readiness.read(cx).typing_blocked() {
+            self.shared
+                .readiness
+                .update(cx, crate::readiness::Readiness::check_typing);
+        }
+    }
+
+    /// Whether Finish setup is in the sidebar: while the daemon may not
+    /// type, and while it is shown.
+    pub fn setup_row_shown(&self, cx: &App) -> bool {
+        setup::setup_row_shown(
+            self.shared.readiness.read(cx).typing_blocked(),
+            self.page_shown(cx) == Some(Page::FinishSetup),
+        )
+    }
+
+    /// Ask the daemon every 2 s whether it may type, while it may not and
+    /// the Typed card or Finish setup is shown; stop otherwise.
+    fn check_typing_while_shown(&mut self, cx: &mut Context<Self>) {
+        let fix_shown = matches!(
+            self.page_shown(cx),
+            Some(Page::SttModels | Page::FinishSetup)
+        );
+        let blocked = self.shared.readiness.read(cx).typing_blocked();
+        if !setup::checks_typing(blocked, fix_shown) {
+            self.typing_check = None;
+            return;
+        }
+        if self.typing_check.is_some() {
+            return;
+        }
+        let readiness = self.shared.readiness.downgrade();
+        self.typing_check = Some(cx.spawn(async move |_, cx| {
+            loop {
+                cx.background_executor().timer(setup::CHECK_EVERY).await;
+                if readiness.update(cx, Readiness::check_typing).is_err() {
+                    return;
+                }
+            }
+        }));
     }
 
     /// The daemon answers, first or again: the page shown and the pages the
@@ -412,6 +508,9 @@ impl Shell {
         match event {
             ConnectionEvent::Reached => {
                 self.events.update(cx, DaemonEvents::start);
+                self.shared
+                    .setup
+                    .update(cx, |setup, cx| setup.send(SetupInput::Reached, cx));
                 self.shared.readiness.update(cx, |readiness, cx| {
                     readiness.send(ReadinessInput::Reached, cx);
                 });
@@ -465,9 +564,41 @@ impl Shell {
                 readiness.send(ReadinessInput::Heard(status), cx);
             });
         }
+        if let Some(name) = super_voice_app_core::events::setting_changed(event) {
+            let input = SetupInput::SettingChanged(name.to_string());
+            self.shared
+                .setup
+                .update(cx, |setup, cx| setup.send(input, cx));
+        }
+        if let Event::TypingFailed(failed) = event {
+            self.typing_failed(failed, window, cx);
+        }
         for (_, handle) in &self.pages {
             handle.heard(event, window, cx);
         }
+    }
+
+    /// A dictation could not be typed: say so in a toast, unless Failure
+    /// notices are switched off, with Allow typing when the permission is
+    /// what stopped it.
+    fn typing_failed(
+        &mut self,
+        failed: &super_voice_app_core::events::TypingFailed,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let method = self.shared.setup.read(cx).state.notification_method;
+        let Some(toast) = setup::toast(failed, method) else {
+            return;
+        };
+        let nav = self.shared.nav.clone();
+        crate::ui::toast::show::<TypingFailedToast>(
+            window,
+            cx,
+            crate::ui::toast::typing_failed(&toast, move |window, cx| {
+                nav.go_and_run(Page::SttModels, pages::ALLOW_TYPING.into(), window, cx);
+            }),
+        );
     }
 
     fn on_open_palette(&mut self, _: &OpenPalette, window: &mut Window, cx: &mut Context<Self>) {
@@ -480,7 +611,15 @@ impl Shell {
             self.drawer_open = false;
             window.close_sheet(cx);
         }
-        let groups = palette::entries(&self.pages, cx);
+        // Finish setup is offered only while it is in the sidebar.
+        let row = self.setup_row_shown(cx);
+        let pages: Vec<(Page, PageHandle)> = self
+            .pages
+            .iter()
+            .filter(|(page, _)| row || *page != Page::FinishSetup)
+            .cloned()
+            .collect();
+        let groups = palette::entries(&pages, cx);
         self.palette.open(groups, window, cx);
     }
 
@@ -654,6 +793,27 @@ impl Shell {
         }
         if scenes.contains(&"drawer") && WindowSize::of(window) == WindowSize::Narrow {
             self.toggle_drawer(window, cx);
+        }
+        // The toast for a dictation that went to the clipboard.
+        let failed = |reason| super_voice_app_core::events::TypingFailed {
+            reason,
+            copied: true,
+            text: "Call the landlord about the heater before Friday.".into(),
+        };
+        if scenes.contains(&"typing-failed") {
+            let failed = failed(super_voice_app_core::events::TypingFailure::NotAllowed);
+            self.typing_failed(&failed, window, cx);
+        }
+        if scenes.contains(&"typing-failed-secure") {
+            let failed = failed(super_voice_app_core::events::TypingFailure::SecureInput);
+            self.typing_failed(&failed, window, cx);
+        }
+        // Speech to text › Models, scrolled to the Typed step, as the toast's
+        // Allow typing leaves it.
+        if scenes.contains(&"scroll-typed") {
+            self.handle(Page::SttModels)
+                .clone()
+                .run(pages::ALLOW_TYPING, window, cx);
         }
     }
 }

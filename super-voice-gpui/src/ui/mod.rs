@@ -16,6 +16,7 @@
 //! - [`toast`]: the core's notices, as toasts.
 //! - [`code_line`]: a command to copy, in the monospace font.
 //! - [`waveform::Waveform`]: the daemon's microphone, live.
+//! - [`typing`]: how to let the daemon type into other apps on macOS.
 
 // The blocks are for the pages, and a page built later is the first to use
 // some of them.
@@ -29,6 +30,7 @@ pub mod page_header;
 pub mod settings_row;
 pub mod status;
 pub mod toast;
+pub mod typing;
 pub mod waveform;
 pub mod width;
 
