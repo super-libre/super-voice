@@ -12,7 +12,7 @@
 //! recorded is saved first, and closing the window quits the app.
 
 use gpui_kit::component::input as text;
-use gpui_kit::{App, KeyBinding, Menu, MenuItem, OsAction, actions};
+use gpui_kit::{App, Context, KeyBinding, Menu, MenuItem, OsAction, Window, actions};
 
 use crate::pages::Page;
 use crate::shell::{self, Shell};
@@ -79,10 +79,10 @@ pub fn install(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| close(cx));
     cx.on_action(|_: &CloseWindow, cx| close(cx));
     cx.on_action(|_: &Minimize, cx| {
-        shell::with_current(cx, |_, window, _| window.minimize_window());
+        on_shell(cx, |_, window, _| window.minimize_window());
     });
     cx.on_action(|_: &Zoom, cx| {
-        shell::with_current(cx, |_, window, _| window.zoom_window());
+        on_shell(cx, |_, window, _| window.zoom_window());
     });
     cx.bind_keys([
         KeyBinding::new("cmd-,", ShowSettings, None),
@@ -127,17 +127,30 @@ fn bar() -> Vec<Menu> {
     ]
 }
 
+/// Run `f` on the window's shell once the action's dispatch is done.
+///
+/// A menu item or its keys reach these handlers while GPUI is still
+/// dispatching the action in the window, which it holds until then, so
+/// the window can't be updated from here; deferred, it can.
+fn on_shell(cx: &mut App, f: impl FnOnce(&mut Shell, &mut Window, &mut Context<Shell>) + 'static) {
+    cx.defer(move |cx| {
+        shell::with_current(cx, f);
+    });
+}
+
 /// Show `page` in the window.
 fn show(page: Page, cx: &mut App) {
-    shell::with_current(cx, |shell, window, cx| shell.go(page, window, cx));
+    on_shell(cx, move |shell, window, cx| shell.go(page, window, cx));
 }
 
 /// Close the window as its close button does, which quits the app; quit at
-/// once when no window is open.
+/// once when no window is open. Deferred, like [`on_shell`].
 fn close(cx: &mut App) {
-    if !shell::with_current(cx, Shell::close_window) {
-        cx.quit();
-    }
+    cx.defer(|cx| {
+        if !shell::with_current(cx, Shell::close_window) {
+            cx.quit();
+        }
+    });
 }
 
 #[cfg(test)]
