@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Super Voice: simplified app icon for 16-32 px. Same tile, bands, mic and S roundel as the master, redrawn with fewer, bolder shapes. -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f89040"/><stop offset="1" stop-color="#ec6424"/></linearGradient>
+    <linearGradient id="cream" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf8ec"/><stop offset="1" stop-color="#e5dac2"/></linearGradient>
+    <clipPath id="tile"><rect width="32" height="32" rx="7"/></clipPath>
+  </defs>
+  <g clip-path="url(#tile)">
+    <rect width="32" height="32" fill="url(#g)"/>
+    <!-- one coral glass band behind the mic, at the 45 degree flight heading -->
+    <rect x="-8" y="13" width="48" height="11" transform="rotate(45 16 16)" fill="#d8344e" fill-opacity=".55"/>
+    <!-- the cape, a short olive-yellow wedge trailing to the lower left -->
+    <path d="M9.2 16.6 L1.4 27.2 L4.8 30.6 L15.4 22.8 Z" fill="#e9d64a" stroke="#141414" stroke-width="1.1" stroke-linejoin="round"/>
+    <g transform="translate(16 16) rotate(-45)">
+      <!-- head (grille) -->
+      <rect x="1.4" y="-5.4" width="14.4" height="10.8" rx="5.4" fill="url(#cream)" stroke="#141414" stroke-width="1.5"/>
+      <!-- body -->
+      <rect x="-13" y="-6.3" width="14.4" height="12.6" rx="1.6" fill="#3a3732" stroke="#141414" stroke-width="1.5"/>
+    </g>
+    <!-- the S roundel, upright for legibility -->
+    <g transform="translate(11.2 20.8)">
+      <circle r="5.6" fill="#ffe14a" stroke="#141414" stroke-width="1.2"/>
+      <circle r="3.9" fill="#e8462a"/>
+      <path d="M2.1 -2.3 H-0.7 A1.15 1.15 0 0 0 -0.7 0 H0.7 A1.15 1.15 0 0 1 0.7 2.3 H-2.1" fill="none" stroke="#ffe14a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

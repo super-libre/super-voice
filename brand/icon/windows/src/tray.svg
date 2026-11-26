@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Super Voice tray glyph: one colour (currentColor). The flying mic, with the S roundel set into the body: a gap ring, then a disc with the S cut out. -->
+  <defs>
+    <mask id="body">
+      <rect width="32" height="32" fill="#fff"/>
+      <circle cx="11.6" cy="20.4" r="6.1" fill="#000"/>
+      <g transform="translate(16 16) rotate(-45)"><rect x="0.2" y="-8" width="1.5" height="16" fill="#000"/></g>
+    </mask>
+    <mask id="disc">
+      <rect width="32" height="32" fill="#fff"/>
+      <path transform="translate(11.6 20.4)" d="M2.1 -2.3 H-0.7 A1.15 1.15 0 0 0 -0.7 0 H0.7 A1.15 1.15 0 0 1 0.7 2.3 H-2.1" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g fill="currentColor">
+    <g mask="url(#body)">
+      <g transform="translate(16 16) rotate(-45)">
+        <rect x="1.2" y="-5.6" width="15" height="11.2" rx="5.6"/>
+        <rect x="-13.6" y="-6.4" width="15" height="12.8" rx="2"/>
+      </g>
+    </g>
+    <g mask="url(#disc)"><circle cx="11.6" cy="20.4" r="4.7"/></g>
+  </g>
+</svg>
