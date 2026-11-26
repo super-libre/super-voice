@@ -16,6 +16,11 @@
 //! each time the daemon answers (first, and again after it was down). That
 //! keeps `just app-shot`, which never reaches the daemon, from asking it for
 //! anything.
+//!
+//! Only the page on screen, and those whose mark the sidebar shows
+//! ([`Page::reads_while_hidden`]), read when the daemon answers; the others
+//! read when they are next shown. Fourteen pages asking at once is more than
+//! the daemon lets one client ask in a moment.
 
 mod about;
 mod assistants;
@@ -32,6 +37,7 @@ mod tts_behavior;
 mod updates;
 mod voices;
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui_kit::assets::IconName as Lucide;
@@ -221,6 +227,8 @@ pub enum SidebarMark {
 pub struct PageHandle {
     view: AnyView,
     calls: Rc<dyn PageCalls>,
+    /// The daemon answered while the page was hidden: it reads when shown.
+    stale: Rc<Cell<bool>>,
 }
 
 impl PageHandle {
@@ -235,6 +243,7 @@ impl PageHandle {
         Self {
             view: entity.clone().into(),
             calls: Rc::new(entity),
+            stale: Rc::default(),
         }
     }
 
@@ -244,7 +253,21 @@ impl PageHandle {
     }
 
     pub fn reached(&self, window: &mut Window, cx: &mut App) {
+        self.stale.set(false);
         self.calls.reached(window, cx);
+    }
+
+    /// The daemon answered while the page is hidden: it reads when it is
+    /// next shown ([`Self::reach_if_stale`]).
+    pub fn mark_stale(&self) {
+        self.stale.set(true);
+    }
+
+    /// Read from the daemon, if it answered while the page was hidden.
+    pub fn reach_if_stale(&self, window: &mut Window, cx: &mut App) {
+        if self.stale.get() {
+            self.reached(window, cx);
+        }
     }
 
     pub fn heard(&self, event: &Event, window: &mut Window, cx: &mut App) {
@@ -488,6 +511,17 @@ impl Page {
     #[must_use]
     pub fn from_slug(slug: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|page| page.slug() == slug)
+    }
+
+    /// Whether the page reads from the daemon when it answers even while
+    /// another page is shown: those whose sidebar mark comes from what they
+    /// read (how many notes, clips and voices; an update ready).
+    #[must_use]
+    pub const fn reads_while_hidden(self) -> bool {
+        matches!(
+            self,
+            Self::Notes | Self::Clips | Self::Voices | Self::Library | Self::Updates
+        )
     }
 
     /// Whether the page needs the daemon. While the daemon is down, these

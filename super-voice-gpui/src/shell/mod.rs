@@ -14,6 +14,8 @@ mod sidebar;
 mod status_bar;
 mod title_bar;
 
+use std::time::Instant;
+
 use gpui_kit::component::{ActiveTheme as _, Placement, Theme, WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -117,6 +119,10 @@ pub const KEYS: &[&str] = &[
 /// work ([`crate::pages::PageView::closing`]) before it closes anyway.
 const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// An event stream subscribed this long after the pages were told the
+/// daemon answers is a new subscription, not the first one.
+const RESUBSCRIBED_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// The window was asked to close, and waits for these pages to finish.
 struct Closing {
     waiting: Vec<Page>,
@@ -146,6 +152,8 @@ pub struct Shell {
     drawer_open: bool,
     /// The window was asked to close and waits for pages to finish.
     closing: Option<Closing>,
+    /// When the pages were last told the daemon answers.
+    reached_at: Option<Instant>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -206,6 +214,7 @@ impl Shell {
             palette: palette::Palette::new(window, cx),
             drawer_open: false,
             closing: None,
+            reached_at: None,
             focus,
             _subscriptions: subscriptions,
         }
@@ -218,8 +227,24 @@ impl Shell {
             self.drawer_open = false;
             window.close_sheet(cx);
         }
+        if !self.shows_connection(cx) {
+            self.handle(page).reach_if_stale(window, cx);
+        }
         self.handle(page).shown(window, cx);
         cx.notify();
+    }
+
+    /// The daemon answers, first or again: the page shown and the pages the
+    /// sidebar marks read now, the others when they are next shown.
+    fn reach_pages(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.reached_at = Some(Instant::now());
+        for (page, handle) in &self.pages {
+            if *page == self.page || page.reads_while_hidden() {
+                handle.reached(window, cx);
+            } else {
+                handle.mark_stale();
+            }
+        }
     }
 
     /// The window is asked to close: `true` when it may close now. A page
@@ -297,9 +322,7 @@ impl Shell {
                 self.shared.readiness.update(cx, |readiness, cx| {
                     readiness.send(ReadinessInput::Reached, cx);
                 });
-                for (_, handle) in &self.pages {
-                    handle.reached(window, cx);
-                }
+                self.reach_pages(window, cx);
             }
             ConnectionEvent::Lost => {
                 self.shared
@@ -320,6 +343,18 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // The event stream subscribed again while the daemon still
+        // answered (it restarted between two pings): what the pages show
+        // may have changed, and their events were missed. Its first
+        // subscription, just after the daemon answered, is not news.
+        if matches!(event, Event::Connected)
+            && !self.shared.connection.read(cx).is_down()
+            && self
+                .reached_at
+                .is_none_or(|at| at.elapsed() > RESUBSCRIBED_AFTER)
+        {
+            self.reach_pages(window, cx);
+        }
         let connection = match event {
             Event::Connected => Some(ConnectionInput::Reached),
             Event::Blocked(reason) => Some(ConnectionInput::Refused(reason.clone())),
