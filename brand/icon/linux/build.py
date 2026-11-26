@@ -168,8 +168,8 @@ def symbolic_path() -> str:
     - no side knobs: at panel sizes the clean capsule reads better;
     - the S roundel centred at (126, 267) on the housing, cut out as a
       round hole (an S does not fit at 16 px);
-    - the cape wedge behind the housing, flaring past the flat bottom, kept
-      1 px clear of the mic.
+    - the cape behind the housing, flaring past the flat bottom to a
+      scalloped hem of three rounded lobes, kept 1 px clear of the mic.
 
     The whole is turned to the 45 degree flight heading and fitted to the
     16 px canvas with a 1 px margin.
@@ -185,8 +185,15 @@ def symbolic_path() -> str:
         dome = Point(335, cy).buffer(half, quad_segs=16)
         return unary_union([back, box(60, cy - half, 335, cy + half), dome])
 
-    cape = Polygon([(226, 176), (140, 112), (40, 80), (-34, 110), (-34, 424),
-                    (40, 454), (140, 422), (226, 358)])
+    # The cape flares back from the seam and ends in a scalloped hem of three
+    # rounded lobes, so it reads as cloth rather than a cropped edge.
+    cape = unary_union([
+        Polygon([(226, 176), (140, 112), (40, 80), (0, 92), (0, 442),
+                 (40, 454), (140, 422), (226, 358)]),
+        Point(0, 150).buffer(58, quad_segs=12),
+        Point(-14, 267).buffer(64, quad_segs=12),
+        Point(0, 384).buffer(58, quad_segs=12),
+    ])
 
     def fit(geoms, size=16, margin=1.0):
         rot = [affinity.rotate(g, -45, origin=(256, 256)) for g in geoms]
