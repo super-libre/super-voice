@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs>
+<clipPath id="lg2r2light-clip"><rect width="512" height="512" rx="112"/></clipPath>
+<linearGradient id="lg2r2light-rim" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="512" y2="512"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".55" stop-color="#fff" stop-opacity=".2"/><stop offset="1" stop-color="#fff" stop-opacity=".55"/></linearGradient>
+<radialGradient id="lg2r2light-l" cx="24%" cy="8%" r="80%"><stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/></radialGradient>
+</defs>
+<g clip-path="url(#lg2r2light-clip)">
+<rect width="512" height="512" fill="url(#lg2r2light-l)"/>
+</g>
+</svg>
