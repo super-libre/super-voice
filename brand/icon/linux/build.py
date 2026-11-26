@@ -169,7 +169,7 @@ def symbolic_path() -> str:
     - the S roundel centred at (126, 267) on the housing, cut out as a
       round hole (an S does not fit at 16 px);
     - the cape behind the housing, fanning back past the flat bottom to a
-      hem of two pointed tips with a dip between, as on the master's cape,
+      straight hem between its two corners,
       kept 1 px clear of the mic.
 
     The whole is turned to the 45 degree flight heading and fitted to the
@@ -186,10 +186,9 @@ def symbolic_path() -> str:
         dome = Point(335, cy).buffer(half, quad_segs=16)
         return unary_union([back, box(60, cy - half, 335, cy + half), dome])
 
-    # The cape follows the master's: it fans back from the seam and ends in
-    # two pointed tips with a soft dip between them (the hem of cape-00).
+    # The cape fans back from the seam, as on the master's cape-00, and ends
+    # in a straight hem between its two corners.
     cape = Polygon([(226, 176), (150, 140), (60, 104), (-40, 78), (-140, 52),
-                    (-118, 130), (-104, 200), (-98, 267), (-104, 334), (-118, 404),
                     (-140, 482), (-40, 456), (60, 430), (150, 394), (226, 358)])
     cape = cape.buffer(10, quad_segs=6).buffer(-10, quad_segs=6)
 
