@@ -64,16 +64,26 @@ pub const NEW_NOTE_KEYS: &str = if cfg!(target_os = "macos") {
 /// The shell's keys: Ctrl+K (Cmd+K on macOS) for the palette, Ctrl+R
 /// (Cmd+R) for a new note, Alt+Left for back, and Cmd+[ too on macOS, as
 /// its apps go back.
+///
+/// Back's keys are bound in the shell's own context, not everywhere: GPUI
+/// ranks a binding with no context as deep as the focus goes, so it would
+/// beat a text field's own use of the same keys (a word left, outdent).
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new(PALETTE_KEYS, OpenPalette, None),
         KeyBinding::new(NEW_NOTE_KEYS, NewNote, None),
-        KeyBinding::new("alt-left", Back, None),
+        KeyBinding::new("alt-left", Back, Some(SHELL_CONTEXT)),
     ]);
     if cfg!(target_os = "macos") {
-        cx.bind_keys([KeyBinding::new("cmd-[", Back, None)]);
+        cx.bind_keys([KeyBinding::new("cmd-[", Back, Some(SHELL_CONTEXT))]);
     }
 }
+
+/// The shell's key context.
+const SHELL_CONTEXT: &str = "Shell";
+
+/// The kit's text fields' key context.
+const TEXT_FIELD_CONTEXT: &str = "Input";
 
 /// The message keys the shell shows besides the pages' and headings' names.
 #[cfg(test)]
@@ -505,6 +515,16 @@ impl Shell {
     }
 
     fn on_back(&mut self, _: &Back, window: &mut Window, cx: &mut Context<Self>) {
+        // Never from a text field: going back there would throw away what
+        // was typed. Where the field has no use for the keys (Alt+Left on
+        // Linux), they do nothing.
+        if window
+            .context_stack()
+            .iter()
+            .any(|context| context.contains(TEXT_FIELD_CONTEXT))
+        {
+            return;
+        }
         if let Some(page) = self.page_shown(cx) {
             self.handle(page).clone().back(window, cx);
         }
@@ -583,7 +603,7 @@ impl Shell {
         };
         v_flex()
             .id("shell")
-            .key_context("Shell")
+            .key_context(SHELL_CONTEXT)
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::on_open_palette))
             .on_action(cx.listener(Self::on_back))
