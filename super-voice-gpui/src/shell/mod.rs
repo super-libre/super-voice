@@ -19,8 +19,9 @@ use std::time::Instant;
 use gpui_kit::component::{ActiveTheme as _, Placement, Theme, WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
-    KeyBinding, ParentElement as _, Render, Styled as _, Subscription, Window, actions, div, px,
+    AnyElement, AnyWindowHandle, App, Context, Entity, FocusHandle, Global,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, Styled as _,
+    Subscription, WeakEntity, Window, actions, div, px,
 };
 use super_voice_app_core::events::Event;
 use super_voice_app_core::pages::connection::Input as ConnectionInput;
@@ -144,6 +145,33 @@ pub struct Services {
     pub events: Entity<DaemonEvents>,
 }
 
+/// The open window, for what reaches it from outside its elements: the menu
+/// bar on macOS ([`crate::menus`]).
+struct Current {
+    shell: WeakEntity<Shell>,
+    window: AnyWindowHandle,
+}
+
+impl Global for Current {}
+
+/// Run `f` on the open window's shell: `false` when no window is open.
+pub fn with_current(
+    cx: &mut App,
+    f: impl FnOnce(&mut Shell, &mut Window, &mut Context<Shell>),
+) -> bool {
+    let Some((shell, window)) = cx
+        .try_global::<Current>()
+        .map(|current| (current.shell.clone(), current.window))
+    else {
+        return false;
+    };
+    window
+        .update(cx, |_, window, cx| {
+            shell.update(cx, |shell, cx| f(shell, window, cx))
+        })
+        .is_ok_and(|updated| updated.is_ok())
+}
+
 /// The window's content.
 pub struct Shell {
     /// The page picked. While the daemon is down and it needs the daemon,
@@ -182,6 +210,11 @@ impl Shell {
             events,
         } = services;
         cx.set_global(crate::connection::Current(connection.clone()));
+        let current = Current {
+            shell: cx.weak_entity(),
+            window: window.window_handle(),
+        };
+        cx.set_global(current);
         let shared = Shared {
             connection: connection.clone(),
             readiness: readiness.clone(),
@@ -313,6 +346,14 @@ impl Shell {
             _give_up: give_up,
         });
         false
+    }
+
+    /// Close the window as its close button does: at once, or once the pages
+    /// holding it ([`Self::close`]) have finished.
+    pub fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.close(window, cx) {
+            window.remove_window();
+        }
     }
 
     /// `page` finished the work it held the window open for: close it once

@@ -14,6 +14,7 @@ mod effects;
 mod hot;
 #[cfg(target_os = "macos")]
 mod macos;
+mod menus;
 mod pages;
 mod readiness;
 mod runtime;
@@ -79,6 +80,7 @@ fn run() {
         .with_assets(assets::Assets)
         .run(|cx| {
             setup(cx);
+            menus::install(cx);
             hot::connect(cx);
             #[cfg(target_os = "macos")]
             macos::on_launch();
