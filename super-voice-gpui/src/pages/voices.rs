@@ -21,7 +21,7 @@ use gpui_kit::component::group_box::{GroupBox, GroupBoxVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::progress::Progress;
-use gpui_kit::component::select::{Select, SelectEvent, SelectItem, SelectState};
+use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState};
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, IconName, IndexPath, Sizable as _, WindowExt as _, h_flex,
     v_flex,
@@ -105,7 +105,7 @@ pub struct VoicesPage {
     language: Option<String>,
     /// The synthesis model and whether it is up, as last seen.
     synthesis: Option<(Option<String>, bool)>,
-    script: Entity<SelectState<Vec<ScriptRow>>>,
+    script: Entity<SelectState<SearchableVec<ScriptRow>>>,
     /// The script rows' ids, in the picker's order.
     script_ids: Vec<Option<&'static str>>,
     label: Entity<InputState>,
@@ -113,6 +113,9 @@ pub struct VoicesPage {
     rename: Entity<InputState>,
     /// Moves the recording's time and level while it runs.
     ticker: Option<Task<()>>,
+    /// The shot draws a recording, which has no microphone open.
+    #[cfg(feature = "screenshot")]
+    shot_recording: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -131,7 +134,9 @@ impl PageView for VoicesPage {
     fn new(_: Page, shared: &Shared, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let rows = script_rows(None);
         let script_ids = rows.iter().map(|row| row.id).collect();
-        let script = cx.new(|cx| SelectState::new(rows, None, window, cx).searchable(true));
+        let script = cx.new(|cx| {
+            SelectState::new(SearchableVec::new(rows), None, window, cx).searchable(true)
+        });
         let label = cx.new(|cx| InputState::new(window, cx).placeholder(t("name-this-voice")));
         let transcript =
             cx.new(|cx| InputState::new(window, cx).placeholder(t("what-the-recording-says")));
@@ -140,7 +145,7 @@ impl PageView for VoicesPage {
             cx.subscribe_in(
                 &script,
                 window,
-                |this, _, event: &SelectEvent<Vec<ScriptRow>>, window, cx| {
+                |this, _, event: &SelectEvent<SearchableVec<ScriptRow>>, window, cx| {
                     if let SelectEvent::Confirm(Some(id)) = event {
                         this.send(In::Voices(page::Input::ScriptSelected(*id)), window, cx);
                     }
@@ -212,6 +217,8 @@ impl PageView for VoicesPage {
             transcript,
             rename,
             ticker: None,
+            #[cfg(feature = "screenshot")]
+            shot_recording: false,
             _subscriptions: subscriptions,
         }
     }
@@ -417,8 +424,9 @@ impl VoicesPage {
         let ids: Vec<Option<&'static str>> = rows.iter().map(|row| row.id).collect();
         if ids != self.script_ids {
             self.script_ids = ids;
-            self.script
-                .update(cx, |select, cx| select.set_items(rows, window, cx));
+            self.script.update(cx, |select, cx| {
+                select.set_items(SearchableVec::new(rows), window, cx);
+            });
         }
         let shown = match self.state.script {
             ScriptChoice::Free => None,
@@ -592,7 +600,7 @@ impl VoicesPage {
     /// The new voice: the script and Record; the recording; or the recording
     /// to name and save.
     fn new_voice(&self, cx: &mut Context<Self>) -> AnyElement {
-        if self.state.is_recording() {
+        if self.state.is_recording() || self.shot_recording() {
             return self.recording(cx).into_any_element();
         }
         if self.state.pending.is_some() {
@@ -663,6 +671,15 @@ impl VoicesPage {
             .into_any_element()
     }
 
+    /// Whether the shot draws a recording (`voice-recording`).
+    #[allow(clippy::unused_self)]
+    fn shot_recording(&self) -> bool {
+        #[cfg(feature = "screenshot")]
+        return self.shot_recording;
+        #[cfg(not(feature = "screenshot"))]
+        false
+    }
+
     /// While the microphone is open: the script, large, to read from; the
     /// time, the input level, and Stop.
     fn recording(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -677,10 +694,8 @@ impl VoicesPage {
                 ("max", &format!("{max:.0}")),
             ],
         );
-        // A floor under any sound, so a quiet room still moves the meter:
-        // a flat zero reads as a dead microphone.
+        // On the daemon's 60 dB scale, as the meter beside a dictation.
         let level = self.state.recording_level;
-        let level = if level > 0. { level.max(0.05) } else { 0. };
         GroupBox::new()
             .outline()
             .title(t("recording"))
@@ -1121,6 +1136,15 @@ mod pretend {
             ),
             voice("9c41b7aa", "Narrator", 12.4, None),
         ];
+        // Someone reading the script at an ordinary microphone gain, six
+        // seconds in.
+        if scenes.contains(&"voice-recording") {
+            page.shot_recording = true;
+            page.state.script =
+                ScriptChoice::Chosen(scripts::find("en-north-wind").expect("a script"));
+            page.state.recording_seconds = 6.4;
+            page.state.recording_level = super_voice_app_core::events::level_percent(0.03);
+        }
         let adding = scenes.contains(&"voice-adding");
         page.state.model = Some(if adding {
             VoiceModelSupport {

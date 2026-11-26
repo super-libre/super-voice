@@ -117,7 +117,11 @@ impl PageView for ShortcutsPage {
         use super_voice_app_core::state::connection::AgentStatus;
         use super_voice_shared::models::shortcuts::{ShortcutMethod, ShortcutState};
 
-        self.mac = scenes.contains(&"mac");
+        // `mac` draws the Mac's layout on any platform; without it, the
+        // platform's own, as `new` chose.
+        if scenes.contains(&"mac") {
+            self.mac = true;
+        }
         if self.mac {
             self.state.hotkey = Some("ctrl+alt+Space".into());
             self.state.listener = Some(if scenes.contains(&"listener-off") {

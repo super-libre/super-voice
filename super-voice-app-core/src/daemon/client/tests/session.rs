@@ -137,3 +137,40 @@ async fn a_failure_that_is_not_about_the_token_does_not_re_auth() {
     assert_eq!(daemon.request().path(), "/ping");
     assert_eq!(error.to_string(), "still starting up (HTTP 503)");
 }
+
+/// A request the daemon refuses as one too many is asked once more, after a
+/// moment, and its answer is the call's: the user sees no failure.
+#[tokio::test]
+async fn a_rate_limited_call_is_asked_again_once() {
+    let daemon = FakeDaemon::start().await;
+    daemon
+        .reply(Reply::status(
+            429,
+            &json!({ "status": "error", "error_code": "rate_limited", "message": "rate_limited" }),
+        ))
+        .reply(Reply::ok());
+
+    settings::volume::set_volume(50).await.expect("asked again");
+
+    assert_eq!(daemon.requests().len(), 2);
+}
+
+/// Refused twice, the call fails with the daemon's words: it is asked again
+/// once, not forever.
+#[tokio::test]
+async fn a_call_refused_twice_fails() {
+    let daemon = FakeDaemon::start().await;
+    let refused =
+        json!({ "status": "error", "error_code": "rate_limited", "message": "rate_limited" });
+    daemon
+        .reply(Reply::status(429, &refused))
+        .reply(Reply::status(429, &refused))
+        .reply(Reply::ok());
+
+    let error = settings::volume::set_volume(50).await.expect_err("refused");
+
+    assert!(crate::daemon::client::internal::session::is_rate_limited(
+        &error
+    ));
+    assert_eq!(daemon.requests().len(), 2);
+}

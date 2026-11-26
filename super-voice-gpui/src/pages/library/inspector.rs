@@ -456,34 +456,47 @@ pub fn actions(row: &Row, this: &WeakEntity<LibraryPage>, cx: &App) -> AnyElemen
             _ = this.update(cx, |page, cx| page.configure(&source, window, cx));
         }
     };
-    bar.when_some(row.update_to.clone(), |bar, version| {
-        bar.child(
-            Button::new("update")
-                .primary()
-                .icon(Lucide::Download)
-                .label(t_with("update-to-version", &[("version", &version)]))
+    // Configure… and Uninstall… share a row, Uninstall… at its far end;
+    // an update offered goes above them on a row of its own, the width of
+    // the panel, so three buttons never wrap one onto a line alone.
+    let others = h_flex()
+        .w_full()
+        .gap_2()
+        .items_center()
+        .child(
+            Button::new("configure")
+                .outline()
+                .label(t("library-configure"))
+                .disabled(busy)
+                .on_click(configure),
+        )
+        .child(div().flex_1())
+        .child(
+            Button::new("uninstall")
+                .ghost()
+                .label(t("library-uninstall"))
+                .disabled(busy)
                 .on_click(LibraryPage::press(
                     this,
-                    Msg::Library(Input::Update(source.clone())),
+                    Msg::Library(Input::AskUninstall(source.clone())),
                 )),
-        )
-    })
-    .child(
-        Button::new("configure")
-            .outline()
-            .label(t("library-configure"))
-            .disabled(busy)
-            .on_click(configure),
-    )
-    .child(
-        Button::new("uninstall")
-            .ghost()
-            .label(t("library-uninstall"))
-            .disabled(busy)
-            .on_click(LibraryPage::press(
-                this,
-                Msg::Library(Input::AskUninstall(source.clone())),
-            )),
-    )
-    .into_any_element()
+        );
+    v_flex()
+        .w_full()
+        .gap_2()
+        .when_some(row.update_to.clone(), |actions, version| {
+            actions.child(
+                Button::new("update")
+                    .primary()
+                    .w_full()
+                    .icon(Lucide::Download)
+                    .label(t_with("update-to-version", &[("version", &version)]))
+                    .on_click(LibraryPage::press(
+                        this,
+                        Msg::Library(Input::Update(source.clone())),
+                    )),
+            )
+        })
+        .child(others)
+        .into_any_element()
 }

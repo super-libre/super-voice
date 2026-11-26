@@ -137,9 +137,22 @@ impl PageView for ModelsPage {
         }
     }
 
+    // The window calls this when the daemon answers and the page is shown,
+    // or when it is next shown, and again when the event stream subscribes
+    // anew while the daemon answers.
     fn reached(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // What was under way went with the daemon's last session.
         self.send(In::Models(page::Input::Reconnected), window, cx);
+        let keys: Vec<ModelKey> = self.focus.keys().cloned().collect();
+        for key in keys {
+            self.send(In::Language(language::Input::Focus(key)), window, cx);
+        }
+        if self.feature == Feature::TextToSpeech {
+            self.send(In::Voice(voice::Input::Reload), window, cx);
+        }
+        if let Some(source) = self.sheet.state.open.clone() {
+            self.read_sheet(source, window, cx);
+        }
         if self.ticker.is_none() {
             self.ticker = Some(cx.spawn_in(window, async move |this, cx| {
                 loop {
@@ -159,19 +172,6 @@ impl PageView for ModelsPage {
 
     fn heard(&mut self, event: &Event, window: &mut Window, cx: &mut Context<Self>) {
         match event {
-            Event::Connected => {
-                self.send(In::Models(page::Input::Reload), window, cx);
-                let keys: Vec<ModelKey> = self.focus.keys().cloned().collect();
-                for key in keys {
-                    self.send(In::Language(language::Input::Focus(key)), window, cx);
-                }
-                if self.feature == Feature::TextToSpeech {
-                    self.send(In::Voice(voice::Input::Reload), window, cx);
-                }
-                if let Some(source) = self.sheet.state.open.clone() {
-                    self.read_sheet(source, window, cx);
-                }
-            }
             Event::Status(status) => {
                 for input in page::heard(status) {
                     if input_stage(&input).is_none_or(|stage| self.has(stage)) {

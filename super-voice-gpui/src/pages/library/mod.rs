@@ -404,6 +404,11 @@ impl CorePage for LibraryPage {
         };
         effects::run_effects(self, effects, window, cx);
         self.sync(window, cx);
+        // A sheet open over the page is drawn by the window's root from the
+        // page's state: draw it again for what changed.
+        if self.sheet.is_some() {
+            window.refresh();
+        }
         cx.notify();
     }
 

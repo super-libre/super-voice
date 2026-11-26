@@ -735,6 +735,24 @@ fn progressed(cards: &mut ModelsState, stage: Stage, progress: &DownloadProgress
     }
 }
 
+/// The installed backends a filled step can switch to: those that fit it,
+/// other than the one it has, in the catalog's order. Empty while its
+/// backends are unread, and for a step no backend fills (it offers Select a
+/// backend… instead).
+#[must_use]
+pub fn switch_targets(cards: &ModelsState, stage: Stage) -> Vec<&BackendInfo> {
+    let Some(current) = cards.views.get(&stage).and_then(|v| v.source.as_deref()) else {
+        return Vec::new();
+    };
+    cards
+        .catalog
+        .backends(stage)
+        .unwrap_or_default()
+        .iter()
+        .filter(|backend| backend.source != current)
+        .collect()
+}
+
 fn pick_backend(cards: &mut ModelsState, stage: Stage, source: Option<String>) -> Outcome {
     // Picking what is already there is not a change: sending it would unload
     // the running model for nothing.

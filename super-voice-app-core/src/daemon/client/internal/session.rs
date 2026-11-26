@@ -6,7 +6,7 @@
 //! operation with that token and, on `invalid_session`, drops the cache
 //! and retries once with fresh consent.
 
-use super_voice_shared::daemon::http_client::HttpResult;
+use super_voice_shared::daemon::http_client::{HttpError, HttpResult};
 use super_voice_shared::daemon::session::{self, AppId};
 use super_voice_shared::validation::get_http_socket_path;
 
@@ -116,7 +116,8 @@ pub(crate) mod test_socket {
 
 /// Run an HTTP-protocol operation with the cached settings-scope token.
 /// On `invalid_session` the cache is invalidated and the operation
-/// retries once with a fresh consent flow.
+/// retries once with a fresh consent flow. On `rate_limited` it waits a
+/// moment and asks once more (see [`rate_limit_wait`]).
 pub(crate) async fn with_settings_token<F, Fut, T>(op: F) -> HttpResult<T>
 where
     F: Fn(std::path::PathBuf, String) -> Fut,
@@ -124,12 +125,51 @@ where
 {
     let socket = socket_path();
     let socket_for_op = socket.clone();
-    session::with_token(
-        socket,
-        app_id(),
-        app_name(),
-        SETTINGS_SCOPES,
-        move |token| op(socket_for_op.clone(), token),
-    )
-    .await
+    let run = || {
+        session::with_token(
+            socket.clone(),
+            app_id(),
+            app_name(),
+            SETTINGS_SCOPES,
+            |token| op(socket_for_op.clone(), token),
+        )
+    };
+    match run().await {
+        Err(e) if is_rate_limited(&e) => {
+            let wait = rate_limit_wait(std::time::SystemTime::now());
+            log::debug!("The daemon asked to slow down; asking again in {wait:?}");
+            tokio::time::sleep(wait).await;
+            run().await
+        }
+        result => result,
+    }
+}
+
+/// Whether the daemon refused the request as one too many: its
+/// `rate_limited` answer, `429`.
+#[must_use]
+pub fn is_rate_limited(error: &HttpError) -> bool {
+    matches!(error, HttpError::Other(message) if message.ends_with("(HTTP 429)"))
+}
+
+/// How long to wait before asking again after a `rate_limited` answer.
+///
+/// The daemon lets one client make 600 requests in a rolling minute and
+/// counts the ones it refuses too (`super-voice-daemon/src/limits.rs`, the
+/// engine's `ResourceManager`). The app only reaches that in a burst (every
+/// page reading at once), which is over in a moment, so a short wait clears
+/// it; asking again at once would only add to the count. A spread of up to
+/// a second, taken from the clock, keeps the requests refused together from
+/// all coming back at the same instant.
+#[must_use]
+pub fn rate_limit_wait(now: std::time::SystemTime) -> std::time::Duration {
+    const WAIT: std::time::Duration = std::time::Duration::from_millis(1500);
+    const SPREAD_MS: u32 = 1000;
+    if cfg!(test) {
+        return std::time::Duration::from_millis(10);
+    }
+    let spread = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.subsec_millis() % SPREAD_MS);
+    WAIT + std::time::Duration::from_millis(u64::from(spread))
 }

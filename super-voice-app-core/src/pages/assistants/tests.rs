@@ -153,6 +153,33 @@ fn a_key_is_made_once_and_kept_until_closed() {
     assert!(state.key.is_none());
 }
 
+/// The list read every two seconds leaves an open dialog as it is: the key
+/// shown once stays until it is closed, and a failed read is not the
+/// dialog's to say.
+#[test]
+fn reading_the_list_again_leaves_an_open_dialog_alone() {
+    let mut state = AssistantsState::default();
+    update(&mut state, Input::AskKey);
+    let key = NewKey {
+        id: "k1".into(),
+        name: "Zed".into(),
+        key: "secret".into(),
+        address: "http://127.0.0.1:7300/v1/mcp".into(),
+    };
+    update(&mut state, Input::KeyCreated(Ok(key.clone())));
+    assert_eq!(update(&mut state, Input::Refresh).effects, [Effect::List]);
+    update(
+        &mut state,
+        Input::Loaded(Ok(list(AssistantState::Connected))),
+    );
+    assert_eq!(state.key, Some(KeyDialog::Made(key)));
+    let failed = update(&mut state, Input::Loaded(Err("rate_limited".into())));
+    assert!(state.key.is_some());
+    assert!(!failed.notice.expect("said").belongs_in_dialog());
+    assert!(Notice::CouldNotCreateKey("no".into()).belongs_in_dialog());
+    assert!(Notice::CouldNotConnect(AssistantId::Codex, "no".into()).belongs_in_dialog());
+}
+
 #[test]
 fn each_assistant_has_its_own_switches() {
     assert_eq!(

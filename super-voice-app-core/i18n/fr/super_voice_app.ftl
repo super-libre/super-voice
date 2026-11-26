@@ -1062,3 +1062,9 @@ library-check-failed = Impossible de le lire
 # Clips: the player
 pause = Mettre en pause
 paused-position = En pause · { $position } sur { $length }
+
+# Models: a filled step's "…" menu
+switch-to-backend = Passer à
+
+# Settings: Failure notices on macOS
+how-recording-and-speech-failures-are-reported-mac = Définit comment signaler les erreurs d’enregistrement et de parole.

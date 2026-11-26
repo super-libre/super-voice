@@ -164,12 +164,12 @@ fn editor<B: TextBuffer>(state: &mut ContextsState<B>, input: Input, out: &mut O
             out.effects.push(Effect::CloseEditor);
         }
         Input::Save => save(state, out),
+        // The context saved stays open, and selected, over what the daemon
+        // stored: a new one is now one to edit. Its row changes at once,
+        // rather than after the list is read again; reading it again picks
+        // up anything else the save moved.
         Input::Saved(Ok(stored)) => {
-            state.draft = None;
-            out.effects.push(Effect::CloseEditor);
-            // The row changes as the editor closes, rather than after the
-            // list is read again; reading it again picks up anything else the
-            // save moved.
+            state.draft = Some(ContextDraft::editing(&stored));
             state.upsert(stored);
             reload(state, out);
         }
@@ -484,9 +484,13 @@ mod tests {
         assert_eq!(context.vocabulary, ["kubectl", "rebase"]);
 
         let out = update(&mut state, Input::Saved(Ok(context.clone())));
-        assert_eq!(out.effects, [Effect::CloseEditor, Effect::List]);
-        assert!(state.draft.is_none());
+        assert_eq!(out.effects, [Effect::List]);
         assert!(state.get(&context.id).is_some());
+        let draft = state.draft.as_ref().expect("still open");
+        assert_eq!(draft.id, context.id, "the one saved");
+        assert!(!draft.is_new, "now one to edit");
+        assert!(!draft.saving);
+        assert_eq!(draft.name, "Coding");
     }
 
     #[test]

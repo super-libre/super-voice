@@ -293,7 +293,7 @@ impl SettingsPage {
     fn notifications(&self, stacked: bool) -> Card {
         Card::new().title(t("notifications")).child(
             SettingsRow::new(t("failure-notices"))
-                .description(t("how-recording-and-speech-failures-are-reported"))
+                .description(failure_notices_description())
                 .control(sized(
                     Select::new(&self.notification_method.state)
                         .accessibility_label(t("failure-notices")),
@@ -409,6 +409,16 @@ fn idle_time_name(after_secs: u64) -> SharedString {
     t_with(key, &[(arg, &n.to_string())])
 }
 
+/// What Failure notices does. A notification server is a Linux desktop's
+/// part; the Mac's banners need no word about it.
+fn failure_notices_description() -> gpui_kit::SharedString {
+    if cfg!(target_os = "macos") {
+        t("how-recording-and-speech-failures-are-reported-mac")
+    } else {
+        t("how-recording-and-speech-failures-are-reported")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super_voice_app_core::state::language::LanguageState;
@@ -445,6 +455,7 @@ mod tests {
             "desktop-notification",
             "failure-notices",
             "how-recording-and-speech-failures-are-reported",
+            "how-recording-and-speech-failures-are-reported-mac",
             "idle-minutes",
             "idle-seconds",
             "idle-unload-could-not-save",
