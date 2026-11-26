@@ -395,7 +395,12 @@ impl Shell {
     fn run_pick(&mut self, pick: palette::Pick, window: &mut Window, cx: &mut Context<Self>) {
         match pick {
             palette::Pick::GoTo(page) => self.go(page, window, cx),
-            palette::Pick::Run(page, id) => self.go_and_run(page, &id, window, cx),
+            palette::Pick::Run(page, id) => {
+                // Out of the palette's field, which is gone: a dialog the
+                // command opens gives the focus back to the window, not to it.
+                self.focus.focus(window, cx);
+                self.go_and_run(page, &id, window, cx);
+            }
         }
     }
 

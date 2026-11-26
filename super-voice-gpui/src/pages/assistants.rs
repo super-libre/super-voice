@@ -14,7 +14,8 @@
 //! match it. Sessions start, speak, listen and end on their own, so the list
 //! is read again every two seconds while the page is on screen.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -31,9 +32,9 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, FontWeight, InteractiveElement as _,
-    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Task, WeakEntity, Window, div, px,
+    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, FontWeight,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, WeakEntity, Window, div, px,
 };
 use super_voice_app_core::pages::assistants::{
     self as page, Ago, Effect, Flag, Input, MadeOn, Notice, folder_name, shown_folder,
@@ -81,6 +82,11 @@ pub struct AssistantsPage {
     open: Option<Open>,
     /// A dialog is asked to open and the window has not opened it yet.
     opening: Rc<Cell<bool>>,
+    /// The buttons that open a dialog, by their element's name, so the
+    /// focus goes back to the one that opened it when it closes.
+    openers: RefCell<HashMap<String, FocusHandle>>,
+    /// The button the core's dialog was opened from.
+    opened_by: Option<FocusHandle>,
     /// What failed, while a dialog is open: said in the dialog, beside what
     /// failed, rather than in a toast behind it.
     dialog_error: Option<SharedString>,
@@ -111,6 +117,8 @@ impl PageView for AssistantsPage {
             key_name,
             open: None,
             opening: Rc::default(),
+            openers: RefCell::default(),
+            opened_by: None,
             dialog_error: None,
             drawn: Cell::new(Instant::now()),
             poll: None,
@@ -216,6 +224,16 @@ impl CorePage for AssistantsPage {
     type Effect = Effect;
 
     fn send(&mut self, input: Input, window: &mut Window, cx: &mut Context<Self>) {
+        // The button that opens the dialog, pressed or run from the palette:
+        // the focus goes back to it when the dialog closes.
+        match &input {
+            Input::AskConnect(id) => {
+                self.opened_by =
+                    Some(self.opener(&element_name("connect", assistant_key(*id)), cx));
+            }
+            Input::AskKey => self.opened_by = Some(self.opener("create-key", cx)),
+            _ => {}
+        }
         let outcome = page::update(&mut self.state, input);
         if outcome.clear_notice {
             self.dialog_error = None;
@@ -319,9 +337,15 @@ impl AssistantsPage {
         self.opening.set(wanted.is_some());
         let this = cx.weak_entity();
         let opening = self.opening.clone();
+        let opener = self.opened_by.clone().filter(|_| wanted.is_some());
         window.defer(cx, move |window, cx| {
             if close {
                 window.close_dialog(cx);
+            }
+            // The window gives the focus back to what had it as the dialog
+            // opened: the button, not the palette that ran its command.
+            if let Some(opener) = opener {
+                opener.focus(window, cx);
             }
             match wanted {
                 Some(Open::Connect) => window.open_dialog(cx, connect_dialog(this)),
@@ -348,10 +372,13 @@ impl AssistantsPage {
         body: SharedString,
         verb: SharedString,
         input: Input,
+        opener: FocusHandle,
         cx: &mut Context<Self>,
     ) -> impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static {
         let this = cx.weak_entity();
         move |_, window, cx| {
+            // Escape or Cancel gives the focus back to the button pressed.
+            opener.focus(window, cx);
             let this = this.clone();
             let (title, body, verb, input) =
                 (title.clone(), body.clone(), verb.clone(), input.clone());
@@ -371,6 +398,15 @@ impl AssistantsPage {
                     })
             });
         }
+    }
+
+    /// The focus handle of the button named `name` that opens a dialog.
+    fn opener(&self, name: &str, cx: &App) -> FocusHandle {
+        self.openers
+            .borrow_mut()
+            .entry(name.to_string())
+            .or_insert_with(|| cx.focus_handle())
+            .clone()
     }
 
     /// The assistants on this computer.
@@ -412,7 +448,9 @@ impl AssistantsPage {
         }
         let control = if connected {
             let disconnecting = self.state.disconnecting.contains(&id);
+            let opener = self.opener(&element_name("disconnect", assistant_key(id)), cx);
             Button::new(element_id("disconnect", assistant_key(id)))
+                .track_focus(&opener)
                 .label(t("disconnect-ellipsis"))
                 .loading(disconnecting)
                 .disabled(disconnecting)
@@ -421,10 +459,12 @@ impl AssistantsPage {
                     t_with("disconnect-assistant-description", &[("name", name)]),
                     t("disconnect"),
                     Input::Disconnect(id),
+                    opener,
                     cx,
                 ))
         } else {
             Button::new(element_id("connect", assistant_key(id)))
+                .track_focus(&self.opener(&element_name("connect", assistant_key(id)), cx))
                 .label(t("connect-ellipsis"))
                 .disabled(assistant.state == AssistantState::NotFound)
                 .on_click(Self::press(Input::AskConnect(id), cx))
@@ -541,6 +581,7 @@ impl AssistantsPage {
                 .description(t("any-mcp-assistant-description"))
                 .control(
                     Button::new("create-key")
+                        .track_focus(&self.opener("create-key", cx))
                         .icon(Lucide::KeyRound)
                         .label(t("create-key-ellipsis"))
                         .on_click(Self::press(Input::AskKey, cx)),
@@ -549,7 +590,8 @@ impl AssistantsPage {
         ];
         for key in &list.custom_keys {
             rows.push(Separator::horizontal().into_any_element());
-            rows.push(Self::key_row(key, inset, cx));
+            let opener = self.opener(&format!("remove-key-{}", key.id), cx);
+            rows.push(Self::key_row(key, inset, &opener, cx));
         }
         Some(
             Card::new()
@@ -560,7 +602,12 @@ impl AssistantsPage {
 
     /// A key made by hand: its name, when it was made, Remove…, and its
     /// sessions.
-    fn key_row(key: &CustomKey, inset: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn key_row(
+        key: &CustomKey,
+        inset: bool,
+        opener: &FocusHandle,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let made = match page::made_on_now(&key.created_at) {
             MadeOn::Today(time) => t_with("today-at", &[("time", &time)]),
             MadeOn::Yesterday(time) => t_with("yesterday-at", &[("time", &time)]),
@@ -570,12 +617,14 @@ impl AssistantsPage {
             .description(made)
             .control(
                 Button::new(SharedString::from(format!("remove-key-{}", key.id)))
+                    .track_focus(opener)
                     .label(t("remove-ellipsis"))
                     .on_click(Self::confirm(
                         t_with("remove-key-question", &[("name", &key.name)]),
                         t("remove-key-description"),
                         t("remove"),
                         Input::RemoveKey(key.id.clone()),
+                        opener.clone(),
                         cx,
                     )),
             );
@@ -1042,5 +1091,10 @@ mod tests {
 
 /// An element's id from two names: `remove-dictate`.
 fn element_id(prefix: &str, name: &str) -> gpui_kit::ElementId {
-    gpui_kit::ElementId::Name(format!("{prefix}-{name}").into())
+    gpui_kit::ElementId::Name(element_name(prefix, name).into())
+}
+
+/// An element's name from two names: `remove-dictate`.
+fn element_name(prefix: &str, name: &str) -> String {
+    format!("{prefix}-{name}")
 }
