@@ -41,10 +41,11 @@ pub const ROBOT: &[u8] = include_bytes!("../../resources/icons/phosphor/robot.sv
 /// The Shortcuts page.
 pub const KEYBOARD: &[u8] = include_bytes!("../../resources/icons/phosphor/keyboard.svg");
 
-/// The Super Voice app logo, full-color artwork. Not a Phosphor glyph, so it
-/// lives at the app resources root rather than the phosphor set; shown beside
-/// the app name in the window header.
-pub const APP_LOGO: &[u8] = include_bytes!("../../resources/super-voice-icon.svg");
+/// The Super Voice app logo, full-color artwork: the app's own scalable
+/// hicolor icon, the same file the desktop entry and the About page use.
+/// Not a Phosphor glyph; shown beside the app name in the window header.
+pub const APP_LOGO: &[u8] =
+    include_bytes!("../../resources/icons/hicolor/scalable/apps/super-voice-app.svg");
 
 /// Build a themable [`Icon`] from one of the embedded Phosphor SVGs.
 pub fn phosphor(bytes: &'static [u8]) -> Icon {
