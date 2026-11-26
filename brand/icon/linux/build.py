@@ -186,15 +186,18 @@ def symbolic_path() -> str:
         dome = Point(335, cy).buffer(half, quad_segs=16)
         return unary_union([back, box(60, cy - half, 335, cy + half), dome])
 
-    # The cape fans back from the seam, as on the master's cape-00, and ends
-    # in a straight hem between its two corners.
-    cape = Polygon([(226, 176), (150, 140), (60, 104), (-40, 78), (-140, 52),
-                    (-140, 482), (-40, 456), (60, 430), (150, 394), (226, 358)])
+    # The cape fans back from the seam, as on the master's cape-00, and runs
+    # off the canvas at the bottom-left corner, where the frame crops it.
+    # Only its first stretch (x >= CAPE_FIT) counts when centring the glyph,
+    # so the mic sits centred and large instead of shrinking to fit the cape.
+    cape = Polygon([(226, 176), (150, 140), (60, 104), (-40, 78), (-400, -36),
+                    (-400, 570), (-40, 456), (60, 430), (150, 394), (226, 358)])
+    CAPE_FIT = -30
     cape = cape.buffer(10, quad_segs=6).buffer(-10, quad_segs=6)
 
-    def fit(geoms, size=16, margin=1.0):
+    def fit(geoms, anchor, size=16, margin=1.0):
         rot = [affinity.rotate(g, -45, origin=(256, 256)) for g in geoms]
-        minx, miny, maxx, maxy = unary_union(rot).bounds
+        minx, miny, maxx, maxy = affinity.rotate(anchor, -45, origin=(256, 256)).bounds
         k = (size - 2 * margin) / max(maxx - minx, maxy - miny)
         cx, cy_ = (minx + maxx) / 2, (miny + maxy) / 2
         return [affinity.affine_transform(
@@ -207,7 +210,9 @@ def symbolic_path() -> str:
         mic = solid.difference(box(226, 0, 226 + gap, 512))
         mic = mic.difference(Point(126, cy).buffer(52, quad_segs=16))
         wedge = cape.difference(solid.buffer(gap, quad_segs=8))
-        (mic, wedge), k = fit([mic, wedge])
+        anchor = unary_union([mic, wedge.intersection(box(CAPE_FIT, -1000, 1000, 1000))])
+        (mic, wedge), k = fit([mic, wedge], anchor)
+    wedge = wedge.intersection(box(0, 0, 16, 16))
 
     def d(geom):
         polys = [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
