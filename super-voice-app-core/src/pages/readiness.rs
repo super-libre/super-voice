@@ -274,8 +274,10 @@ pub fn typing_blocked(known: &ReadinessState) -> bool {
     known.connected && known.can_type == Some(false)
 }
 
-/// How ready `feature`'s model is.
-fn model_readiness(known: &ReadinessState, feature: Feature) -> Readiness {
+/// How ready `feature`'s model is, typing aside: whether a recording that
+/// types nothing (a note, a test) can run.
+#[must_use]
+pub fn model_readiness(known: &ReadinessState, feature: Feature) -> Readiness {
     if !known.connected {
         return Readiness::Unknown;
     }

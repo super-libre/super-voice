@@ -94,6 +94,37 @@ impl Pane {
         }
     }
 
+    /// The pane on the Mac whose kernel is Darwin `release` ("26.0.0").
+    ///
+    /// The kernel's version, not the one macOS reports to apps: macOS hands
+    /// an app built against an older SDK a made-up version ("16.0" on macOS
+    /// 26), and the kernel's is never made up. Darwin 20 to 24 are macOS 11
+    /// to 15; from Darwin 25, macOS 26, the two are one apart.
+    #[must_use]
+    pub fn for_darwin(release: &str) -> Self {
+        let darwin = release
+            .split('.')
+            .next()
+            .and_then(|major| major.parse::<u64>().ok());
+        Self::for_macos(darwin.map(|darwin| match darwin {
+            ..=24 => darwin.saturating_sub(9),
+            _ => darwin + 1,
+        }))
+    }
+
+    /// The pane on this Mac; elsewhere, the newest name.
+    #[must_use]
+    pub fn here() -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            darwin_release().map_or_else(Self::default, |release| Self::for_darwin(&release))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Self::default()
+        }
+    }
+
     /// Its name, as a message key.
     #[must_use]
     pub const fn key(self) -> &'static str {
@@ -102,6 +133,20 @@ impl Pane {
             Self::Accessibility => "typing-pane-accessibility",
         }
     }
+}
+
+/// The kernel's release, from `uname`: "26.0.0".
+#[cfg(target_os = "macos")]
+fn darwin_release() -> Option<String> {
+    // SAFETY: `utsname` is plain bytes, and `uname` fills it or fails.
+    let mut name: libc::utsname = unsafe { std::mem::zeroed() };
+    // SAFETY: `name` is a valid, writable `utsname`.
+    if unsafe { libc::uname(&raw mut name) } != 0 {
+        return None;
+    }
+    // SAFETY: `uname` NUL-terminates `release`.
+    let release = unsafe { std::ffi::CStr::from_ptr(name.release.as_ptr()) };
+    Some(release.to_string_lossy().into_owned())
 }
 
 /// What the Typed step on Speech to text › Models shows.
@@ -159,17 +204,35 @@ pub struct SetupState {
     opened_on_setup: bool,
 }
 
+impl SetupState {
+    /// The setup of a Mac whose pane is `pane`, with the daemon at
+    /// `daemon_path`; nothing else known yet.
+    #[must_use]
+    pub fn new(pane: Pane, daemon_path: String) -> Self {
+        Self {
+            pane,
+            daemon_path,
+            ..Self::default()
+        }
+    }
+}
+
 /// What happened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Input {
     /// The daemon answers: read what the app shows of the setup.
     Reached,
-    /// Whether the daemon may not type, as the readiness says now.
-    Typing { blocked: bool },
+    /// Whether the daemon may type, as the readiness says now: `None` while
+    /// it isn't known (the daemon can't tell, can't be reached, or hasn't
+    /// said yet), which changes nothing.
+    Typing { can_type: Option<bool> },
     /// Open Device Control (Accessibility) was pressed.
     OpenPane,
     /// Open Notifications was pressed.
     OpenNotifications,
+    /// The app's window came to the front: the user may be back from System
+    /// Settings, so read again whether macOS shows notifications.
+    WindowActive,
     /// Copy was pressed beside the daemon's path.
     CopyPath,
     /// The Copied mark has shown long enough.
@@ -206,12 +269,12 @@ pub enum Effect {
 pub fn update(state: &mut SetupState, input: Input) -> Vec<Effect> {
     match input {
         Input::Reached => vec![Effect::ReadMethod, Effect::ReadNotifications],
-        Input::Typing { blocked } => match (state.typing.blocked(), blocked) {
-            (true, false) => {
+        Input::Typing { can_type } => match (state.typing.blocked(), can_type) {
+            (true, Some(true)) => {
                 state.typing = Typing::JustAllowed;
                 vec![Effect::FoldLater]
             }
-            (false, true) => {
+            (false, Some(false)) => {
                 state.typing = Typing::Blocked;
                 Vec::new()
             }
@@ -223,10 +286,9 @@ pub fn update(state: &mut SetupState, input: Input) -> Vec<Effect> {
             }
             vec![Effect::Open(TYPING_PANE_URL.to_string())]
         }
-        // Read again when the user is back: they went to switch it on.
-        Input::OpenNotifications => {
-            vec![Effect::Open(notifications_url()), Effect::ReadNotifications]
-        }
+        // Read again when the user is back ([`Input::WindowActive`]).
+        Input::OpenNotifications => vec![Effect::Open(notifications_url())],
+        Input::WindowActive => vec![Effect::ReadNotifications],
         Input::CopyPath => {
             state.copied = true;
             vec![Effect::Copy(state.daemon_path.clone()), Effect::FadeCopied]
@@ -377,6 +439,11 @@ mod tests {
         assert_eq!(Pane::for_macos(Some(27)), Pane::DeviceControl);
         assert_eq!(Pane::for_macos(Some(28)), Pane::DeviceControl);
         assert_eq!(Pane::for_macos(None), Pane::DeviceControl);
+        // From the kernel: Darwin 24 is macOS 15, 25 is 26, 26 is 27.
+        assert_eq!(Pane::for_darwin("24.6.0"), Pane::Accessibility);
+        assert_eq!(Pane::for_darwin("25.1.0"), Pane::Accessibility);
+        assert_eq!(Pane::for_darwin("26.0.0"), Pane::DeviceControl);
+        assert_eq!(Pane::for_darwin("not a version"), Pane::DeviceControl);
     }
 
     #[test]
@@ -396,7 +463,12 @@ mod tests {
         let mut state = SetupState::default();
         assert_eq!(typed_card(&state), TypedCard::Plain);
 
-        update(&mut state, Input::Typing { blocked: true });
+        update(
+            &mut state,
+            Input::Typing {
+                can_type: Some(false),
+            },
+        );
         assert_eq!(typed_card(&state), TypedCard::NeedsSetup);
 
         assert_eq!(
@@ -406,11 +478,24 @@ mod tests {
         assert_eq!(typed_card(&state), TypedCard::Checking);
 
         // Still blocked at the next check: nothing changes.
-        assert!(update(&mut state, Input::Typing { blocked: true }).is_empty());
+        assert!(
+            update(
+                &mut state,
+                Input::Typing {
+                    can_type: Some(false)
+                }
+            )
+            .is_empty()
+        );
         assert_eq!(typed_card(&state), TypedCard::Checking);
 
         assert_eq!(
-            update(&mut state, Input::Typing { blocked: false }),
+            update(
+                &mut state,
+                Input::Typing {
+                    can_type: Some(true)
+                }
+            ),
             [Effect::FoldLater]
         );
         assert_eq!(typed_card(&state), TypedCard::Ready);
@@ -424,17 +509,55 @@ mod tests {
     #[test]
     fn allowed_from_the_start_is_the_plain_step() {
         let mut state = SetupState::default();
-        assert!(update(&mut state, Input::Typing { blocked: false }).is_empty());
+        assert!(
+            update(
+                &mut state,
+                Input::Typing {
+                    can_type: Some(true)
+                }
+            )
+            .is_empty()
+        );
         assert_eq!(typed_card(&state), TypedCard::Plain);
+    }
+
+    /// Not knowing (the daemon down, or not said yet) changes nothing: the
+    /// card neither clears nor celebrates.
+    #[test]
+    fn not_knowing_changes_nothing() {
+        let mut state = SetupState::default();
+        update(
+            &mut state,
+            Input::Typing {
+                can_type: Some(false),
+            },
+        );
+        assert!(update(&mut state, Input::Typing { can_type: None }).is_empty());
+        assert_eq!(typed_card(&state), TypedCard::NeedsSetup);
     }
 
     /// Switched off again while the Ready card shows: it needs setup again.
     #[test]
     fn blocked_again_needs_setup_again() {
         let mut state = SetupState::default();
-        update(&mut state, Input::Typing { blocked: true });
-        update(&mut state, Input::Typing { blocked: false });
-        update(&mut state, Input::Typing { blocked: true });
+        update(
+            &mut state,
+            Input::Typing {
+                can_type: Some(false),
+            },
+        );
+        update(
+            &mut state,
+            Input::Typing {
+                can_type: Some(true),
+            },
+        );
+        update(
+            &mut state,
+            Input::Typing {
+                can_type: Some(false),
+            },
+        );
         assert_eq!(typed_card(&state), TypedCard::NeedsSetup);
     }
 
@@ -545,6 +668,20 @@ mod tests {
                 "{method:?}"
             );
         }
+    }
+
+    /// Back from System Settings: whether notifications are on is read again.
+    #[test]
+    fn notifications_are_read_again_when_the_window_is_back() {
+        let mut state = SetupState::default();
+        assert_eq!(
+            update(&mut state, Input::OpenNotifications),
+            [Effect::Open(notifications_url())]
+        );
+        assert_eq!(
+            update(&mut state, Input::WindowActive),
+            [Effect::ReadNotifications]
+        );
     }
 
     #[test]
