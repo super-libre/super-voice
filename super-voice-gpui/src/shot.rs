@@ -14,7 +14,8 @@
 //! page's in its `PageView::pretend`. `scenes`, comma-separated, pick
 //! states: the shell's (`palette`, `drawer`, `refused`, `stopped`) and any a
 //! page draws (`dictating`). A page's `<page>-keys` scene gives its list the
-//! keyboard's focus, and the shot presses Down once. `just app-shot` runs this.
+//! keyboard's focus, and the shot presses Down once. `step-menu` opens the
+//! first step's "…" menu on a Models page. `just app-shot` runs this.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -173,6 +174,17 @@ fn shoot(shot: &Shot) -> anyhow::Result<()> {
     // input a key, as its focus ring wants.
     if scenes.iter().any(|scene| scene.ends_with("-keys")) {
         cx.update_window(handle, |_, window, cx| window.press("down", cx))?;
+    }
+    // A Models page's first step's "…" menu, open: it only opens a menu.
+    if scenes.contains(&"step-menu") {
+        let button = match shot.page {
+            Page::TtsModels => "more-synthesis",
+            _ => "more-transcription",
+        };
+        cx.update_window(handle, |_, window, cx| {
+            window.render_frame(cx);
+            window.click(button, cx);
+        })?;
     }
     // More frames, with the background work and some time between: a frame
     // asks for the images, which load off the UI thread, and the next draws

@@ -1062,3 +1062,6 @@ library-check-failed = Couldn't read it
 # Clips: the player
 pause = Pause
 paused-position = Paused · { $position } of { $length }
+
+# Models: a filled step's "…" menu
+switch-to-backend = Switch to

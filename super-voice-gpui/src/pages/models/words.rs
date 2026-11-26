@@ -340,6 +340,7 @@ pub const KEYS: &[&str] = &[
     "select-a-backend-menu",
     "open-library",
     "show-in-library",
+    "switch-to-backend",
     "reload-this-model",
     "deselect-this-backend",
     "step-more-actions",

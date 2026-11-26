@@ -783,3 +783,38 @@ fn a_download_error_shows_on_the_card() {
         ModelOperationState::Error { message } if message.is_empty()
     ));
 }
+
+/// A filled step offers to switch to every other installed backend that
+/// fits it, and switching is one pick, straight from one to the other.
+#[test]
+fn a_filled_step_switches_to_another_backend_in_one_pick() {
+    let mut state = staged();
+    assert!(
+        switch_targets(&state, Stage::Transcription).is_empty(),
+        "Whisper alone"
+    );
+    let mut openai = backend(&[("whisper-1", &["none"])]);
+    openai.source = "github.com/x/openai".into();
+    openai.name = "OpenAI".into();
+    state.catalog.record(
+        Stage::Transcription,
+        vec![backend(&[("base", &["cpu"])]), openai],
+    );
+    let names: Vec<&str> = switch_targets(&state, Stage::Transcription)
+        .iter()
+        .map(|b| b.name.as_str())
+        .collect();
+    assert_eq!(names, ["OpenAI"]);
+    assert!(
+        switch_targets(&state, Stage::PostProcessing).is_empty(),
+        "empty step"
+    );
+    let switched = update(
+        &mut state,
+        Input::PickBackend(Stage::Transcription, Some("github.com/x/openai".into())),
+    );
+    assert!(switched.effects.contains(&Effect::SetBackend(
+        Stage::Transcription,
+        Some("github.com/x/openai".into())
+    )));
+}

@@ -432,7 +432,8 @@ impl ModelsPage {
     }
 
     /// The step's "…" menu: Reload this model (synthesis, while its model is
-    /// up), Show in Library, Deselect this backend.
+    /// up), Switch to (the other installed backends that fit the step), Show
+    /// in Library, Deselect this backend.
     fn step_menu(&self, stage: Stage, card: &StageCard<'_>, cx: &mut Context<Self>) -> AnyElement {
         let page = cx.weak_entity();
         let nav = self.shared.nav.clone();
@@ -441,6 +442,10 @@ impl ModelsPage {
             && !card.busy
             && !card.operation.is_pending();
         let free = !card.busy && !card.operation.is_pending();
+        let others: Vec<(String, String, bool)> = page::switch_targets(&self.models, stage)
+            .into_iter()
+            .map(|b| (b.source.clone(), b.name.clone(), backend_is_online(b)))
+            .collect();
         Button::new(SharedString::from(format!("more-{stage}")))
             .small()
             .icon(IconName::Ellipsis)
@@ -448,7 +453,7 @@ impl ModelsPage {
                 "step-more-actions",
                 &[("step", &words::stage_name(stage))],
             ))
-            .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
+            .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
                 let mut menu = menu;
                 if reloadable {
                     let page = page.clone();
@@ -464,6 +469,40 @@ impl ModelsPage {
                                     );
                                 });
                             }),
+                    );
+                }
+                // Straight from one backend to another, without deselecting
+                // first.
+                if !others.is_empty() {
+                    let others = others.clone();
+                    let page = page.clone();
+                    menu = menu.submenu_with_icon(
+                        Some(IconName::ArrowRight.into()),
+                        t("switch-to-backend"),
+                        window,
+                        cx,
+                        move |menu, _, _| {
+                            others.iter().fold(menu, |menu, (source, name, online)| {
+                                let page = page.clone();
+                                let source = source.clone();
+                                let item = PopupMenuItem::new(name.clone())
+                                    .disabled(!free)
+                                    .on_click(move |_, window, cx| {
+                                        _ = page.update(cx, |page, cx| {
+                                            let pick = page::Input::PickBackend(
+                                                stage,
+                                                Some(source.clone()),
+                                            );
+                                            page.send(In::Models(pick), window, cx);
+                                        });
+                                    });
+                                menu.item(if *online {
+                                    item.icon(Lucide::Cloud)
+                                } else {
+                                    item
+                                })
+                            })
+                        },
                     );
                 }
                 let nav = nav.clone();
