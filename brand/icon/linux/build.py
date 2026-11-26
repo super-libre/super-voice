@@ -186,12 +186,14 @@ def symbolic_path() -> str:
         dome = Point(335, cy).buffer(half, quad_segs=16)
         return unary_union([back, box(60, cy - half, 335, cy + half), dome])
 
-    # The cape fans back from the seam, as on the master's cape-00, and runs
-    # off the canvas at the bottom-left corner, where the frame crops it.
-    # Only its first stretch (x >= CAPE_FIT) counts when centring the glyph,
-    # so the mic sits centred and large instead of shrinking to fit the cape.
-    cape = Polygon([(226, 176), (150, 140), (60, 104), (-40, 78), (-400, -36),
-                    (-400, 570), (-40, 456), (60, 430), (150, 394), (226, 358)])
+    # The cape fans back from the seam, as on the master's cape-00, and ends
+    # in a straight hem square to the flight axis, just short of the
+    # bottom-left corner. Only its first stretch (x >= CAPE_FIT) counts when
+    # centring the glyph, so the mic sits centred and large.
+    CAPE_HEM = -75  # the straight hem, square to the flight axis
+    top = 52 + (CAPE_HEM + 140) * 0.34  # the flanks widen behind the seam
+    cape = Polygon([(226, 176), (150, 140), (60, 104), (-40, 78), (CAPE_HEM, top),
+                    (CAPE_HEM, 534 - top), (-40, 456), (60, 430), (150, 394), (226, 358)])
     CAPE_FIT = -30
     cape = cape.buffer(10, quad_segs=6).buffer(-10, quad_segs=6)
 
