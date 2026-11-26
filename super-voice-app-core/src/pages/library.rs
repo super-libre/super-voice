@@ -237,7 +237,7 @@ pub fn update(
                 .insert(source.clone(), message.clone());
             vec![Effect::InstallFailed { source, message }]
         }
-        Input::Event(event) => install_event(registry, event),
+        Input::Event(event) => install_event(registry, library, event),
         // A stale failure goes, so the row reads in progress on a retry.
         Input::Uninstall(source) => {
             library.pending_uninstall = None;
@@ -358,7 +358,11 @@ fn filter(registry: &mut RegistryState, library: &mut LibraryState, input: Input
 }
 
 /// An install's progress, end or failure, as the daemon reports it.
-fn install_event(registry: &mut RegistryState, event: RegistryEvent) -> Vec<Effect> {
+fn install_event(
+    registry: &mut RegistryState,
+    library: &mut LibraryState,
+    event: RegistryEvent,
+) -> Vec<Effect> {
     match event {
         RegistryEvent::Progress {
             install_id,
@@ -380,13 +384,18 @@ fn install_event(registry: &mut RegistryState, event: RegistryEvent) -> Vec<Effe
             }
             Vec::new()
         }
-        // Both catalogs: the installed backends are what the Installed tab
-        // draws, and the registry's carries `installed_version`, which decides
-        // whether Update is offered. Left stale, the Update just run stays on
-        // the menu and does nothing.
-        RegistryEvent::Completed { source, .. } => {
+        // The version installed, at once, so the row and the inspector
+        // agree with the "installed" toast; then both catalogs: the installed
+        // backends are what the Installed tab draws, and the registry's
+        // carries `installed_version`, which decides whether Update is
+        // offered. Left stale, the Update just run stays on the menu and
+        // does nothing.
+        RegistryEvent::Completed {
+            source, version, ..
+        } => {
             registry.installs.remove(&source);
             registry.install_errors.remove(&source);
+            installed_now(registry, library, &source, &version);
             vec![Effect::Installed { source }, Effect::ReloadCatalogs]
         }
         RegistryEvent::Failed {
@@ -410,6 +419,26 @@ fn install_event(registry: &mut RegistryState, event: RegistryEvent) -> Vec<Effe
             vec![Effect::InstallFailed { source, message }]
         }
         RegistryEvent::RefreshCompleted { .. } | RegistryEvent::RefreshFailed { .. } => Vec::new(),
+    }
+}
+
+/// `source` is installed at `version`, as an install that just ended says:
+/// its catalog entry no longer offers that version, and an installed
+/// backend's row shows it.
+fn installed_now(
+    registry: &mut RegistryState,
+    library: &mut LibraryState,
+    source: &str,
+    version: &str,
+) {
+    if let Some(entry) = registry.backends.iter_mut().find(|e| e.source == source) {
+        entry.installed_version = Some(version.to_string());
+        if entry.version == version {
+            entry.update_available = false;
+        }
+    }
+    if let Some(backend) = library.backends.iter_mut().find(|b| b.source == source) {
+        backend.version = version.to_string();
     }
 }
 
@@ -1074,6 +1103,35 @@ mod tests {
             ]
         );
         assert!(registry.installs.is_empty());
+    }
+
+    /// An update that ends shows on its row at once, before the catalogs
+    /// are read again: no "Update ready" beside the "installed" toast.
+    #[test]
+    fn an_update_that_ends_leaves_no_update_ready() {
+        let (mut registry, mut library) = library();
+        update(
+            &mut registry,
+            &mut library,
+            Input::InstallAccepted {
+                source: "github.com/x/whisper".into(),
+                install_id: "i1".into(),
+            },
+        );
+        update(
+            &mut registry,
+            &mut library,
+            Input::Event(RegistryEvent::Completed {
+                install_id: "i1".into(),
+                source: "github.com/x/whisper".into(),
+                version: "0.2.2".into(),
+            }),
+        );
+        let rows = rows(&registry, &library);
+        assert_eq!(rows[0].name, "Whisper");
+        assert_eq!(rows[0].state, RowState::Installed);
+        assert_eq!(rows[0].update_to, None);
+        assert_eq!(library.backends[0].version, "0.2.2");
     }
 
     /// Uninstall asks first; a failure stays on its row.
