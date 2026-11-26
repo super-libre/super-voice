@@ -8,9 +8,11 @@ mod transcribe;
 
 pub(crate) use state::{Claim, RecordingState, Stopped};
 
+use crate::daemon::events::TypingFailure;
 use crate::daemon::model_management::idle::PipelineLoad;
 use crate::daemon::types::SuperSTTDaemon;
 use crate::output::notice;
+use crate::output::typer::{NotTyped, Untyped};
 use crate::{audio::recorder::DaemonAudioRecorder, output::typer::Typer};
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -138,18 +140,66 @@ impl SuperSTTDaemon {
             .await;
     }
 
-    /// Tell the user the keyboard could not be set up. See
-    /// [`crate::output::notification::deliver_untyped`] for why this
-    /// cannot go through [`Self::surface_failure`].
-    pub(crate) async fn surface_keyboard_unavailable(&self, detail: &str) {
+    /// Type the take's final transcript, or put it on the clipboard when it
+    /// can't be typed.
+    async fn type_final_transcript(&self, typer: &mut Typer, transcript: &str) {
+        // An assistant's prompt that holds it was spoken. Known before the
+        // typing starts, so a plugin that asks as soon as the keys stop
+        // arriving finds it, however long the typer takes to return.
+        self.assistants.dictation.remember(transcript);
+        info!("Writing transcription via {}", typer.write_method_name());
+        if let Err(not_typed) = typer.process_final_text(transcript).await {
+            self.recover_untyped(not_typed).await;
+        }
+    }
+
+    /// A dictation's words could not be typed: put them on the clipboard,
+    /// tell the app (`typing_failed`) and the user.
+    ///
+    /// The words are kept, whatever stopped them: Device Control switched off
+    /// (the keyboard could not even be built, and the take recorded anyway),
+    /// another app holding secure keyboard entry, or a keyboard that refused
+    /// them. The notice goes through
+    /// [`crate::output::notification::deliver_untyped`], since typing it is
+    /// what failed. When the copy fails too, it carries the reason the words
+    /// were not typed, which names the fix.
+    pub(crate) async fn recover_untyped(&self, not_typed: NotTyped) {
+        let NotTyped { why, text } = not_typed;
+        // Not allowed, as macOS says now: the app's "Allow typing" then
+        // leads to the switch. Any other reason has nothing to switch on.
+        let reason = match why {
+            _ if crate::output::keyboard::typing_allowed() == Some(false) => {
+                TypingFailure::NotAllowed
+            }
+            Untyped::SecureInput => TypingFailure::SecureInput,
+            Untyped::NoKeyboard(_) | Untyped::Failed(_) => TypingFailure::Failed,
+        };
+        let copied = match crate::output::clipboard::copy(text.clone()).await {
+            Ok(()) => {
+                info!("The words were not typed ({why}); they are on the clipboard");
+                true
+            }
+            Err(e) => {
+                warn!("The words were not typed ({why}), and not copied either: {e:#}");
+                false
+            }
+        };
+        self.events
+            .publish_typing_failed(crate::daemon::events::TypingFailedEvent {
+                client_id: CLIENT_ID.to_string(),
+                timestamp: Utc::now().to_rfc3339(),
+                reason,
+                copied,
+                text,
+            });
+        let failure = if copied {
+            notice::Failure::copied_instead()
+        } else {
+            notice::Failure::keyboard_unavailable(&why.to_string())
+        };
         let method = self.config.read().await.notification_method;
         let mut notifier = self.notifier.lock().await;
-        crate::output::notification::deliver_untyped(
-            method,
-            &mut notifier,
-            &notice::Failure::keyboard_unavailable(detail),
-        )
-        .await;
+        crate::output::notification::deliver_untyped(method, &mut notifier, &failure).await;
     }
 
     /// Stop the take once it has run past its limit
@@ -486,12 +536,8 @@ impl SuperSTTDaemon {
 
         // Phase 5: type the final transcript.
         if write_mode {
-            // An assistant's prompt that holds it was spoken. Known before
-            // the typing starts, so a plugin that asks as soon as the keys
-            // stop arriving finds it, however long the typer takes to return.
-            self.assistants.dictation.remember(&transcription_result);
-            info!("Writing transcription via {}", typer.write_method_name());
-            typer.process_final_text(&transcription_result).await;
+            self.type_final_transcript(typer, &transcription_result)
+                .await;
         }
 
         // Phase 6: finalize the cycle.

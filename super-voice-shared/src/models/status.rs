@@ -58,4 +58,12 @@ pub struct FeatureStatus {
     pub model_state: Option<ModelState>,
     /// Whether the feature is at work right now. See [`VoiceStatus`].
     pub busy: bool,
+    /// Speech to text only: whether the daemon may type into other apps. On
+    /// macOS, whether it holds Device Control (Accessibility before macOS 27).
+    /// Absent where the daemon can't tell without trying (Linux, where the
+    /// first dictation builds the keyboard), from `tts`, and from a daemon
+    /// older than the field. A dictation that can't be typed is copied to the
+    /// clipboard instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_type: Option<bool>,
 }

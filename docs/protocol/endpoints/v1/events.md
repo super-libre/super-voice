@@ -131,6 +131,7 @@ as a separate grant.
 |---------------|-------------------------|------------------------------------------------------|
 | `partial_stt` | `global_transcriptions` | `{ "text", "confidence", "source" }` — live preview text. `source` is `"stream"` (a realtime model's running transcript: `text` is everything heard so far and extends the last event) or `"window"` (a sliding window the daemon re-transcribed: `text` is only the last few seconds and replaces the last event); see [previews](./transcribe.md#previews). Absent from a daemon older than the field. |
 | `final_stt`   | `global_transcriptions` | `{ "text", "confidence" }` — final transcription     |
+| `typing_failed` | `global_transcriptions` | `{ "client_id", "timestamp", "reason", "copied", "text" }` — a write-mode dictation was transcribed and could not be typed. `text` is the words as they would have been typed; when `copied` is `true` they are on the clipboard instead. `reason` is `"not_allowed"` (the daemon may not type: on macOS, Device Control, called Accessibility before macOS 27, is off for it; see `stt.can_type` on [`GET /status`](./status.md)), `"secure_input"` (another app held secure keyboard entry, such as a password field) or `"failed"` (anything else, including a keyboard that could not be built). Published after `final_stt` and before `transcribing_stopped`. A daemon older than the topic refused such a dictation before recording it. |
 
 These carry the transcription text of every app, not just the subscriber's own —
 hence the dedicated high-sensitivity scope. See

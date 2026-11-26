@@ -370,3 +370,69 @@ pub fn probe_accessibility_permission() {
         ),
     }
 }
+
+/// Whether the daemon may type into other apps, as far as it can tell
+/// without trying: on macOS, whether it holds Device Control (Accessibility
+/// before macOS 27). `None` elsewhere: a Linux keyboard is a compositor's
+/// global, a portal session or ydotool, and finding out means building one,
+/// which with the portal puts a dialog in front of the user.
+///
+/// Asked afresh on each call. It is what `GET /status` reports as
+/// `stt.can_type`, which the app reads every 2 s while it shows how to switch
+/// it on, so a switch flipped in System Settings shows at once.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn typing_allowed() -> Option<bool> {
+    Some(macos::is_trusted())
+}
+
+/// See the macOS one: elsewhere the daemon can't tell without trying.
+#[cfg(not(target_os = "macos"))]
+#[must_use]
+pub const fn typing_allowed() -> Option<bool> {
+    None
+}
+
+/// Whether another app holds secure keyboard entry (a password field, a
+/// terminal with Secure Keyboard Entry on): macOS then hands no synthetic key
+/// to anyone, and typing would drop every key without an error. Never on
+/// other platforms.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn secure_input_on() -> bool {
+    macos::secure_input_on()
+}
+
+/// See the macOS one: no other platform has secure keyboard entry.
+#[cfg(not(target_os = "macos"))]
+#[must_use]
+pub const fn secure_input_on() -> bool {
+    false
+}
+
+/// The two questions only macOS can answer, each one call.
+#[cfg(target_os = "macos")]
+mod macos {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    unsafe extern "C" {
+        /// `Boolean AXIsProcessTrusted(void)`: never prompts.
+        fn AXIsProcessTrusted() -> u8;
+    }
+
+    #[link(name = "Carbon", kind = "framework")]
+    unsafe extern "C" {
+        /// `Boolean IsSecureEventInputEnabled(void)`.
+        fn IsSecureEventInputEnabled() -> u8;
+    }
+
+    pub fn is_trusted() -> bool {
+        // SAFETY: no arguments and no preconditions; it reads the TCC entry
+        // of the calling process.
+        unsafe { AXIsProcessTrusted() != 0 }
+    }
+
+    pub fn secure_input_on() -> bool {
+        // SAFETY: no arguments and no preconditions.
+        unsafe { IsSecureEventInputEnabled() != 0 }
+    }
+}

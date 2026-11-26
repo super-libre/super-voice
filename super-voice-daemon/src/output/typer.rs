@@ -67,11 +67,46 @@ impl State {
 /// been captured and transcribed, long past any plausible key-release window.
 const NOTICE_KEY_RELEASE_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// Why a take's final transcript was not typed. Its words go to the
+/// clipboard instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Untyped {
+    /// No keyboard could be built for the take: why. On macOS this is almost
+    /// always Device Control (Accessibility) switched off.
+    NoKeyboard(String),
+    /// Another app holds secure keyboard entry, so every key would be
+    /// dropped without an error (macOS).
+    SecureInput,
+    /// The keyboard refused the text: why.
+    Failed(String),
+}
+
+impl std::fmt::Display for Untyped {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoKeyboard(why) => write!(f, "no keyboard: {why}"),
+            Self::SecureInput => f.write_str("another app holds secure keyboard entry"),
+            Self::Failed(why) => write!(f, "typing failed: {why}"),
+        }
+    }
+}
+
+/// A final transcript that was not typed: why, and the words as they would
+/// have been typed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotTyped {
+    pub why: Untyped,
+    pub text: String,
+}
+
 /// Types previews and the final transcript into the focused window.
 pub struct Typer {
     // `None` for a recording that types nothing. Every keystroke path is gated
     // on write mode, so such a recording never reaches for the keyboard.
     keyboard_simulator: Option<Simulator>,
+    /// Why a write-mode take has no keyboard: it could not be built. The
+    /// take records anyway, and its words go to the clipboard.
+    unable: Option<String>,
     state: State,
 }
 
@@ -80,6 +115,19 @@ impl Typer {
     pub fn new(keyboard_simulator: Simulator) -> Self {
         Self {
             keyboard_simulator: Some(keyboard_simulator),
+            unable: None,
+            state: State::default(),
+        }
+    }
+
+    /// A typer for a write-mode take whose keyboard could not be built,
+    /// `why`. Nothing is typed; the final transcript comes back from
+    /// [`Self::process_final_text`] as [`Untyped::NoKeyboard`].
+    #[must_use]
+    pub fn unable(why: String) -> Self {
+        Self {
+            keyboard_simulator: None,
+            unable: Some(why),
             state: State::default(),
         }
     }
@@ -91,6 +139,7 @@ impl Typer {
     pub fn without_keyboard() -> Self {
         Self {
             keyboard_simulator: None,
+            unable: None,
             state: State::default(),
         }
     }
@@ -192,7 +241,11 @@ impl Typer {
     }
 
     /// Type the final transcript, then reset for the next recording.
-    pub async fn process_final_text(&mut self, transcription_result: &str) {
+    ///
+    /// # Errors
+    /// When the words could not be typed, and why, with the words as they
+    /// would have been typed: the caller puts them on the clipboard.
+    pub async fn process_final_text(&mut self, transcription_result: &str) -> Result<(), NotTyped> {
         // No preview typing, type directly
         let processed_text = preprocess_text(transcription_result, false);
 
@@ -202,17 +255,40 @@ impl Typer {
         if processed_text.trim().is_empty() {
             info!("Final transcription is empty; typing nothing");
             self.reset_after_recording();
-            return;
+            return Ok(());
         }
 
-        let final_text = format!("{processed_text} ");
-        if let Err(e) = self.type_text(&final_text).await {
-            warn!("Failed to type final transcription: {e}");
-        } else {
-            info!("Final transcript typed");
-        }
-
+        let outcome = self.type_final(&processed_text).await;
         self.reset_after_recording();
+        outcome.map_err(|why| {
+            warn!("Final transcription not typed: {why}");
+            NotTyped {
+                why,
+                text: processed_text,
+            }
+        })
+    }
+
+    /// Type `text` and the space after it, or say why not.
+    async fn type_final(&mut self, text: &str) -> Result<(), Untyped> {
+        if self.keyboard_simulator.is_none() {
+            return Err(Untyped::NoKeyboard(
+                self.unable
+                    .clone()
+                    .unwrap_or_else(|| "this recording has no keyboard".to_string()),
+            ));
+        }
+        // Checked before the first key: with it on, macOS drops every
+        // synthetic key and says nothing.
+        if crate::output::keyboard::secure_input_on() {
+            return Err(Untyped::SecureInput);
+        }
+        let final_text = format!("{text} ");
+        self.type_text(&final_text)
+            .await
+            .map_err(|e| Untyped::Failed(format!("{e:#}")))?;
+        info!("Final transcript typed");
+        Ok(())
     }
 
     /// Clear the per-recording transcript state so the next recording starts
