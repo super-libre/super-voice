@@ -79,7 +79,7 @@ pub struct VoicesState {
     pub recorder: Option<crate::audio::recorder::Recorder>,
     /// Seconds captured so far, refreshed by the recording tick.
     pub recording_seconds: f32,
-    /// Peak input level, `0.0`–`1.0`, for the meter.
+    /// The input level for the meter, `0.0`–`1.0`, on the daemon's meter scale.
     pub recording_level: f32,
     /// The sample waiting to be saved.
     pub pending: Option<PendingSample>,

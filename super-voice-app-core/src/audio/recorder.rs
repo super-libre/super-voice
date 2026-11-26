@@ -5,7 +5,7 @@
 //! several backends, so it cannot sit in the app model beside everything the
 //! UI touches. The thread opens the device, captures until it is told to stop
 //! (or until the cap is reached), and drops the stream on its way out; the UI
-//! sees only an `Arc<Mutex<…>>` of samples and a peak level.
+//! sees only an `Arc<Mutex<…>>` of samples and a level.
 //!
 //! **Opening the device never blocks the UI.** `start` returns immediately and
 //! the thread reports failure through the same shared state the level meter
@@ -28,8 +28,9 @@ struct Capture {
     samples: Vec<f32>,
     /// The device's rate, once the stream is open.
     sample_rate: u32,
-    /// Peak magnitude of the most recent block, for the level meter.
-    peak: f32,
+    /// The loudness (root mean square) of the most recent block, for the
+    /// level meter.
+    rms: f32,
     /// Why capture stopped early, if it did.
     error: Option<String>,
     /// Set when the thread has stopped on its own — the cap was reached, or
@@ -42,7 +43,12 @@ struct Capture {
 pub struct Status {
     /// Seconds captured so far.
     pub seconds: f32,
-    /// Peak level of the last block, `0.0`–`1.0`.
+    /// The microphone's level for a meter, `0.0`–`1.0`: the last block's
+    /// loudness on the 60 dB scale the daemon's own meter uses
+    /// ([`crate::events::level_percent`]), so the same voice moves this
+    /// meter as far as the one beside a dictation. Speech at an ordinary
+    /// microphone gain is well over half; its raw amplitude, a few
+    /// hundredths, would barely move a bar.
     pub level: f32,
     /// The capture ended by itself (hit the cap, or the device failed).
     pub finished: bool,
@@ -170,7 +176,7 @@ impl Recorder {
         };
         Status {
             seconds: seconds_of(&guard),
-            level: guard.peak,
+            level: meter_level(&guard),
             finished: guard.finished,
         }
     }
@@ -258,7 +264,7 @@ fn capture(shared: &Arc<Mutex<Capture>>, stop: &Arc<AtomicBool>, max_seconds: f3
     // the flag below is not left to the reader.
     drop(stream);
     if let Ok(mut guard) = shared.lock() {
-        guard.peak = 0.0;
+        guard.rms = 0.0;
     }
 }
 
@@ -351,7 +357,12 @@ fn input_config(device: &cpal::Device) -> Result<cpal::SupportedStreamConfig, cp
     Ok(i16.unwrap_or(default))
 }
 
-/// Downmix one callback block to mono, append it, and record its peak.
+/// The level a meter shows for `capture`'s last block.
+fn meter_level(capture: &Capture) -> f32 {
+    crate::events::level_percent(capture.rms)
+}
+
+/// Downmix one callback block to mono, append it, and record its loudness.
 ///
 /// Averaging rather than taking the first channel: a two-microphone array
 /// carries the same voice twice, and dropping half of it throws away
@@ -374,13 +385,19 @@ fn accumulate<T: Copy>(
     }
     #[allow(clippy::cast_precision_loss)]
     let scale = channels as f32;
-    let mut peak = 0.0_f32;
+    let mut squares = 0.0_f32;
+    let mut frames = 0_u32;
     for frame in data.chunks(channels) {
         let sample = frame.iter().map(|&s| to_f32(s)).sum::<f32>() / scale;
-        peak = peak.max(sample.abs());
+        squares += sample * sample;
+        frames += 1;
         guard.samples.push(sample);
     }
-    guard.peak = peak.min(1.0);
+    if frames > 0 {
+        #[allow(clippy::cast_precision_loss)]
+        let mean = squares / frames as f32;
+        guard.rms = mean.sqrt().min(1.0);
+    }
     if cap > 0 && guard.samples.len() >= cap {
         // The cap is the archive bound; stopping here rather than letting the
         // upload be refused means the user keeps what they recorded.
@@ -391,7 +408,29 @@ fn accumulate<T: Copy>(
 
 #[cfg(test)]
 mod tests {
-    use super::{Recording, to_i16};
+    use std::sync::{Arc, Mutex};
+
+    use super::{Capture, Recording, accumulate, meter_level, to_i16};
+
+    /// The meter reads the last block's loudness on the daemon's scale:
+    /// silence is empty, speech at an ordinary gain (a few hundredths of
+    /// full scale) is well over half, and a full-scale tone is full.
+    #[test]
+    fn the_meter_moves_for_ordinary_speech() {
+        let level = |amplitude: f32| {
+            let capture = Arc::new(Mutex::new(Capture::default()));
+            #[allow(clippy::cast_precision_loss)]
+            let block: Vec<f32> = (0..480)
+                .map(|i| amplitude * (i as f32 * 0.1).sin())
+                .collect();
+            accumulate(&capture, &block, 1, 0, |s| s);
+            meter_level(&capture.lock().expect("capture"))
+        };
+        assert!(level(0.0) < f32::EPSILON, "silence");
+        assert!(level(0.03) > 0.5, "speech: {}", level(0.03));
+        assert!(level(1.0) > 0.99, "full scale: {}", level(1.0));
+        assert!(level(0.03) > level(0.003), "louder is further");
+    }
 
     #[test]
     fn a_recording_reports_its_length() {
