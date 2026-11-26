@@ -4,7 +4,8 @@
 //!
 //! The shell owns what the pages share: the connection, each feature's
 //! readiness, the daemon's events, which it hands to every page; the command
-//! palette (Ctrl+K, Cmd+K on macOS); Alt+Left, which goes back from a detail.
+//! palette (Ctrl+K, Cmd+K on macOS); Alt+Left (and Cmd+[ on macOS), which goes
+//! back from a detail.
 //! While the daemon is down, the Connection page takes the place of the
 //! pages that need it.
 
@@ -61,13 +62,17 @@ pub const NEW_NOTE_KEYS: &str = if cfg!(target_os = "macos") {
 };
 
 /// The shell's keys: Ctrl+K (Cmd+K on macOS) for the palette, Ctrl+R
-/// (Cmd+R) for a new note, Alt+Left for back.
+/// (Cmd+R) for a new note, Alt+Left for back, and Cmd+[ too on macOS, as
+/// its apps go back.
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new(PALETTE_KEYS, OpenPalette, None),
         KeyBinding::new(NEW_NOTE_KEYS, NewNote, None),
         KeyBinding::new("alt-left", Back, None),
     ]);
+    if cfg!(target_os = "macos") {
+        cx.bind_keys([KeyBinding::new("cmd-[", Back, None)]);
+    }
 }
 
 /// The message keys the shell shows besides the pages' and headings' names.
