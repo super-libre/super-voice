@@ -192,7 +192,7 @@ def symbolic_path() -> str:
     top = 52 + (CAPE_HEM + 140) * 0.34  # the flanks widen behind the seam
     # Wider than the mic right at the seam, so the cape's sides show from the
     # seam all the way down instead of appearing only halfway down the body.
-    cape = Polygon([(262, 117), (CAPE_HEM, 267 - 220), (CAPE_HEM, 267 + 220), (262, 417)])
+    cape = Polygon([(236, 117), (CAPE_HEM, 267 - 220), (CAPE_HEM, 267 + 220), (236, 417)])
     cape = cape.buffer(10, quad_segs=6).buffer(-10, quad_segs=6)
 
     def fit(geoms, anchor, size=16, margin=1.0):
