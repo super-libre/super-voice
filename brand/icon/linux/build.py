@@ -31,6 +31,7 @@ What it does:
 
 from __future__ import annotations
 
+import re
 import copy
 import io
 import subprocess
@@ -156,76 +157,19 @@ SYMBOLIC = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def symbolic_path() -> str:
-    """The master's caped desk mic as a one-colour 16 px glyph.
+    """The one-colour 16 px glyph: the same small icon as the macOS menu bar.
 
-    A simplification of the master, not a new drawing. The geometry is
-    measured from the master's mic, emblem and cape layers rotated back so
-    the flight axis is horizontal (512 units, x = flight direction):
-
-    - capsule y 172..362 (half-width 95), flat bottom at x 9 with small
-      rounded corners, mesh dome a half circle from x 335 to 430;
-    - seam band at x 226, cut as a 1 px gap;
-    - no side knobs: at panel sizes the clean capsule reads better;
-    - the S roundel centred at (126, 267) on the housing, cut out as a
-      round hole (an S does not fit at 16 px);
-    - the cape behind the housing, fanning back past the flat bottom to a
-      straight hem between its two corners,
-      kept 1 px clear of the mic.
-
-    The whole is stood upright (dome on top, cape hanging below) and
-    fitted to the 16 px canvas with a 1 px margin.
-    """
-    from shapely import affinity
-    from shapely.geometry import Point, Polygon, box
-    from shapely.ops import unary_union
-
-    cy, half = 267, 95
-
-    def capsule():
-        back = box(9 + 28, cy - half + 28, 335, cy + half - 28).buffer(28, quad_segs=8)
-        dome = Point(335, cy).buffer(half, quad_segs=16)
-        return unary_union([back, box(60, cy - half, 335, cy + half), dome])
-
-    # The cape fans back from the seam, as on the master's cape-00, and ends
-    # in a straight hem level with the mic's flat bottom.
-    CAPE_HEM = 9  # the straight hem, level with the mic's flat bottom
-    # Wider than the mic right at the seam, so the cape's sides show from the
-    # seam all the way down instead of appearing only halfway down the body.
-    # Same flank angle as before; the hem now ends level with the mic.
-    cape = Polygon([(236, 117), (CAPE_HEM, 66), (CAPE_HEM, 468), (236, 417)])
-    cape = cape.buffer(10, quad_segs=6).buffer(-10, quad_segs=6)
-
-    def fit(geoms, anchor, size=16, margin=1.0):
-        rot = [affinity.rotate(g, -90, origin=(256, 256)) for g in geoms]
-        minx, miny, maxx, maxy = affinity.rotate(anchor, -90, origin=(256, 256)).bounds
-        k = (size - 2 * margin) / max(maxx - minx, maxy - miny)
-        cx, cy_ = (minx + maxx) / 2, (miny + maxy) / 2
-        return [affinity.affine_transform(
-            g, [k, 0, 0, k, size / 2 - k * cx, size / 2 - k * cy_]) for g in rot], k
-
-    k = 0.028  # px per master unit; refined below
-    for _ in range(3):
-        gap = 1.0 / k  # 1 px, in master units
-        solid = capsule()
-        mic = solid.difference(box(226, 0, 226 + gap, 512))
-        mic = mic.difference(Point(126, cy).buffer(52, quad_segs=16))
-        wedge = cape.difference(solid.buffer(gap, quad_segs=8))
-        anchor = unary_union([mic, wedge])
-        (mic, wedge), k = fit([mic, wedge], anchor)
-    wedge = wedge.intersection(box(0, 0, 16, 16))
-
-    def d(geom):
-        polys = [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
-        out = []
-        for poly in polys:
-            for ring in [poly.exterior, *poly.interiors]:
-                pts = list(ring.coords)[:-1]
-                out.append("M" + "L".join(
-                    f"{x:.2f} {y:.2f}".replace(".00", "") for x, y in pts) + "Z")
-        return "".join(out)
-
-    return d(mic) + d(wedge)
-
+    All three platforms share one small icon, drawn by menubar_svg in
+    brand/icon/macos/tools/build.py: the caped desk mic at 45 degrees with
+    the S roundel cut out. It is cut for 2x (32 px), where most panels draw
+    a 16 px symbolic icon on HiDPI screens, so the S shows."""
+    import importlib.util
+    mac_build = Path(__file__).resolve().parent.parent / "macos" / "tools" / "build.py"
+    spec = importlib.util.spec_from_file_location("sv_macos_build", mac_build)
+    mac = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mac)
+    svg = mac.menubar_svg(16, 2)
+    return re.search(r' d="([^"]+)"', svg).group(1)
 
 def main() -> None:
     flat = flatten(MASTER)
