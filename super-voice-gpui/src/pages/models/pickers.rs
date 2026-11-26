@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 
 use gpui_kit::component::IndexPath;
-use gpui_kit::component::select::{SelectEvent, SelectItem, SelectState};
+use gpui_kit::component::select::{SearchableVec, SelectEvent, SelectItem, SelectState};
 use gpui_kit::{AppContext as _, Context, Entity, SharedString, Subscription, Window};
 use super_voice_app_core::state::Stage;
 
@@ -56,7 +56,10 @@ pub enum PickerKey {
     Option(String, String),
 }
 
-pub type PickerState = Entity<SelectState<Vec<Choice>>>;
+/// The kit's `SearchableVec`, not a plain `Vec`: a plain list ignores what
+/// is typed in a searchable picker's field, and the language picker lists a
+/// hundred languages.
+pub type PickerState = Entity<SelectState<SearchableVec<Choice>>>;
 
 struct Picker {
     state: PickerState,
@@ -109,7 +112,7 @@ impl<P: 'static> Pickers<P> {
                 picker.items.clone_from(&items);
                 let index = at(&items);
                 state.update(cx, |state, cx| {
-                    state.set_items(items, window, cx);
+                    state.set_items(SearchableVec::new(items), window, cx);
                     state.set_selected_index(index, window, cx);
                 });
             }
@@ -117,13 +120,15 @@ impl<P: 'static> Pickers<P> {
         }
         let index = at(&items);
         let rows = items.clone();
-        let state = cx.new(|cx| SelectState::new(rows, index, window, cx).searchable(searchable));
+        let state = cx.new(|cx| {
+            SelectState::new(SearchableVec::new(rows), index, window, cx).searchable(searchable)
+        });
         let on_pick = self.on_pick;
         let picked_key = key.clone();
         let picked = cx.subscribe_in(
             &state,
             window,
-            move |page, _, event: &SelectEvent<Vec<Choice>>, window, cx| {
+            move |page, _, event: &SelectEvent<SearchableVec<Choice>>, window, cx| {
                 let SelectEvent::Confirm(Some(id)) = event else {
                     return;
                 };

@@ -21,7 +21,7 @@ use gpui_kit::component::group_box::{GroupBox, GroupBoxVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::progress::Progress;
-use gpui_kit::component::select::{Select, SelectEvent, SelectItem, SelectState};
+use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState};
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, IconName, IndexPath, Sizable as _, WindowExt as _, h_flex,
     v_flex,
@@ -105,7 +105,7 @@ pub struct VoicesPage {
     language: Option<String>,
     /// The synthesis model and whether it is up, as last seen.
     synthesis: Option<(Option<String>, bool)>,
-    script: Entity<SelectState<Vec<ScriptRow>>>,
+    script: Entity<SelectState<SearchableVec<ScriptRow>>>,
     /// The script rows' ids, in the picker's order.
     script_ids: Vec<Option<&'static str>>,
     label: Entity<InputState>,
@@ -134,7 +134,9 @@ impl PageView for VoicesPage {
     fn new(_: Page, shared: &Shared, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let rows = script_rows(None);
         let script_ids = rows.iter().map(|row| row.id).collect();
-        let script = cx.new(|cx| SelectState::new(rows, None, window, cx).searchable(true));
+        let script = cx.new(|cx| {
+            SelectState::new(SearchableVec::new(rows), None, window, cx).searchable(true)
+        });
         let label = cx.new(|cx| InputState::new(window, cx).placeholder(t("name-this-voice")));
         let transcript =
             cx.new(|cx| InputState::new(window, cx).placeholder(t("what-the-recording-says")));
@@ -143,7 +145,7 @@ impl PageView for VoicesPage {
             cx.subscribe_in(
                 &script,
                 window,
-                |this, _, event: &SelectEvent<Vec<ScriptRow>>, window, cx| {
+                |this, _, event: &SelectEvent<SearchableVec<ScriptRow>>, window, cx| {
                     if let SelectEvent::Confirm(Some(id)) = event {
                         this.send(In::Voices(page::Input::ScriptSelected(*id)), window, cx);
                     }
@@ -422,8 +424,9 @@ impl VoicesPage {
         let ids: Vec<Option<&'static str>> = rows.iter().map(|row| row.id).collect();
         if ids != self.script_ids {
             self.script_ids = ids;
-            self.script
-                .update(cx, |select, cx| select.set_items(rows, window, cx));
+            self.script.update(cx, |select, cx| {
+                select.set_items(SearchableVec::new(rows), window, cx);
+            });
         }
         let shown = match self.state.script {
             ScriptChoice::Free => None,
