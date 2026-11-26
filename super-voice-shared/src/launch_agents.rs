@@ -45,6 +45,13 @@ pub enum Status {
     NotInBundle,
 }
 
+/// The labels the agents had before the IDs moved to superlibre.org. An older
+/// Super Voice.app registered its agents under these, and launchd keeps
+/// running them after the app is replaced, so a second daemon holds the
+/// socket and a second shortcut listener runs. The justfile's
+/// `old_launchd_labels` lists the same two.
+pub const OLD_LABELS: [&str; 2] = ["ai.menjivar.super-voice", "ai.menjivar.super-voice.hotkey"];
+
 impl Agent {
     pub const ALL: [Self; 2] = [Self::Daemon, Self::Hotkey];
 

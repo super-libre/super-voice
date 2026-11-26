@@ -283,11 +283,16 @@ pub fn socket_path() -> String {
 /// user's choice, and only they can undo it. Outside the bundle there is no
 /// agent to register, and nothing is done.
 ///
+/// First it stops the agents an older Super Voice.app left running under the
+/// old labels (see [`retire_old_agents`]), which a drag-install over that app
+/// never stops.
+///
 /// Blocking (`ServiceManagement` answers over XPC), so it runs off the UI
 /// thread.
 #[cfg(target_os = "macos")]
 pub fn register_agents() {
     use super_voice_shared::launch_agents::{Agent, Status};
+    retire_old_agents();
     for agent in Agent::ALL {
         if agent.status() != Status::NotRegistered {
             continue;
@@ -297,6 +302,64 @@ pub fn register_agents() {
             Err(e) => log::warn!("{e:#}"),
         }
     }
+}
+
+/// Boot out each agent launchd still holds under an old label, and wait up to
+/// 5 s for launchd to let go of them: until then the old daemon still holds
+/// the socket. Labels launchd doesn't have are skipped, so this costs one
+/// `launchctl print` per label on a Mac with no old install. Files in
+/// `~/Library/LaunchAgents` are left alone; the old plists lived inside the
+/// old bundle.
+#[cfg(target_os = "macos")]
+fn retire_old_agents() {
+    use std::process::{Command, Stdio};
+    use std::time::Instant;
+    use super_voice_shared::launch_agents::OLD_LABELS;
+
+    // SAFETY: getuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    let loaded = |job: &str| {
+        Command::new("/bin/launchctl")
+            .args(["print", job])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+
+    let old: Vec<String> = OLD_LABELS
+        .into_iter()
+        .map(|label| format!("gui/{uid}/{label}"))
+        .filter(|job| loaded(job))
+        .collect();
+    if old.is_empty() {
+        return;
+    }
+    for job in &old {
+        log::info!("stopping {job}, an agent an older Super Voice left running");
+        match Command::new("/bin/launchctl")
+            .args(["bootout", job.as_str()])
+            .output()
+        {
+            Ok(out) if !out.status.success() => log::warn!(
+                "launchctl bootout {job}: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ),
+            Ok(_) => {}
+            Err(e) => log::warn!("could not run launchctl bootout {job}: {e}"),
+        }
+    }
+    // The new daemon can't serve while the old one holds the socket, so wait
+    // until launchd lets go of it, as `just install-macos` does.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while old.iter().any(|job| loaded(job)) {
+        if Instant::now() >= deadline {
+            log::warn!("launchd still runs an older Super Voice's agents after 5 s");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    log::info!("stopped the agents an older Super Voice left running");
 }
 
 /// Where the daemon's agent stands now. Blocking, as [`register_agents`].

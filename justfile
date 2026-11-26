@@ -122,7 +122,9 @@ hotkey_target := launchd_domain + '/' + hotkey_label
 
 # The labels Super Voice's agents had before its IDs moved to superlibre.org.
 # `install-macos` and `uninstall-macos` retire them, so an upgrade never runs
-# a second daemon or shortcut beside the new ones.
+# a second daemon or shortcut beside the new ones. The app retires them on
+# launch too, for a drag-install: keep this list the same as `OLD_LABELS` in
+# super-voice-shared/src/launch_agents.rs.
 old_launchd_labels := 'ai.menjivar.super-voice.hotkey ai.menjivar.super-voice'
 
 # Default recipe which runs `just build-release`
