@@ -4,7 +4,8 @@
 //!
 //! The shell owns what the pages share: the connection, each feature's
 //! readiness, the daemon's events, which it hands to every page; the command
-//! palette (Ctrl+K, Cmd+K on macOS); Alt+Left, which goes back from a detail.
+//! palette (Ctrl+K, Cmd+K on macOS); Alt+Left (and Cmd+[ on macOS), which goes
+//! back from a detail.
 //! While the daemon is down, the Connection page takes the place of the
 //! pages that need it.
 
@@ -19,8 +20,9 @@ use std::time::Instant;
 use gpui_kit::component::{ActiveTheme as _, Placement, Theme, WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
-    KeyBinding, ParentElement as _, Render, Styled as _, Subscription, Window, actions, div, px,
+    AnyElement, AnyWindowHandle, App, Context, Entity, FocusHandle, Global,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, Styled as _,
+    Subscription, WeakEntity, Window, actions, div, px,
 };
 use super_voice_app_core::events::Event;
 use super_voice_app_core::pages::connection::Input as ConnectionInput;
@@ -60,14 +62,28 @@ pub const NEW_NOTE_KEYS: &str = if cfg!(target_os = "macos") {
 };
 
 /// The shell's keys: Ctrl+K (Cmd+K on macOS) for the palette, Ctrl+R
-/// (Cmd+R) for a new note, Alt+Left for back.
+/// (Cmd+R) for a new note, Alt+Left for back, and Cmd+[ too on macOS, as
+/// its apps go back.
+///
+/// Back's keys are bound in the shell's own context, not everywhere: GPUI
+/// ranks a binding with no context as deep as the focus goes, so it would
+/// beat a text field's own use of the same keys (a word left, outdent).
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new(PALETTE_KEYS, OpenPalette, None),
         KeyBinding::new(NEW_NOTE_KEYS, NewNote, None),
-        KeyBinding::new("alt-left", Back, None),
+        KeyBinding::new("alt-left", Back, Some(SHELL_CONTEXT)),
     ]);
+    if cfg!(target_os = "macos") {
+        cx.bind_keys([KeyBinding::new("cmd-[", Back, Some(SHELL_CONTEXT))]);
+    }
 }
+
+/// The shell's key context.
+const SHELL_CONTEXT: &str = "Shell";
+
+/// The kit's text fields' key context.
+const TEXT_FIELD_CONTEXT: &str = "Input";
 
 /// The message keys the shell shows besides the pages' and headings' names.
 #[cfg(test)]
@@ -144,6 +160,33 @@ pub struct Services {
     pub events: Entity<DaemonEvents>,
 }
 
+/// The open window, for what reaches it from outside its elements: the menu
+/// bar on macOS ([`crate::menus`]).
+struct Current {
+    shell: WeakEntity<Shell>,
+    window: AnyWindowHandle,
+}
+
+impl Global for Current {}
+
+/// Run `f` on the open window's shell: `false` when no window is open.
+pub fn with_current(
+    cx: &mut App,
+    f: impl FnOnce(&mut Shell, &mut Window, &mut Context<Shell>),
+) -> bool {
+    let Some((shell, window)) = cx
+        .try_global::<Current>()
+        .map(|current| (current.shell.clone(), current.window))
+    else {
+        return false;
+    };
+    window
+        .update(cx, |_, window, cx| {
+            shell.update(cx, |shell, cx| f(shell, window, cx))
+        })
+        .is_ok_and(|updated| updated.is_ok())
+}
+
 /// The window's content.
 pub struct Shell {
     /// The page picked. While the daemon is down and it needs the daemon,
@@ -182,6 +225,11 @@ impl Shell {
             events,
         } = services;
         cx.set_global(crate::connection::Current(connection.clone()));
+        let current = Current {
+            shell: cx.weak_entity(),
+            window: window.window_handle(),
+        };
+        cx.set_global(current);
         let shared = Shared {
             connection: connection.clone(),
             readiness: readiness.clone(),
@@ -313,6 +361,14 @@ impl Shell {
             _give_up: give_up,
         });
         false
+    }
+
+    /// Close the window as its close button does: at once, or once the pages
+    /// holding it ([`Self::close`]) have finished.
+    pub fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.close(window, cx) {
+            window.remove_window();
+        }
     }
 
     /// `page` finished the work it held the window open for: close it once
@@ -459,6 +515,16 @@ impl Shell {
     }
 
     fn on_back(&mut self, _: &Back, window: &mut Window, cx: &mut Context<Self>) {
+        // Never from a text field: going back there would throw away what
+        // was typed. Where the field has no use for the keys (Alt+Left on
+        // Linux), they do nothing.
+        if window
+            .context_stack()
+            .iter()
+            .any(|context| context.contains(TEXT_FIELD_CONTEXT))
+        {
+            return;
+        }
         if let Some(page) = self.page_shown(cx) {
             self.handle(page).clone().back(window, cx);
         }
@@ -537,7 +603,7 @@ impl Shell {
         };
         v_flex()
             .id("shell")
-            .key_context("Shell")
+            .key_context(SHELL_CONTEXT)
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::on_open_palette))
             .on_action(cx.listener(Self::on_back))

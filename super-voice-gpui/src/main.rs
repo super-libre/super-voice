@@ -14,6 +14,7 @@ mod effects;
 mod hot;
 #[cfg(target_os = "macos")]
 mod macos;
+mod menus;
 mod pages;
 mod readiness;
 mod runtime;
@@ -71,9 +72,15 @@ fn run() {
     super_voice_app_core::daemon::client::use_scene_token();
 
     gpui_kit::application()
+        // Closing the window quits the app on macOS too, as System Settings
+        // does: GPUI's default there keeps running with no window, and the
+        // app has no way to open one again. The daemon runs on its own, so
+        // nothing is lost. Linux already quits this way.
+        .with_quit_mode(gpui_kit::QuitMode::LastWindowClosed)
         .with_assets(assets::Assets)
         .run(|cx| {
             setup(cx);
+            menus::install(cx);
             hot::connect(cx);
             #[cfg(target_os = "macos")]
             macos::on_launch();

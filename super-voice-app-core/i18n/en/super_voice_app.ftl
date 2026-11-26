@@ -1068,3 +1068,20 @@ switch-to-backend = Switch to
 
 # Settings: Failure notices on macOS
 how-recording-and-speech-failures-are-reported-mac = How recording and speech failures are reported.
+
+# The menu bar on macOS
+menu-settings = Settings…
+menu-hide-app = Hide Super Voice
+menu-hide-others = Hide Others
+menu-show-all = Show All
+menu-quit-app = Quit Super Voice
+menu-edit = Edit
+menu-undo = Undo
+menu-redo = Redo
+menu-cut = Cut
+menu-paste = Paste
+menu-select-all = Select All
+menu-window = Window
+menu-minimize = Minimize
+menu-zoom = Zoom
+menu-close = Close

@@ -102,8 +102,9 @@ pub trait PageView: Render + Sized + 'static {
     /// The page is shown, or shown again.
     fn shown(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {}
 
-    /// Alt+Left, or the back button: go back from a detail shown alone to its
-    /// list. `false` when there is nowhere to go back to.
+    /// Alt+Left (Cmd+[ too on macOS), or the back button: go back from a
+    /// detail shown alone to its list. `false` when there is nowhere to go
+    /// back to.
     fn back(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> bool {
         false
     }

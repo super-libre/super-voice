@@ -75,11 +75,34 @@ async fn sigterm_shuts_down_gracefully() {
     );
 }
 
+/// Let SIGINT through on this thread, so the daemon it starts gets it too.
+///
+/// fish starts a background job (`cargo test … &`) with SIGINT blocked,
+/// and a blocked signal stays blocked across fork and exec: the daemon
+/// would start with SIGINT held pending forever, as no daemon run from a
+/// terminal or a service manager does. The test daemon's builder has no
+/// hook into the child before exec, so the unblock happens here, on the
+/// thread that spawns it, and the child inherits that mask. (An inherited
+/// SIG_IGN doesn't matter: the daemon installs its own handler.)
+fn unblock_sigint() {
+    // SAFETY: the set is initialised by `sigemptyset` before use, and
+    // `pthread_sigmask` only changes this thread's mask. Nothing in this
+    // test relies on SIGINT being blocked.
+    let result = unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        libc::sigaddset(&mut set, libc::SIGINT);
+        libc::pthread_sigmask(libc::SIG_UNBLOCK, &set, std::ptr::null_mut())
+    };
+    assert_eq!(result, 0, "could not unblock SIGINT");
+}
+
 /// SIGINT already worked; it must keep working now that it shares the wait.
 #[tokio::test]
 async fn sigint_still_shuts_down_gracefully() {
     use std::os::unix::process::ExitStatusExt;
 
+    unblock_sigint();
     let (mut guard, _socket) = start_daemon().await;
     let status = signal_and_wait(&mut guard, libc::SIGINT, Duration::from_secs(30))
         .await
