@@ -186,9 +186,10 @@ def symbolic_path() -> str:
         dome = Point(335, cy).buffer(half, quad_segs=16)
         return unary_union([back, box(60, cy - half, 335, cy + half), dome])
 
-    # The cape fans back from the seam, as on the master's cape-00, and ends
-    # in a straight hem square to the mic's axis.
-    CAPE_HEM = -75  # the straight hem, square to the flight axis
+    # The cape fans back from the seam, as on the master's cape-00, and hangs
+    # down to the bottom edge of the frame, which crops it.
+    CAPE_HEM = -400  # far past the canvas: the frame's bottom edge crops it
+    CAPE_FIT = -45   # only the cape down to here counts when centring
     top = 52 + (CAPE_HEM + 140) * 0.34  # the flanks widen behind the seam
     cape = Polygon([(226, 176), (150, 140), (60, 104), (-40, 78), (CAPE_HEM, top),
                     (CAPE_HEM, 534 - top), (-40, 456), (60, 430), (150, 394), (226, 358)])
@@ -209,7 +210,7 @@ def symbolic_path() -> str:
         mic = solid.difference(box(226, 0, 226 + gap, 512))
         mic = mic.difference(Point(126, cy).buffer(52, quad_segs=16))
         wedge = cape.difference(solid.buffer(gap, quad_segs=8))
-        anchor = unary_union([mic, wedge])
+        anchor = unary_union([mic, wedge.intersection(box(CAPE_FIT, -1000, 1000, 1000))])
         (mic, wedge), k = fit([mic, wedge], anchor)
     wedge = wedge.intersection(box(0, 0, 16, 16))
 
