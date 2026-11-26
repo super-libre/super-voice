@@ -94,6 +94,17 @@ pub enum Notice {
     CouldNotRemoveKey(String),
 }
 
+impl Notice {
+    /// Whether the notice is about what a dialog over the page is doing, and
+    /// so is said in it: Connect, or making a key. Anything else, such as the
+    /// list read every two seconds failing, is said in a toast and leaves the
+    /// dialog as it is.
+    #[must_use]
+    pub const fn belongs_in_dialog(&self) -> bool {
+        matches!(self, Self::CouldNotConnect(..) | Self::CouldNotCreateKey(_))
+    }
+}
+
 /// What an input came to.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Outcome {

@@ -15,6 +15,7 @@
 //! is read again every two seconds while the page is on screen.
 
 use std::cell::Cell;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui_kit::assets::IconName as Lucide;
@@ -78,6 +79,8 @@ pub struct AssistantsPage {
     key_name: Entity<InputState>,
     /// The dialog this view has open, to match the core's.
     open: Option<Open>,
+    /// A dialog is asked to open and the window has not opened it yet.
+    opening: Rc<Cell<bool>>,
     /// What failed, while a dialog is open: said in the dialog, beside what
     /// failed, rather than in a toast behind it.
     dialog_error: Option<SharedString>,
@@ -107,6 +110,7 @@ impl PageView for AssistantsPage {
             shared: shared.clone(),
             key_name,
             open: None,
+            opening: Rc::default(),
             dialog_error: None,
             drawn: Cell::new(Instant::now()),
             poll: None,
@@ -151,17 +155,16 @@ impl PageView for AssistantsPage {
         if scenes.contains(&"connect") {
             self.send(Input::AskConnect(AssistantId::OpenCode), window, cx);
         } else if scenes.contains(&"key-made") {
+            // The key as the daemon makes it, without the list read that
+            // follows, which a shot can't answer.
             self.send(Input::AskKey, window, cx);
-            self.send(
-                Input::KeyCreated(Ok(NewKey {
-                    id: "k2".into(),
-                    name: "Zed".into(),
-                    key: "sv_live_7f3a9c2e81b44d0f9a6c5e1b2d3f4a5b".into(),
-                    address: "http://127.0.0.1:7300/v1/mcp".into(),
-                })),
-                window,
-                cx,
-            );
+            self.state.key = Some(KeyDialog::Made(NewKey {
+                id: "k2".into(),
+                name: "Zed".into(),
+                key: "sv_live_7f3a9c2e81b44d0f9a6c5e1b2d3f4a5b".into(),
+                address: "http://127.0.0.1:7300/v1/mcp".into(),
+            }));
+            cx.notify();
         }
     }
 }
@@ -221,14 +224,17 @@ impl CorePage for AssistantsPage {
         // name field takes it from the dialog.
         self.match_dialogs(window, cx);
         effects::run_effects(self, outcome.effects, window, cx);
-        let notice = outcome.notice.map(notice_words);
-        match notice {
-            Some(words) if self.state.dialog_open() => {
-                self.dialog_error = Some(words);
+        match outcome.notice {
+            // What the dialog is doing went wrong: said in it, beside what
+            // failed. Anything else (the list read every two seconds) is a
+            // toast, and leaves the dialog as it is.
+            Some(notice) if self.state.dialog_open() && notice.belongs_in_dialog() => {
+                self.dialog_error = Some(notice_words(notice));
                 toast::clear::<Self>(window, cx);
             }
             notice => {
-                toast::notice::<Self>(window, cx, outcome.clear_notice, notice.map(Toast::error));
+                let notice = notice.map(|notice| Toast::error(notice_words(notice)));
+                toast::notice::<Self>(window, cx, outcome.clear_notice, notice);
             }
         }
         cx.notify();
@@ -298,12 +304,21 @@ impl AssistantsPage {
         } else {
             None
         };
+        // The dialog is drawn by the window's root from the core's state:
+        // draw it again for what changed (a key made, an error), and open it
+        // again if the window lost it without the core closing it.
         if wanted == self.open {
-            return;
+            if wanted.is_none() || self.opening.get() || window.has_active_dialog(cx) {
+                window.refresh();
+                return;
+            }
+            self.open = None;
         }
         let close = self.open.is_some();
         self.open = wanted;
+        self.opening.set(wanted.is_some());
         let this = cx.weak_entity();
+        let opening = self.opening.clone();
         window.defer(cx, move |window, cx| {
             if close {
                 window.close_dialog(cx);
@@ -313,6 +328,8 @@ impl AssistantsPage {
                 Some(Open::Key) => window.open_dialog(cx, key_dialog(this)),
                 None => {}
             }
+            opening.set(false);
+            window.refresh();
         });
     }
 
@@ -755,14 +772,19 @@ fn key_dialog(
                             ),
                     )
             }
-            KeyDialog::Made(made) => dialog.child(made_key(&made, cx)).footer(
-                DialogFooter::new().child(
-                    Button::new("done-key")
-                        .primary()
-                        .label(t("done"))
-                        .on_click(send(Input::CloseKey)),
+            // Shown this once: a press beside the dialog must not lose it.
+            // Done, or Escape, closes it.
+            KeyDialog::Made(made) => dialog
+                .overlay_closable(false)
+                .child(made_key(&made, cx))
+                .footer(
+                    DialogFooter::new().child(
+                        Button::new("done-key")
+                            .primary()
+                            .label(t("done"))
+                            .on_click(send(Input::CloseKey)),
+                    ),
                 ),
-            ),
         }
     }
 }
