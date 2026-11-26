@@ -1,0 +1,86 @@
+{
+  "name": "Super Voice icon: flight",
+  "canvas": 512,
+  "tile": { "shape": "rounded-square", "size": 512, "radius": 112 },
+  "flight": {
+    "heading_deg": 45,
+    "screen_direction": [0.7071, -0.7071],
+    "note": "The microphone flies up and to the right at 45 degrees. Everything that streams past moves the opposite way, toward the lower left."
+  },
+  "layers": [
+    {
+      "id": "ground",
+      "file": "layers/ground.svg",
+      "viewBox": [0, 0, 512, 512],
+      "depth": 0,
+      "motion": { "type": "static" }
+    },
+    {
+      "id": "band-far",
+      "file": "layers/band-far.svg",
+      "viewBox": [-512, -512, 1536, 1536],
+      "depth": 1,
+      "motion": {
+        "type": "scroll",
+        "direction": [-0.7071, 0.7071],
+        "period": 340,
+        "duration_ms": 5200,
+        "easing": "linear",
+        "iterations": "infinite"
+      }
+    },
+    {
+      "id": "band-near",
+      "file": "layers/band-near.svg",
+      "viewBox": [-512, -512, 1536, 1536],
+      "depth": 2,
+      "motion": {
+        "type": "scroll",
+        "direction": [-0.7071, 0.7071],
+        "period": 400,
+        "duration_ms": 4000,
+        "easing": "linear",
+        "iterations": "infinite"
+      }
+    },
+    {
+      "id": "light",
+      "file": "layers/light.svg",
+      "viewBox": [0, 0, 512, 512],
+      "depth": 3,
+      "motion": { "type": "static" }
+    },
+    {
+      "id": "shadow",
+      "frames": "layers/shadow/shadow-{nn}.svg",
+      "frame_count": 24,
+      "viewBox": [0, 0, 512, 512],
+      "depth": 4,
+      "motion": { "type": "frames", "fps": 20, "sync_with": "cape" }
+    },
+    {
+      "id": "cape",
+      "frames": "layers/cape/cape-{nn}.svg",
+      "frame_count": 24,
+      "viewBox": [0, 0, 512, 512],
+      "depth": 5,
+      "motion": { "type": "frames", "fps": 20 }
+    },
+    {
+      "id": "mic",
+      "file": "layers/mic.svg",
+      "viewBox": [0, 0, 512, 512],
+      "depth": 6,
+      "motion": { "type": "static" }
+    },
+    {
+      "id": "emblem",
+      "file": "layers/emblem.svg",
+      "viewBox": [0, 0, 512, 512],
+      "depth": 7,
+      "motion": { "type": "static" }
+    }
+  ],
+  "rest_frame": "Every layer at its first frame with no scroll offset. This is the still icon.",
+  "reduced_motion": "Show the rest frame. Do not scroll or cycle frames."
+}

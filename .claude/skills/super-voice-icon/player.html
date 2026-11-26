@@ -1,0 +1,74 @@
+<!doctype html>
+<!--
+  Reference player for the Super Voice icon flight animation.
+  It reads animation.json and plays every layer exactly as specified there.
+  Serve this folder over HTTP so fetch() works, for example:
+    python3 -m http.server -d .claude/skills/super-voice-icon 8000
+  then open http://localhost:8000/player.html
+  Add ?size=64 to preview a small size, ?still to show the rest frame.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super Voice icon flight</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #1c1b19; }
+  .icon { position: relative; overflow: hidden; border-radius: 21.875%; /* 112 / 512 */ }
+  .icon img { position: absolute; display: block; max-width: none; }
+</style>
+</head>
+<body>
+<div class="icon" id="icon" role="img" aria-label="Super Voice icon"></div>
+<script>
+const params = new URLSearchParams(location.search);
+const size = Number(params.get('size')) || 512;
+const still = params.has('still') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+fetch('animation.json').then(r => r.json()).then(spec => {
+  const box = document.getElementById('icon');
+  box.style.width = box.style.height = size + 'px';
+  const unit = size / spec.canvas;            // CSS px per icon unit
+  const frameLayers = [];
+
+  for (const layer of spec.layers) {
+    const [vx, vy, vw, vh] = layer.viewBox;
+    const img = document.createElement('img');
+    img.alt = '';
+    Object.assign(img.style, { left: vx * unit + 'px', top: vy * unit + 'px', width: vw * unit + 'px', height: vh * unit + 'px' });
+    const m = layer.motion;
+
+    if (m.type === 'frames') {
+      const urls = Array.from({ length: layer.frame_count }, (_, i) => layer.frames.replace('{nn}', String(i).padStart(2, '0')));
+      urls.forEach(u => { const pre = new Image(); pre.src = u; });   // preload so frame swaps never flicker
+      img.src = urls[0];
+      frameLayers.push({ img, urls, fps: m.fps });
+    } else {
+      img.src = layer.file;
+    }
+    box.appendChild(img);
+
+    if (m.type === 'scroll' && !still) {
+      const dx = m.direction[0] * m.period * unit, dy = m.direction[1] * m.period * unit;
+      img.animate([{ transform: 'translate(0, 0)' }, { transform: `translate(${dx}px, ${dy}px)` }],
+                  { duration: m.duration_ms, easing: m.easing, iterations: Infinity });
+    }
+  }
+
+  if (!still) {
+    // All frame layers share one clock so the shadow stays locked to the cape.
+    const start = performance.now();
+    const tick = now => {
+      for (const f of frameLayers) {
+        const i = Math.floor((now - start) / 1000 * f.fps) % f.urls.length;
+        if (f.img.dataset.i !== String(i)) { f.img.src = f.urls[i]; f.img.dataset.i = i; }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+});
+</script>
+</body>
+</html>

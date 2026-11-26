@@ -91,7 +91,7 @@ Super Voice.app/Contents/
   MacOS/super-voice-cli           `voice` on the PATH is a wrapper around this
   Helpers/super-voice-cli         the same CLI, which the shortcut agent runs
   Library/LaunchAgents/           the daemon's and the shortcut's agents
-  Resources/AppIcon.icns          rendered from the app's SVG
+  Resources/AppIcon.icns          brand/icon/macos/AppIcon.icns
 ```
 
 The daemon and the CLI sit beside the app for two reasons. The daemon trusts
