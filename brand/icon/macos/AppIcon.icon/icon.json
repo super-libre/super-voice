@@ -1,0 +1,97 @@
+{
+  "fill": {
+    "automatic-gradient": "srgb:0.94902,0.48235,0.15686,1.00000"
+  },
+  "fill-specializations": [
+    {
+      "appearance": "dark",
+      "value": {
+        "automatic-gradient": "srgb:0.22745,0.10980,0.06275,1.00000"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "Emblem",
+      "lighting": "individual",
+      "specular": true,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      },
+      "layers": [
+        {
+          "name": "6-emblem",
+          "image-name": "6-emblem.png",
+          "glass": false
+        }
+      ]
+    },
+    {
+      "name": "Ink",
+      "lighting": "combined",
+      "specular": true,
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      },
+      "layers": [
+        {
+          "name": "5-mic",
+          "image-name": "5-mic.png",
+          "glass": false
+        },
+        {
+          "name": "4-cape",
+          "image-name": "4-cape.png",
+          "glass": false
+        },
+        {
+          "name": "3-shadow",
+          "image-name": "3-shadow.png",
+          "glass": false
+        }
+      ]
+    },
+    {
+      "name": "Glass bands",
+      "lighting": "individual",
+      "specular": true,
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.4
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.4
+      },
+      "layers": [
+        {
+          "name": "2-band-near",
+          "image-name": "2-band-near.svg",
+          "glass": true,
+          "opacity": 0.78
+        },
+        {
+          "name": "1-band-far",
+          "image-name": "1-band-far.svg",
+          "glass": true,
+          "opacity": 0.88
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

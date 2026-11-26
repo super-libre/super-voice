@@ -54,6 +54,12 @@ app_desktop_file_src := 'super-voice-app' / 'resources' / app_desktop_file_name
 app_icon_src := 'super-voice-app' / 'resources' / 'icons' / 'hicolor' / 'scalable' / 'apps' / 'super-voice-app.svg'
 app_desktop_file_dst := desktop_dir / app_desktop_file_name
 app_icon_dst := icons_dir / 'super-voice-app.svg'
+# The rest of the app's hicolor icon set, built by brand/icon/linux/build.py:
+# a PNG at each of these sizes (`<N>x<N>/apps/super-voice-app.png`) for
+# renderers that do not draw the SVG, and the one-colour
+# `symbolic/apps/super-voice-app-symbolic.svg` for panels and trays.
+app_icon_theme_src := 'super-voice-app' / 'resources' / 'icons' / 'hicolor'
+app_icon_sizes := '16 22 24 32 48 64 128 256 512'
 
 # Service file
 service_file := service_name + '.service'
@@ -637,24 +643,14 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
     fi
     echo "✓ $out"
 
-# Render the macOS app icon into an .icns at `out`, from the SVG the Linux
-# desktop entry uses. See super-voice-macos/app-icon.swift.
+# Put the macOS app icon at `out`. The .icns is prebuilt and checked in:
+# brand/icon/macos/tools/build.py makes it from the master SVG, already on
+# Apple's 1024 grid, with simplified art at 16 and 32 px. AppKit's own SVG
+# reader can't draw the icon's filters, so rendering it here would differ.
+# See .claude/skills/super-voice-icon/reference/macos.md.
 [private]
 macos-icon out:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    work=$(mktemp -d)
-    trap 'rm -rf "$work"' EXIT
-    swift {{ macos_resources }}/app-icon.swift {{ app_icon_src }} "$work/icon.png"
-    iconset="$work/AppIcon.iconset"
-    mkdir "$iconset"
-    for size in 16 32 128 256 512; do
-        sips -z "$size" "$size" "$work/icon.png" \
-            --out "$iconset/icon_${size}x${size}.png" >/dev/null
-        sips -z "$((size * 2))" "$((size * 2))" "$work/icon.png" \
-            --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
-    done
-    iconutil -c icns "$iconset" -o "{{ out }}"
+    cp brand/icon/macos/AppIcon.icns "{{ out }}"
 
 # Re-sign a freshly built binary with a stable local code-signing identity.
 #
@@ -1088,6 +1084,12 @@ install-app:
     sudo install -m755 "{{ app_src }}" "{{ app_dst }}"
     sudo install -Dm0644 "{{ app_desktop_file_src }}" "{{ app_desktop_file_dst }}"
     sudo install -Dm0644 "{{ app_icon_src }}" "{{ app_icon_dst }}"
+    for size in {{ app_icon_sizes }}; do
+        icon="${size}x${size}/apps/{{ app_name }}.png"
+        sudo install -Dm0644 "{{ app_icon_theme_src }}/$icon" "{{ icon_theme_dir }}/$icon"
+    done
+    symbolic="symbolic/apps/{{ app_name }}-symbolic.svg"
+    sudo install -Dm0644 "{{ app_icon_theme_src }}/$symbolic" "{{ icon_theme_dir }}/$symbolic"
     for app in {{ old_apps }}; do
         sudo rm -f "{{ bin_dir }}/$app" "{{ desktop_dir }}/$app.desktop" "{{ icons_dir }}/$app.svg"
     done
@@ -1495,6 +1497,10 @@ uninstall-app:
     echo "Uninstalling the apps..."
     for app in {{ app_name }} {{ old_apps }}; do
         sudo rm -f "{{ bin_dir }}/$app" "{{ desktop_dir }}/$app.desktop" "{{ icons_dir }}/$app.svg"
+        for size in {{ app_icon_sizes }}; do
+            sudo rm -f "{{ icon_theme_dir }}/${size}x${size}/apps/$app.png"
+        done
+        sudo rm -f "{{ icon_theme_dir }}/symbolic/apps/$app-symbolic.svg"
     done
 
     # Update desktop database
