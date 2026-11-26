@@ -164,9 +164,8 @@ def symbolic_path() -> str:
 
     - capsule y 172..362 (half-width 95), flat bottom at x 9 with small
       rounded corners, mesh dome a half circle from x 335 to 430;
-    - seam band in front of the side knobs (x 226), cut as a 1 px gap;
-    - stubby side knobs at mid-length, x 150..222, standing proud of the
-      capsule;
+    - seam band at x 226, cut as a 1 px gap;
+    - no side knobs: at panel sizes the clean capsule reads better;
     - the S roundel centred at (126, 267) on the housing, cut out as a
       round hole (an S does not fit at 16 px);
     - the cape wedge behind the housing, flaring past the flat bottom, kept
@@ -186,12 +185,6 @@ def symbolic_path() -> str:
         dome = Point(335, cy).buffer(half, quad_segs=16)
         return unary_union([back, box(60, cy - half, 335, cy + half), dome])
 
-    def knobs():
-        return unary_union([
-            box(150, cy - half - 36, 222, cy - half + 5).buffer(8, quad_segs=4),
-            box(150, cy + half - 5, 222, cy + half + 36).buffer(8, quad_segs=4),
-        ])
-
     cape = Polygon([(226, 176), (140, 112), (40, 80), (-34, 110), (-34, 424),
                     (40, 454), (140, 422), (226, 358)])
 
@@ -206,7 +199,7 @@ def symbolic_path() -> str:
     k = 0.028  # px per master unit; refined below
     for _ in range(3):
         gap = 1.0 / k  # 1 px, in master units
-        solid = unary_union([capsule(), knobs()])
+        solid = capsule()
         mic = solid.difference(box(226, 0, 226 + gap, 512))
         mic = mic.difference(Point(126, cy).buffer(52, quad_segs=16))
         wedge = cape.difference(solid.buffer(gap, quad_segs=8))
