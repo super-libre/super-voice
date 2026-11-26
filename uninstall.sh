@@ -90,6 +90,8 @@ BINARIES=(
     super-tts-cosmic-applet
 )
 APPS=(super-voice-app super-tts-app super-stt-app)
+# The hicolor sizes an app's PNG icons come in (see brand/icon/linux).
+APP_ICON_SIZES=(16x16 22x22 24x24 32x32 48x48 64x64 128x128 256x256 512x512)
 APPLETS=(super-cosmic-applet super-stt-cosmic-applet super-tts-cosmic-applet)
 # Processes to stop at the end, for a daemon started outside systemd.
 DAEMONS=(super-voice-daemon super-stt-daemon super-tts-daemon super-stt)
@@ -213,6 +215,12 @@ for name in "${ICONS[@]}"; do
         remove_path "$dir/$name" && print_info "  removed $dir/$name"
     done
 done
+# The apps' fixed-size PNGs and symbolic icons, beside the scalable SVG.
+for app in "${APPS[@]}"; do
+    for rel in "${APP_ICON_SIZES[@]/%//apps/$app.png}" "symbolic/apps/$app-symbolic.svg"; do
+        remove_path "$SYSTEM_ICON_THEME_DIR/$rel" && print_info "  removed $SYSTEM_ICON_THEME_DIR/$rel"
+    done
+done
 
 # 6. metainfo (system + legacy per-user)
 for app in "${APPS[@]}"; do
@@ -225,7 +233,7 @@ done
 if command -v gtk-update-icon-cache &> /dev/null; then
     gtk-update-icon-cache -f "$ICON_DIR_FLAT/hicolor" 2>/dev/null || true
     if [ "$SYSTEM_INSTALL_PRESENT" = true ]; then
-        $SUDO gtk-update-icon-cache -f "$SYSTEM_ICON_THEME_DIR" 2>/dev/null || true
+        $SUDO gtk-update-icon-cache -f -t "$SYSTEM_ICON_THEME_DIR" 2>/dev/null || true
     fi
 fi
 if command -v update-desktop-database &> /dev/null; then
