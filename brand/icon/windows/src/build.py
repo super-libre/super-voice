@@ -24,13 +24,14 @@ import subprocess
 import sys
 import tempfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import glyphs  # noqa: E402
+
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.dirname(HERE)
 MASTER = os.path.normpath(os.path.join(OUT, "..", "master", "super-voice-icon.svg"))
-SMALL = os.path.join(HERE, "small.svg")
-TRAY = os.path.join(HERE, "tray.svg")
 SS = 4  # supersampling factor
 
 # Every size Windows 11 may ask for (app icon construction guidance).
@@ -50,8 +51,6 @@ def data_uri(svg_text):
 
 
 MASTER_URI = data_uri(open(MASTER).read())
-SMALL_URI = data_uri(open(SMALL).read())
-TRAY_SVG = open(TRAY).read()
 
 
 def px(base, sc):
@@ -64,9 +63,12 @@ def pad_for(n):
     return max(1, round(n / 24))
 
 
-def icon_html(w, h, tile, x, y, small=False):
-    """A page w x h with the rounded-square icon (tile px) at (x, y)."""
-    src = SMALL_URI if small else MASTER_URI
+def icon_html(w, h, tile, x, y, small=None):
+    """A page w x h with the rounded-square icon (tile px) at (x, y).
+
+    small: the n of a 16-32 px frame, which uses the simplified glyph.
+    """
+    src = data_uri(glyphs.small_svg(small, tile, x)) if small else MASTER_URI
     flt = ""
     if not small:
         # Soft key shadow, like Windows 11's own icons: down, short, low opacity.
@@ -80,7 +82,7 @@ def icon_html(w, h, tile, x, y, small=False):
 
 def app_icon_job(n, out):
     p = pad_for(n)
-    return dict(out=out, w=n, h=n, scale=SS, html=icon_html(n, n, n - 2 * p, p, p, small=n <= SMALL_MAX))
+    return dict(out=out, w=n, h=n, scale=SS, html=icon_html(n, n, n - 2 * p, p, p, small=n if n <= SMALL_MAX else None))
 
 
 def tile_job(w, h, frac, out, lift=0.0):
@@ -92,12 +94,7 @@ def tile_job(w, h, frac, out, lift=0.0):
 
 
 def tray_job(n, color, out):
-    svg = TRAY_SVG.replace("<svg ", f'<svg color="{color}" ', 1)
-    if n <= 20:
-        # Too few pixels for the S or a gap ring: the roundel becomes a round
-        # hole in a solid body, which still reads at 16 px.
-        svg = svg.replace('r="6.1" fill="#000"', 'r="3.8" fill="#000"')
-        svg = svg.replace('<g mask="url(#disc)"><circle cx="11.6" cy="20.4" r="4.7"/></g>', "")
+    svg = glyphs.tray_svg(n, color)
     html = (
         f'<html><body style="margin:0;background:transparent">'
         f'<img src="{data_uri(svg)}" style="position:absolute;left:0;top:0;width:{n}px;height:{n}px">'
@@ -174,6 +171,30 @@ def write_ico(path, images, png_min=256, first=None):
         f.write(out + dirs + data)
 
 
+def tune_tray():
+    """Print the sub-pixel shift per tray size with the fewest half-covered pixels."""
+    tmp = tempfile.mkdtemp(prefix="sv-tune-")
+    jobs, meta = [], []
+    for n in TRAY_SIZES:
+        for i in range(8):
+            for j in range(8):
+                job = tray_job(n, "#000000", os.path.join(tmp, f"{n}-{i}-{j}.png"))
+                job["html"] = job["html"].replace(
+                    data_uri(glyphs.tray_svg(n, "#000000")), data_uri(glyphs.tray_svg(n, "#000000", (i / 8, j / 8)))
+                )
+                jobs.append(job)
+                meta.append((n, (i / 8, j / 8), job["out"]))
+    run_render(jobs)
+    best = {}
+    for n, shift, path in meta:
+        a = Image.open(path).convert("RGBa").resize((n, n), Image.LANCZOS).convert("RGBA").getchannel("A")
+        mid = sum(1 for v in a.tobytes() if 40 < v < 215)
+        if n not in best or mid < best[n][0]:
+            best[n] = (mid, shift)
+    shutil.rmtree(tmp)
+    print("TRAY_SHIFT =", {n: s for n, (_, s) in sorted(best.items())})
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="sv-win-")
     jobs, finals = [], []  # finals: (raw, final, w, h)
@@ -207,6 +228,12 @@ def main():
         sw, sh = px(620, sc), px(300, sc)
         add(tile_job(sw, sh, 0.50, ""), os.path.join(A, f"SplashScreen.scale-{sc}.png"))
 
+    # The master at small sizes, only for the comparison row in preview.png
+    cmp_dir = os.path.join(tmp, "compare")
+    for n in (16, 24, 32):
+        p = pad_for(n)
+        add(dict(w=n, h=n, scale=SS, html=icon_html(n, n, n - 2 * p, p, p)), os.path.join(cmp_dir, f"master-{n}.png"))
+
     # Tray
     T = os.path.join(OUT, "tray")
     for n in TRAY_SIZES:
@@ -217,6 +244,12 @@ def main():
     for j in jobs:
         if j["w"] * j["h"] > 600 * 600:
             j["scale"] = 2 if j["w"] * j["h"] < 1500 * 700 else 1
+
+    # Reference copies of the generated glyphs at 32 px, for viewing.
+    with open(os.path.join(HERE, "small.svg"), "w") as f:
+        f.write(glyphs.small_svg(32, 32 - 2 * pad_for(32), pad_for(32)))
+    with open(os.path.join(HERE, "tray.svg"), "w") as f:
+        f.write(glyphs.tray_svg(32, "#000000"))
 
     if os.path.isdir(os.path.join(OUT, "msix")):
         shutil.rmtree(os.path.join(OUT, "msix"))
@@ -235,12 +268,15 @@ def main():
             os.path.join(T, f"super-voice-tray-{theme}-taskbar.ico"),
             {n: imgs[os.path.join(T, f"tray-{theme}-taskbar-{n}.png")] for n in TRAY_SIZES},
         )
-    shutil.rmtree(tmp)
     print(f"rendered {len(jobs)} images")
 
     # Contact sheet
-    subprocess.check_call([sys.executable, os.path.join(HERE, "preview.py")])
+    subprocess.check_call([sys.executable, os.path.join(HERE, "preview.py"), cmp_dir])
+    shutil.rmtree(tmp)
 
 
 if __name__ == "__main__":
-    main()
+    if "--tune-tray" in sys.argv:
+        tune_tray()
+    else:
+        main()

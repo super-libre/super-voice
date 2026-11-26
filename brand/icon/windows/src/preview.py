@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import subprocess
+import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -87,6 +88,45 @@ def section(title, body):
     return f'<h2 style="font:600 18px Segoe UI,sans-serif;margin:28px 0 10px">{title}</h2>{body}'
 
 
+def compare_section():
+    """Master vs small glyph at 16, 24 and 32 px: 1:1, magnified, and blurred."""
+    if len(sys.argv) < 2:
+        return ""
+    d = sys.argv[1]
+    from PIL import Image, ImageFilter
+    import io
+
+    def blurred(path, n):
+        im = Image.open(path).convert("RGBA")
+        bg = Image.new("RGBA", im.size, (243, 243, 243, 255))
+        bg.alpha_composite(im)
+        bg = bg.filter(ImageFilter.GaussianBlur(n / 32))
+        b = io.BytesIO()
+        bg.save(b, "PNG")
+        return "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
+
+    cells = []
+    for n in (16, 24, 32):
+        m = os.path.join(d, f"master-{n}.png")
+        g = os.path.join(OUT, "png", f"super-voice-{n}.png")
+        z = 6 if n < 32 else 5
+        cell = lambda src, cap, zoom: (
+            f'<div style="display:flex;flex-direction:column;align-items:center;gap:6px">'
+            f'<img src="{src}" width={n*zoom} height={n*zoom} style="image-rendering:{"pixelated" if zoom > 1 else "auto"}">{cap}</div>'
+        )
+        cells.append(
+            f'<div style="display:flex;gap:14px;align-items:flex-end;padding:12px;background:#f3f3f3;border-radius:8px;color:#5f5f5f;font:11px sans-serif">'
+            + cell(uri(m), "master", 1) + cell(uri(g), "glyph", 1)
+            + cell(uri(m), f"master {n}px", z) + cell(uri(g), f"glyph {n}px", z)
+            + cell(blurred(m, n), "master, blurred", z) + cell(blurred(g, n), "glyph, blurred", z)
+            + "</div>"
+        )
+    return section(
+        "Master vs small glyph at 16, 24 and 32 px (1:1, magnified, slightly blurred)",
+        '<div style="display:flex;flex-direction:column;gap:8px">' + "".join(cells) + "</div>",
+    )
+
+
 def main():
     row = lambda th: (
         f'<div style="display:flex;align-items:flex-end;gap:18px;padding:16px;background:{th["bg"]};border-radius:8px;color:{th["muted"]};font:11px sans-serif">'
@@ -137,6 +177,7 @@ def main():
         '<h1 style="font:700 26px Segoe UI,sans-serif;margin:0">Super Voice for Windows: icon preview</h1>'
         '<p style="font:13px sans-serif;color:#555;margin:6px 0 0">Every frame of super-voice.ico at 1:1. 16 to 32 px use the simplified glyph; 36 px and up use the master artwork.</p>'
         + section("super-voice.ico, every size, light and dark", row(LIGHT) + "<div style='height:8px'></div>" + row(DARK))
+        + compare_section()
         + section("Small sizes, magnified", zoom(LIGHT))
         + section("Taskbar at 100% (24 px) and tray (16 px)", taskbar(LIGHT, "light", 1) + "<div style='height:8px'></div>" + taskbar(DARK, "dark", 1))
         + section("Taskbar at 200% (48 px) and tray (32 px)", taskbar(LIGHT, "light", 2) + "<div style='height:8px'></div>" + taskbar(DARK, "dark", 2))
@@ -150,7 +191,7 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         jobs = os.path.join(d, "jobs.json")
         # Height is generous; the page is cropped to its content below.
-        json.dump([dict(out=os.path.join(d, "p.png"), w=1564, h=3600, scale=1, html=html)], open(jobs, "w"))
+        json.dump([dict(out=os.path.join(d, "p.png"), w=1564, h=4600, scale=1, html=html)], open(jobs, "w"))
         env = dict(os.environ)
         env["NODE_PATH"] = subprocess.check_output(["npm", "root", "-g"], text=True).strip()
         subprocess.check_call(["node", os.path.join(HERE, "render.js"), jobs], env=env)
