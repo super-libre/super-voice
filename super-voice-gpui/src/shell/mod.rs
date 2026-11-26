@@ -227,7 +227,9 @@ impl Shell {
             self.drawer_open = false;
             window.close_sheet(cx);
         }
-        if !self.shows_connection(cx) {
+        // Only while the daemon answers: a page that doesn't need it opens
+        // while it is down, and reads when it is back.
+        if !self.shared.connection.read(cx).is_down() {
             self.handle(page).reach_if_stale(window, cx);
         }
         self.handle(page).shown(window, cx);
