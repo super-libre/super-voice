@@ -172,8 +172,8 @@ def symbolic_path() -> str:
       straight hem between its two corners,
       kept 1 px clear of the mic.
 
-    The whole is turned to the 45 degree flight heading and fitted to the
-    16 px canvas with a 1 px margin.
+    The whole is stood upright (dome on top, cape hanging below) and
+    fitted to the 16 px canvas with a 1 px margin.
     """
     from shapely import affinity
     from shapely.geometry import Point, Polygon, box
@@ -187,19 +187,16 @@ def symbolic_path() -> str:
         return unary_union([back, box(60, cy - half, 335, cy + half), dome])
 
     # The cape fans back from the seam, as on the master's cape-00, and ends
-    # in a straight hem square to the flight axis, just short of the
-    # bottom-left corner. Only its first stretch (x >= CAPE_FIT) counts when
-    # centring the glyph, so the mic sits centred and large.
+    # in a straight hem square to the mic's axis.
     CAPE_HEM = -75  # the straight hem, square to the flight axis
     top = 52 + (CAPE_HEM + 140) * 0.34  # the flanks widen behind the seam
     cape = Polygon([(226, 176), (150, 140), (60, 104), (-40, 78), (CAPE_HEM, top),
                     (CAPE_HEM, 534 - top), (-40, 456), (60, 430), (150, 394), (226, 358)])
-    CAPE_FIT = -30
     cape = cape.buffer(10, quad_segs=6).buffer(-10, quad_segs=6)
 
     def fit(geoms, anchor, size=16, margin=1.0):
-        rot = [affinity.rotate(g, -45, origin=(256, 256)) for g in geoms]
-        minx, miny, maxx, maxy = affinity.rotate(anchor, -45, origin=(256, 256)).bounds
+        rot = [affinity.rotate(g, -90, origin=(256, 256)) for g in geoms]
+        minx, miny, maxx, maxy = affinity.rotate(anchor, -90, origin=(256, 256)).bounds
         k = (size - 2 * margin) / max(maxx - minx, maxy - miny)
         cx, cy_ = (minx + maxx) / 2, (miny + maxy) / 2
         return [affinity.affine_transform(
@@ -212,7 +209,7 @@ def symbolic_path() -> str:
         mic = solid.difference(box(226, 0, 226 + gap, 512))
         mic = mic.difference(Point(126, cy).buffer(52, quad_segs=16))
         wedge = cape.difference(solid.buffer(gap, quad_segs=8))
-        anchor = unary_union([mic, wedge.intersection(box(CAPE_FIT, -1000, 1000, 1000))])
+        anchor = unary_union([mic, wedge])
         (mic, wedge), k = fit([mic, wedge], anchor)
     wedge = wedge.intersection(box(0, 0, 16, 16))
 
