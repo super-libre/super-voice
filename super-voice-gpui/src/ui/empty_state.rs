@@ -4,7 +4,7 @@
 //! filled in the one way the app uses it.
 //!
 //! ```ignore
-//! EmptyState::new(IconName::Inbox, t("no-notes-yet")).description(t("no-notes-help")).action(record)
+//! EmptyState::new(Phosphor::Tray, t("no-notes-yet")).description(t("no-notes-help")).action(record)
 //! ```
 
 use gpui_kit::component::empty::{

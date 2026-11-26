@@ -6,7 +6,7 @@
 //! model loaded, red failed, grey no backend.
 //!
 //! ```ignore
-//! StatusPill::new(Dot::Green, t("ready")).icon(IconName::Mic)
+//! StatusPill::new(Dot::Green, t("ready")).icon(Phosphor::Microphone)
 //! ```
 
 use gpui_kit::component::{ActiveTheme as _, Icon, h_flex};

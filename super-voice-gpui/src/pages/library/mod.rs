@@ -21,7 +21,6 @@ mod add_sheet;
 mod inspector;
 mod table;
 
-use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Input as TextField, InputEvent, InputState};
@@ -30,8 +29,8 @@ use gpui_kit::component::progress::Progress;
 use gpui_kit::component::select::{Select, SelectEvent, SelectItem, SelectState};
 use gpui_kit::component::table::{DataTable, TableEvent, TableState};
 use gpui_kit::component::{
-    ActiveTheme as _, IconName, IndexPath, Placement, Selectable as _, Sizable as _, WindowExt,
-    h_flex, v_flex,
+    ActiveTheme as _, IndexPath, Placement, Selectable as _, Sizable as _, WindowExt, h_flex,
+    v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -63,6 +62,7 @@ use crate::ui::width::{self, Inspector};
 use crate::{t, t_with};
 
 use self::table::Rows;
+use crate::icons::Phosphor;
 
 /// The inspector's width beside the table, and as a sheet.
 const INSPECTOR: f32 = 340.;
@@ -308,12 +308,16 @@ impl PageView for LibraryPage {
             PaletteCommand::new(
                 "install-manually",
                 t("install-manually-progress"),
-                Lucide::PackagePlus,
+                Phosphor::Package,
             )
             .group(group.clone())
             .keywords([t("git-repository"), t("local-folder")]),
-            PaletteCommand::new("refresh-catalog", t("refresh-catalog"), IconName::RefreshCw)
-                .group(group.clone()),
+            PaletteCommand::new(
+                "refresh-catalog",
+                t("refresh-catalog"),
+                Phosphor::ArrowsClockwise,
+            )
+            .group(group.clone()),
         ];
         for row in self.all_rows() {
             if let Some(version) = &row.update_to {
@@ -324,7 +328,7 @@ impl PageView for LibraryPage {
                             "library-update-backend",
                             &[("backend", &row.name), ("version", version)],
                         ),
-                        Lucide::Download,
+                        Phosphor::DownloadSimple,
                     )
                     .group(group.clone()),
                 );
@@ -334,7 +338,7 @@ impl PageView for LibraryPage {
                     PaletteCommand::new(
                         format!("configure:{}", row.source),
                         t_with("library-configure-backend", &[("backend", &row.name)]),
-                        IconName::Settings,
+                        Phosphor::Gear,
                     )
                     .group(group.clone()),
                 );
@@ -343,7 +347,7 @@ impl PageView for LibraryPage {
                     PaletteCommand::new(
                         format!("install:{}", row.source),
                         t_with("install-backend", &[("value0", &row.name)]),
-                        Lucide::Download,
+                        Phosphor::DownloadSimple,
                     )
                     .group(group.clone())
                     .keywords(
@@ -724,7 +728,7 @@ impl LibraryPage {
             let cancel = this.clone();
             let closed = this.clone();
             alert
-                .icon(IconName::TriangleAlert)
+                .icon(gpui_kit::component::Icon::new(Phosphor::Warning))
                 .title(t_with("uninstall-backend-question", &[("backend", &name)]))
                 .description(body)
                 .ok_text(t("uninstall"))
@@ -826,11 +830,11 @@ impl LibraryPage {
         let this = cx.weak_entity();
         let padding = width::page_padding(window);
         let search = TextField::new(&self.search)
-            .prefix(gpui_kit::component::Icon::new(IconName::Search).small())
+            .prefix(gpui_kit::component::Icon::new(Phosphor::MagnifyingGlass).small())
             .cleanable(true);
         let refresh = Button::new("refresh")
             .ghost()
-            .icon(IconName::RefreshCw)
+            .icon(Phosphor::ArrowsClockwise)
             .tooltip(t("refresh-catalog"))
             .loading(self.registry.last_refresh.is_none() && !self.registry.backends.is_empty())
             .on_click(Self::press(
@@ -913,12 +917,12 @@ impl LibraryPage {
         let this = cx.weak_entity();
         Button::new("more")
             .ghost()
-            .icon(IconName::Ellipsis)
+            .icon(Phosphor::DotsThreeVertical)
             .tooltip(t("library-more"))
             .dropdown_menu(move |menu: PopupMenu, _, _| {
                 menu.item(
                     PopupMenuItem::new(t("install-manually-progress"))
-                        .icon(Lucide::PackagePlus)
+                        .icon(Phosphor::Package)
                         .on_click({
                             let this = this.clone();
                             move |_, window, cx| {
@@ -928,7 +932,7 @@ impl LibraryPage {
                 )
                 .item(
                     PopupMenuItem::new(t("refresh-catalog"))
-                        .icon(IconName::RefreshCw)
+                        .icon(Phosphor::ArrowsClockwise)
                         .on_click(Self::press(
                             &this,
                             Msg::Library(Input::Refresh { index: true }),
@@ -950,7 +954,7 @@ impl LibraryPage {
             t_with("library-filters-count", &[("count", &set.to_string())])
         };
         let button = Button::new("filters")
-            .icon(Lucide::ListFilter)
+            .icon(Phosphor::FunnelSimple)
             .selected(set > 0)
             .tooltip(label.clone());
         let button = if icon_only {
@@ -1076,12 +1080,12 @@ impl LibraryPage {
     fn nothing(&self, cx: &mut Context<Self>) -> AnyElement {
         let this = cx.weak_entity();
         if !page::filtered(&self.registry) {
-            return EmptyState::new(Lucide::LibraryBig, t("library-empty-title"))
+            return EmptyState::new(Phosphor::Books, t("library-empty-title"))
                 .description(t("library-empty-body"))
                 .action(Self::install_manually_button(cx))
                 .into_any_element();
         }
-        EmptyState::new(IconName::Search, t("library-no-match-title"))
+        EmptyState::new(Phosphor::MagnifyingGlass, t("library-no-match-title"))
             .description(t("no-backends-match-your-search-try-clearing"))
             .action(
                 Button::new("clear-filters")
@@ -1111,7 +1115,7 @@ impl LibraryPage {
         let this = cx.weak_entity();
         Button::new("install-manually")
             .outline()
-            .icon(Lucide::PackagePlus)
+            .icon(Phosphor::Package)
             .label(t("install-manually-progress"))
             .on_click(move |_, window, cx| {
                 _ = this.update(cx, |page, cx| page.open_add(window, cx));
@@ -1371,7 +1375,7 @@ impl LibraryPage {
                 .justify_center()
                 .p_4()
                 .child(
-                    EmptyState::new(Lucide::LibraryBig, t("library-nothing-picked"))
+                    EmptyState::new(Phosphor::Books, t("library-nothing-picked"))
                         .description(t("library-nothing-picked-body")),
                 )
                 .into_any_element(),

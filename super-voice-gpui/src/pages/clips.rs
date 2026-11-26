@@ -11,7 +11,6 @@
 
 use std::time::Duration;
 
-use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::dialog::AlertDialog;
 use gpui_kit::component::group_box::{GroupBox, GroupBoxVariants as _};
@@ -21,7 +20,7 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
+    ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -38,6 +37,7 @@ use super_voice_app_core::state::VoiceState;
 use super_voice_app_core::state::clips::{ClipsState, Playing};
 
 use crate::effects::{self, CorePage, Runner, runner};
+use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand, SidebarMark};
 use crate::shared::Shared;
 use crate::ui::empty_state::EmptyState;
@@ -187,11 +187,11 @@ impl PageView for ClipsPage {
     fn commands(&self, _: &App) -> Vec<PaletteCommand> {
         let feature = t("text-to-speech");
         let mut commands = vec![
-            PaletteCommand::new("new-clip", t("new-clip"), IconName::Plus).detail(feature.clone()),
+            PaletteCommand::new("new-clip", t("new-clip"), Phosphor::Plus).detail(feature.clone()),
         ];
         if self.state.playing.is_some() {
             commands.push(
-                PaletteCommand::new("stop-clip", t("stop-the-clip"), IconName::Square)
+                PaletteCommand::new("stop-clip", t("stop-the-clip"), Phosphor::Stop)
                     .detail(feature),
             );
         }
@@ -200,7 +200,7 @@ impl PageView for ClipsPage {
             PaletteCommand::new(
                 format!("clip:{}", clip.id),
                 page::first_line(&clip.text, ROW_CHARS),
-                Lucide::FileVolume,
+                Phosphor::FileAudio,
             )
             .group(group.clone())
             .keywords([SharedString::from(clip.text.clone())])
@@ -555,7 +555,7 @@ impl ClipsPage {
                 .justify_center()
                 .p_4()
                 .child(
-                    EmptyState::new(Lucide::FileVolume, t("no-clips-yet"))
+                    EmptyState::new(Phosphor::FileAudio, t("no-clips-yet"))
                         .description(t("each-clip-you-make-shows-here")),
                 )
                 .into_any_element();
@@ -606,9 +606,9 @@ impl ClipsPage {
     ) -> ListItem {
         let playing = self.state.is_playing_on(&clip.id);
         let icon = if playing {
-            Lucide::Volume2
+            Phosphor::SpeakerHigh
         } else {
-            Lucide::FileVolume
+            Phosphor::FileAudio
         };
         let id = clip.id.clone();
         ListItem::new(SharedString::from(format!("clip-{}", clip.id)))
@@ -657,7 +657,7 @@ impl ClipsPage {
 
     fn new_clip_button(cx: &mut Context<Self>) -> Button {
         Button::new("new-clip")
-            .icon(IconName::Plus)
+            .icon(Phosphor::Plus)
             .label(t("new-clip"))
             .on_click(cx.listener(|this, _, window, cx| this.compose(window, cx)))
     }
@@ -751,7 +751,7 @@ impl ClipsPage {
             .child(
                 Button::new("clip-more")
                     .ghost()
-                    .icon(IconName::Ellipsis)
+                    .icon(Phosphor::DotsThreeVertical)
                     .accessibility_label(t("clip-actions"))
                     .tooltip(t("clip-actions"))
                     .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
@@ -759,7 +759,7 @@ impl ClipsPage {
                         let id = menu_id.clone();
                         menu.item(
                             PopupMenuItem::new(t("delete-clip-ellipsis"))
-                                .icon(IconName::Delete)
+                                .icon(Phosphor::Trash)
                                 .on_click(move |_, window, cx| {
                                     let id = id.clone();
                                     _ = weak.update(cx, |this, cx| {
@@ -786,7 +786,7 @@ impl ClipsPage {
         let play = if playing.is_some_and(|p| p.paused) {
             Button::new("resume-clip")
                 .primary()
-                .icon(IconName::Play)
+                .icon(Phosphor::Play)
                 .accessibility_label(t("play"))
                 .tooltip(t("play"))
                 .on_click(cx.listener(|this, _, window, cx| {
@@ -795,7 +795,7 @@ impl ClipsPage {
         } else if playing.is_some() {
             Button::new("pause-clip")
                 .primary()
-                .icon(IconName::Pause)
+                .icon(Phosphor::Pause)
                 .accessibility_label(t("pause"))
                 .tooltip(t("pause"))
                 // Nothing to pause until its audio is read.
@@ -807,7 +807,7 @@ impl ClipsPage {
             let id = clip.id.clone();
             Button::new("play-clip")
                 .primary()
-                .icon(IconName::Play)
+                .icon(Phosphor::Play)
                 .accessibility_label(t("play"))
                 .tooltip(t("play"))
                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -818,7 +818,7 @@ impl ClipsPage {
         let stop = playing.is_some().then(|| {
             Button::new("stop-clip")
                 .ghost()
-                .icon(IconName::Square)
+                .icon(Phosphor::Stop)
                 .accessibility_label(t("stop"))
                 .tooltip(t("stop"))
                 .on_click(cx.listener(|this, _, window, cx| {

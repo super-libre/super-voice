@@ -14,7 +14,6 @@
 
 use std::time::Duration;
 
-use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::alert::Alert;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::group_box::{GroupBox, GroupBoxVariants as _};
@@ -23,8 +22,7 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::select::{SearchableVec, Select, SelectEvent, SelectItem, SelectState};
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, IconName, IndexPath, Sizable as _, WindowExt as _, h_flex,
-    v_flex,
+    ActiveTheme as _, Disableable as _, IndexPath, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -42,6 +40,7 @@ use super_voice_app_core::state::voices::{SampleOrigin, ScriptChoice, VoicesStat
 use super_voice_shared::tts::models::voices::VoiceInfo;
 
 use crate::effects::{self, CorePage, Runner, runner};
+use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand, SidebarMark};
 use crate::shared::Shared;
 use crate::ui::page_header::PageHeader;
@@ -245,19 +244,19 @@ impl PageView for VoicesPage {
         let feature = t("text-to-speech");
         if self.state.is_recording() {
             return vec![
-                PaletteCommand::new(
-                    "stop-recording",
-                    t("voices-stop-recording"),
-                    IconName::Square,
-                )
-                .detail(feature),
+                PaletteCommand::new("stop-recording", t("voices-stop-recording"), Phosphor::Stop)
+                    .detail(feature),
             ];
         }
         vec![
-            PaletteCommand::new("record-voice", t("record-a-voice"), Lucide::Mic)
+            PaletteCommand::new("record-voice", t("record-a-voice"), Phosphor::Microphone)
                 .detail(feature.clone()),
-            PaletteCommand::new("import-voice", t("import-a-wav-file"), Lucide::Upload)
-                .detail(feature),
+            PaletteCommand::new(
+                "import-voice",
+                t("import-a-wav-file"),
+                Phosphor::UploadSimple,
+            )
+            .detail(feature),
         ]
     }
 
@@ -649,7 +648,7 @@ impl VoicesPage {
                     .child(
                         Button::new("record-voice")
                             .primary()
-                            .icon(Lucide::Mic)
+                            .icon(Phosphor::Microphone)
                             .label(t("record"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.send(In::Voices(page::Input::StartRecording), window, cx);
@@ -725,7 +724,7 @@ impl VoicesPage {
                     .child(
                         Button::new("stop-recording")
                             .danger()
-                            .icon(IconName::Square)
+                            .icon(Phosphor::Stop)
                             .label(t("stop"))
                             .on_click(cx.listener(|this, _, window, cx| {
                                 let language = this.language.clone();
@@ -788,7 +787,7 @@ impl VoicesPage {
                     .gap_2()
                     .items_center()
                     .child(
-                        gpui_kit::component::Icon::new(Lucide::AudioLines)
+                        gpui_kit::component::Icon::new(Phosphor::Waveform)
                             .small()
                             .text_color(muted),
                     )
@@ -987,7 +986,7 @@ impl VoicesPage {
                 Button::new(SharedString::from(format!("preview-{}", voice.id)))
                     .small()
                     .outline()
-                    .icon(IconName::Play)
+                    .icon(Phosphor::Play)
                     .label(if busy {
                         t("preparing-progress")
                     } else {
@@ -1031,7 +1030,7 @@ impl VoicesPage {
             Button::new(SharedString::from(format!("voice-more-{}", voice.id)))
                 .small()
                 .ghost()
-                .icon(IconName::Ellipsis)
+                .icon(Phosphor::DotsThreeVertical)
                 .accessibility_label(t("voice-actions"))
                 .tooltip(t("voice-actions"))
                 .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
@@ -1039,7 +1038,7 @@ impl VoicesPage {
                     let id = id.clone();
                     menu.item(
                         PopupMenuItem::new(t("delete-voice-ellipsis"))
-                            .icon(IconName::Delete)
+                            .icon(Phosphor::Trash)
                             .on_click(move |_, window, cx| {
                                 let id = id.clone();
                                 _ = weak.update(cx, |this, cx| {
@@ -1061,7 +1060,7 @@ impl Render for VoicesPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let padding = width::page_padding(window);
         let import = Button::new("import-voice")
-            .icon(Lucide::Upload)
+            .icon(Phosphor::UploadSimple)
             .label(t("import-a-wav-file"))
             .disabled(self.state.is_recording() || self.state.saving)
             .on_click(cx.listener(|this, _, window, cx| {

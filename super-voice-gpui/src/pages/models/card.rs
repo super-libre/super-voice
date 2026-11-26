@@ -11,15 +11,12 @@
 //! is dashed, says what the step is for, and offers the installed backends
 //! that fill it, or the Library.
 
-use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::select::Select;
 use gpui_kit::component::tag::Tag;
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, h_flex, v_flex,
-};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     Anchor, AnyElement, App, Context, FontWeight, IntoElement, ParentElement as _, Pixels,
@@ -40,6 +37,7 @@ use super::pickers::{Choice, PickerKey, Pickers};
 use super::words::{self, Progress as Shows};
 use super::{In, ModelsPage};
 use crate::effects::CorePage as _;
+use crate::icons::Phosphor;
 use crate::pages::Page;
 use crate::ui::card::Card;
 use crate::ui::status::StatusPill;
@@ -53,9 +51,9 @@ const COMPACT_CARD: Pixels = px(400.);
 /// The icon of a step's mark.
 pub fn stage_icon(stage: Stage) -> Icon {
     match stage {
-        Stage::Transcription => Lucide::AudioLines.into(),
-        Stage::PostProcessing => Lucide::WandSparkles.into(),
-        Stage::Synthesis => Lucide::Volume2.into(),
+        Stage::Transcription => Phosphor::Waveform.into(),
+        Stage::PostProcessing => Phosphor::MagicWand.into(),
+        Stage::Synthesis => Phosphor::SpeakerHigh.into(),
     }
 }
 
@@ -220,7 +218,7 @@ fn warning(text: SharedString, cx: &App) -> AnyElement {
         .items_start()
         .text_sm()
         .child(
-            Icon::new(IconName::TriangleAlert)
+            Icon::new(Phosphor::Warning)
                 .size_4()
                 .flex_shrink_0()
                 .mt_0p5()
@@ -406,13 +404,13 @@ impl ModelsPage {
                     .into_any_element()
             };
             if backend_is_online(backend) {
-                tags.push(tag(Lucide::Cloud.into(), t("cloud")));
+                tags.push(tag(Phosphor::Cloud.into(), t("cloud")));
             } else {
                 if compute.gpu {
-                    tags.push(tag(Lucide::Microchip.into(), t("chip-gpu")));
+                    tags.push(tag(Phosphor::GraphicsCard.into(), t("chip-gpu")));
                 }
                 if compute.cpu {
-                    tags.push(tag(IconName::Cpu.into(), t("chip-cpu")));
+                    tags.push(tag(Phosphor::Cpu.into(), t("chip-cpu")));
                 }
             }
         }
@@ -448,7 +446,7 @@ impl ModelsPage {
             .collect();
         Button::new(SharedString::from(format!("more-{stage}")))
             .small()
-            .icon(IconName::Ellipsis)
+            .icon(Phosphor::DotsThreeVertical)
             .accessibility_label(t_with(
                 "step-more-actions",
                 &[("step", &words::stage_name(stage))],
@@ -459,7 +457,7 @@ impl ModelsPage {
                     let page = page.clone();
                     menu = menu.item(
                         PopupMenuItem::new(t("reload-this-model"))
-                            .icon(IconName::RotateCw)
+                            .icon(Phosphor::ArrowClockwise)
                             .on_click(move |_, window, cx| {
                                 _ = page.update(cx, |page, cx| {
                                     page.send(
@@ -477,7 +475,7 @@ impl ModelsPage {
                     let others = others.clone();
                     let page = page.clone();
                     menu = menu.submenu_with_icon(
-                        Some(IconName::ArrowRight.into()),
+                        Some(Phosphor::ArrowRight.into()),
                         t("switch-to-backend"),
                         window,
                         cx,
@@ -497,7 +495,7 @@ impl ModelsPage {
                                         });
                                     });
                                 menu.item(if *online {
-                                    item.icon(Lucide::Cloud)
+                                    item.icon(Phosphor::Cloud)
                                 } else {
                                     item
                                 })
@@ -508,13 +506,13 @@ impl ModelsPage {
                 let nav = nav.clone();
                 menu = menu.item(
                     PopupMenuItem::new(t("show-in-library"))
-                        .icon(Lucide::LibraryBig)
+                        .icon(Phosphor::Books)
                         .on_click(move |_, window, cx| nav.go(Page::Library, window, cx)),
                 );
                 let page = page.clone();
                 menu.separator().item(
                     PopupMenuItem::new(t("deselect-this-backend"))
-                        .icon(IconName::Close)
+                        .icon(Phosphor::X)
                         .disabled(!free)
                         .on_click(move |_, window, cx| {
                             _ = page.update(cx, |page, cx| {
@@ -569,7 +567,7 @@ impl ModelsPage {
         }
         let button = match &card.shown {
             Shown::Running { .. } => Button::new(SharedString::from(format!("unload-{stage}")))
-                .icon(IconName::Square)
+                .icon(Phosphor::Stop)
                 .label(t("unload"))
                 .disabled(card.busy)
                 .on_click(cx.listener(move |page, _, window, cx| {
@@ -577,7 +575,7 @@ impl ModelsPage {
                 })),
             _ => Button::new(SharedString::from(format!("load-{stage}")))
                 .primary()
-                .icon(IconName::Play)
+                .icon(Phosphor::Play)
                 .label(t("load-model"))
                 .disabled(!card.can_load)
                 .on_click(cx.listener(move |page, _, window, cx| {
@@ -627,7 +625,7 @@ impl ModelsPage {
         let nav = self.shared.nav.clone();
         let library = Button::new(SharedString::from(format!("library-{stage}")))
             .small()
-            .icon(Lucide::LibraryBig)
+            .icon(Phosphor::Books)
             .label(t("open-library"))
             .on_click(move |_, window, cx| nav.go(Page::Library, window, cx));
         let library = if installed { library.ghost() } else { library };
@@ -650,7 +648,7 @@ impl ModelsPage {
                                 });
                             });
                         menu.item(if *online {
-                            item.icon(Lucide::Cloud)
+                            item.icon(Phosphor::Cloud)
                         } else {
                             item
                         })
@@ -948,7 +946,7 @@ fn progress(
             .items_start()
             .text_sm()
             .child(
-                Icon::new(IconName::CircleX)
+                Icon::new(Phosphor::XCircle)
                     .size_4()
                     .flex_shrink_0()
                     .mt_0p5()

@@ -17,9 +17,7 @@ use gpui_kit::component::input::{Input as TextInput, InputEvent, InputState};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::slider::{Slider, SliderEvent, SliderState};
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, IconName, IndexPath, h_flex, v_flex,
-};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, IndexPath, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
@@ -35,6 +33,7 @@ use super_voice_app_core::state::{AudioTheme, Microphone};
 use super_voice_shared::models::write_method::WriteMethod;
 
 use crate::effects::{self, CorePage, Runner, runner};
+use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand, take};
 use crate::shared::Shared;
 use crate::ui::page_header::PageHeader;
@@ -158,7 +157,7 @@ impl PageView for BehaviorPage {
         vec![PaletteCommand::new(
             "test-recording",
             t("test-recording"),
-            IconName::Mic,
+            Phosphor::Microphone,
         )]
     }
 
@@ -637,7 +636,7 @@ impl BehaviorPage {
         let record = if testing {
             Button::new("test-recording")
                 .danger()
-                .icon(IconName::Square)
+                .icon(Phosphor::Stop)
                 .label(t("stop-recording"))
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.send_test(test::Input::Stop, window, cx);
@@ -645,7 +644,7 @@ impl BehaviorPage {
         } else {
             Button::new("test-recording")
                 .primary()
-                .icon(IconName::Mic)
+                .icon(Phosphor::Microphone)
                 .label(t("test-recording"))
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.send_test(test::Input::Start, window, cx);

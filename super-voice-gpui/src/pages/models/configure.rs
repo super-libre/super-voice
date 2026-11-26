@@ -17,7 +17,7 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::select::Select;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
+    ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -35,6 +35,7 @@ use super_voice_shared::models::contexts::DictationContext;
 use super::pickers::{Choice, PickerKey};
 use super::{In, ModelsPage};
 use crate::effects::{CorePage as _, Runner, runner};
+use crate::icons::Phosphor;
 use crate::ui::settings_row::SettingsRow;
 use crate::ui::width::{self, WindowSize};
 use crate::{t, t_with};
@@ -507,7 +508,7 @@ impl ModelsPage {
                                 .text_sm()
                                 .text_color(cx.theme().muted_foreground)
                                 .child(
-                                    gpui_kit::component::Icon::new(IconName::Check)
+                                    gpui_kit::component::Icon::new(Phosphor::Check)
                                         .size_4()
                                         .text_color(cx.theme().success),
                                 )

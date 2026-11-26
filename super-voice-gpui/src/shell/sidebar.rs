@@ -18,7 +18,7 @@ use gpui_kit::component::sidebar::{
     Sidebar, SidebarCollapsible, SidebarHeader, SidebarItem, SidebarMenu, SidebarMenuItem,
 };
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{ActiveTheme as _, Collapsible, Icon, IconName, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Collapsible, Icon, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, ElementId, FontWeight, InteractiveElement as _, IntoElement,
@@ -29,6 +29,7 @@ use super_voice_app_core::pages::readiness::{Feature, Readiness};
 
 use super::{Shell, version};
 use crate::assets::APP_ICON;
+use crate::icons::Phosphor;
 use crate::pages::{Page, Section, SidebarMark};
 use crate::t;
 use crate::ui::status::{Dot, StatusPill, dot_color};
@@ -188,7 +189,7 @@ pub fn palette_field(id: &'static str, shell: WeakEntity<Shell>, cx: &App) -> Bu
                 .gap_2()
                 .items_center()
                 .text_color(muted)
-                .child(Icon::new(IconName::Search).size_3p5())
+                .child(Icon::new(Phosphor::MagnifyingGlass).size_3p5())
                 .child(div().flex_1().child(t("go-to-or-run")))
                 .child(Kbd::new(
                     Keystroke::parse(super::PALETTE_KEYS).expect("the palette's keys"),

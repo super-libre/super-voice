@@ -15,9 +15,7 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, IconName, Sizable as _, h_flex, v_flex,
-};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, InteractiveElement as _, IntoElement,
@@ -30,6 +28,7 @@ use super_voice_app_core::state::update::{RunPhase, UpdateNotice, UpdateRun, Upd
 use super_voice_app_core::updater;
 
 use crate::effects::{self, CorePage, Runner, runner};
+use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand, SidebarMark};
 use crate::runtime;
 use crate::shared::{Navigator, Shared};
@@ -88,7 +87,7 @@ impl PageView for UpdatesPage {
             commands.push(PaletteCommand::new(
                 "check",
                 t("check-for-updates"),
-                IconName::RefreshCw,
+                Phosphor::ArrowsClockwise,
             ));
         }
         if self.state.can_start_update()
@@ -97,7 +96,7 @@ impl PageView for UpdatesPage {
             commands.push(PaletteCommand::new(
                 "update",
                 t_with("update-to-tag", &[("tag", &tag)]),
-                IconName::ArrowDown,
+                Phosphor::DownloadSimple,
             ));
         }
         commands
@@ -334,7 +333,7 @@ impl UpdatesPage {
             .action(
                 Button::new("check-now")
                     .small()
-                    .icon(IconName::RefreshCw)
+                    .icon(Phosphor::ArrowsClockwise)
                     .label(if self.state.checking {
                         t("checking-progress")
                     } else {
@@ -426,7 +425,7 @@ impl UpdatesPage {
         let row = SettingsRow::new(t_with("update-ready-to-install", &[("tag", tag)])).control(
             Button::new("start-update")
                 .primary()
-                .icon(IconName::ArrowDown)
+                .icon(Phosphor::DownloadSimple)
                 .label(t_with("update-to-tag", &[("tag", tag)]))
                 .disabled(!can_start)
                 .on_click(Self::press(Input::StartUpdate, cx)),
@@ -499,7 +498,7 @@ impl UpdatesPage {
                     SettingsRow::new(t("restart-super-voice-to-finish-the-update")).control(
                         Button::new("restart")
                             .primary()
-                            .icon(IconName::RotateCw)
+                            .icon(Phosphor::ArrowClockwise)
                             .label(t("restart"))
                             .on_click(cx.listener(|this, _, _, cx| this.restart(cx))),
                     ),
@@ -601,7 +600,7 @@ fn command_line(command: String, cx: &App) -> impl IntoElement + use<> {
         .child(code_line(command.into(), cx))
         .child(
             Button::new("copy-install-command")
-                .icon(IconName::Copy)
+                .icon(Phosphor::Copy)
                 .tooltip(t("copy-command"))
                 .on_click(move |_, _, cx| {
                     cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
