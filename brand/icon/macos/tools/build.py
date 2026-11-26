@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Builds every macOS icon file in brand/icon/macos/ from the master SVG and
-the layer SVGs in .claude/skills/icon-animation/layers/.
+the layer SVGs in .claude/skills/super-voice-icon/layers/.
 
 Runs on Linux: SVG is drawn by headless Chromium (render.mjs, Playwright),
 the menu bar glyph is built with shapely,
@@ -9,7 +9,8 @@ everything else is Pillow, and the .icns is written by hand (write_icns).
 
     python3 brand/icon/macos/tools/build.py
 
-See ../NOTES.md for the grid, the sizes and why each file exists.
+See .claude/skills/super-voice-icon/reference/macos.md for the grid, the sizes and
+why each file exists.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE.parent  # brand/icon/macos
 REPO = OUT.parents[2]
 MASTER = REPO / "brand/icon/master/super-voice-icon.svg"
-LAYERS = REPO / ".claude/skills/icon-animation/layers"
+LAYERS = REPO / ".claude/skills/super-voice-icon/layers"
 RENDER = HERE / "render.mjs"
 
 # Apple's macOS app icon grid (Big Sur and later, still what a legacy .icns

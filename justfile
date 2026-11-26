@@ -647,7 +647,7 @@ macos-swift-shot out scene="notes": (macos-swift-app "debug")
 # brand/icon/macos/tools/build.py makes it from the master SVG, already on
 # Apple's 1024 grid, with simplified art at 16 and 32 px. AppKit's own SVG
 # reader can't draw the icon's filters, so rendering it here would differ.
-# See brand/icon/macos/NOTES.md.
+# See .claude/skills/super-voice-icon/reference/macos.md.
 [private]
 macos-icon out:
     cp brand/icon/macos/AppIcon.icns "{{ out }}"

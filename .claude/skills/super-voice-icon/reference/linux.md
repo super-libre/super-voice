@@ -1,5 +1,9 @@
 # Super Voice Linux icon set
 
+> Research for the Linux icon files. File paths in this note are relative to `brand/icon/linux/`, where the generated files and the build script live.
+> **Updated since this research:** the symbolic icon is no longer traced separately. It is the shared small icon, drawn by `menubar_svg` in `brand/icon/macos/tools/build.py` (cut for 2x so the S shows on HiDPI panels). Sections below that describe its earlier geometry are history.
+
+
 The Linux (freedesktop hicolor) icons for the settings app, built from
 `brand/icon/master/super-voice-icon.svg`: the caped desk USB mic flying at
 45° through orange-to-coral glass bands, with the pop roundel S.

@@ -1,7 +1,7 @@
 """Small-size versions of the Super Voice icon, built from the real layers.
 
 Both glyphs are made from the same geometry as the master: the layer SVGs in
-.claude/skills/icon-animation/layers/. Nothing is redrawn by hand, so the
+.claude/skills/super-voice-icon/layers/. Nothing is redrawn by hand, so the
 small icon and the 256 px icon are the same picture.
 
 small_svg(n, tile)  the colour icon for 16-32 px. The ground, glass bands,
@@ -24,7 +24,7 @@ import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.normpath(os.path.join(HERE, "..", "..", "..", ".."))
-LAYERS = os.path.join(REPO, ".claude", "skills", "icon-animation", "layers")
+LAYERS = os.path.join(REPO, ".claude", "skills", "super-voice-icon", "layers")
 
 # The ink group's frame, from mic.svg / cape-00.svg / emblem.svg:
 #   rotate(5 238 290) translate(238 290) rotate(40) scale(1.3216)

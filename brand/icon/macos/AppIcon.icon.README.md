@@ -19,7 +19,7 @@ well-prepared starting point and check it on a Mac.
 | Glass bands | `2-band-near.svg` (opacity 0.78), `1-band-far.svg` (opacity 0.88) | Liquid Glass on, translucency 0.4, chromatic (layer-color) shadow |
 | Background (the document fill) | none | `automatic-gradient` from orange `#f27b28`; a dark specialization of ember brown `#3a1c10` |
 
-This is the grouping the icon-animation skill recommends: ground, bands, ink,
+This is the grouping the super-voice-icon skill recommends: ground, bands, ink,
 then emblem. That makes three groups plus the fill, within Apple's limit of
 four groups.
 
@@ -29,7 +29,7 @@ The layers follow Apple's preparation rules:
 - The ground is not imported. Icon Composer draws the fill.
 - The `light` layer (a soft top-left highlight) is left out, because Liquid Glass adds its own specular highlight.
 - The bands' drop-shadow filter and layer opacity are removed. Opacity is set in `icon.json` instead.
-- The ink layers and the emblem are lossless PNGs, not SVGs. They use patterns and clip paths that Icon Composer may not import. Apple says to use PNG for SVG features it doesn't support. The vector originals are in `.claude/skills/icon-animation/layers/`.
+- The ink layers and the emblem are lossless PNGs, not SVGs. They use patterns and clip paths that Icon Composer may not import. Apple says to use PNG for SVG features it doesn't support. The vector originals are in `.claude/skills/super-voice-icon/layers/`.
 - `tools/build.py` regenerates everything here. Edits made in Icon Composer are lost if you run it again, so copy them back into `build.py` (`write_icon_composer`) or stop regenerating the package.
 
 ## Still to do on a Mac (Xcode 26 or later, or the standalone Icon Composer)
@@ -40,4 +40,4 @@ The layers follow Apple's preparation rules:
 4. **Check each appearance:** Default, Dark, and Mono (clear light, clear dark, tinted light, tinted dark). Compare Dark and Tinted with `variants/AppIcon-dark-1024.png` and `variants/AppIcon-tinted-1024.png`. In Mono, the ink group may need its fill set to automatic or white so the mic doesn't go flat grey.
 5. **Decide on the comic shadow.** Decide whether to keep the hard comic shadow (`3-shadow.png`). Icon Composer adds its own shadow at group level, so hide the layer if the two together look doubled.
 6. **Try Liquid Glass on the ink.** Try `glass: true` on the mic. If the specular edge reads well on the black outline, keep it.
-7. **Save and compile.** Save, then compile `Assets.car` (see `NOTES.md`, "Wiring the Tahoe icon in later").
+7. **Save and compile.** Save, then compile `Assets.car` (see `.claude/skills/super-voice-icon/reference/macos.md`, "Wiring the Tahoe icon in later").

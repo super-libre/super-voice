@@ -1,8 +1,11 @@
 # macOS icon: notes
 
+> Research for the macOS icon files. File paths in this note are relative to `brand/icon/macos/`, where the generated files and the build script live.
+
+
 These files are the macOS app icon, its appearances, its Icon Composer source,
 and the menu bar template, all built from `brand/icon/master/super-voice-icon.svg`
-and the layers in `.claude/skills/icon-animation/layers/`.
+and the layers in `.claude/skills/super-voice-icon/layers/`.
 
 Regenerate everything with:
 
