@@ -164,7 +164,7 @@ def symbolic_path() -> str:
 
     - capsule y 172..362 (half-width 95), flat bottom at x 9 with small
       rounded corners, mesh dome a half circle from x 335 to 430;
-    - seam band at x 226, cut as a 1 px gap;
+    - no seam gap: the mic is one solid body;
     - no side knobs: at panel sizes the clean capsule reads better;
     - the S roundel centred at (126, 267) on the housing, cut out as a
       round hole (an S does not fit at 16 px);
@@ -207,7 +207,7 @@ def symbolic_path() -> str:
     for _ in range(3):
         gap = 1.0 / k  # 1 px, in master units
         solid = capsule()
-        mic = solid.difference(box(226, 0, 226 + gap, 512))
+        mic = solid  # no seam gap: the mic reads as one solid body
         mic = mic.difference(Point(126, cy).buffer(52, quad_segs=16))
         wedge = cape.difference(solid.buffer(gap, quad_segs=8))
         anchor = unary_union([mic, wedge])
