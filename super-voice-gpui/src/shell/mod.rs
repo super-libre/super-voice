@@ -123,6 +123,12 @@ const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 /// daemon answers is a new subscription, not the first one.
 const RESUBSCRIBED_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
 
+/// How far apart the pages left behind when the daemon answers read, one at
+/// a time: all of them within a few seconds, so the palette offers every
+/// page's commands, with none of the burst the daemon refuses (600 requests
+/// a minute for one client; a Models page alone makes a dozen).
+const CATCH_UP_EVERY: std::time::Duration = std::time::Duration::from_millis(400);
+
 /// The window was asked to close, and waits for these pages to finish.
 struct Closing {
     waiting: Vec<Page>,
@@ -154,6 +160,8 @@ pub struct Shell {
     closing: Option<Closing>,
     /// When the pages were last told the daemon answers.
     reached_at: Option<Instant>,
+    /// Reads the pages left behind, one at a time.
+    catch_up: Option<gpui_kit::Task<()>>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -215,6 +223,7 @@ impl Shell {
             drawer_open: false,
             closing: None,
             reached_at: None,
+            catch_up: None,
             focus,
             _subscriptions: subscriptions,
         }
@@ -237,7 +246,8 @@ impl Shell {
     }
 
     /// The daemon answers, first or again: the page shown and the pages the
-    /// sidebar marks read now, the others when they are next shown.
+    /// sidebar marks read now, the others one at a time after them, or when
+    /// they are shown if that comes first.
     fn reach_pages(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.reached_at = Some(Instant::now());
         for (page, handle) in &self.pages {
@@ -247,6 +257,31 @@ impl Shell {
                 handle.mark_stale();
             }
         }
+        self.catch_up = Some(cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor().timer(CATCH_UP_EVERY).await;
+                let more = this.update_in(cx, |shell, window, cx| {
+                    // Down again: what is left reads when it is back.
+                    if shell.shared.connection.read(cx).is_down() {
+                        return false;
+                    }
+                    let next = pages::next_to_catch_up(
+                        shell
+                            .pages
+                            .iter()
+                            .map(|(page, handle)| (*page, handle.is_stale())),
+                    );
+                    let Some(page) = next else {
+                        return false;
+                    };
+                    shell.handle(page).clone().reached(window, cx);
+                    true
+                });
+                if !matches!(more, Ok(true)) {
+                    return;
+                }
+            }
+        }));
     }
 
     /// The window is asked to close: `true` when it may close now. A page

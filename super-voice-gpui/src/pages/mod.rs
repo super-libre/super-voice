@@ -19,8 +19,10 @@
 //!
 //! Only the page on screen, and those whose mark the sidebar shows
 //! ([`Page::reads_while_hidden`]), read when the daemon answers; the others
-//! read when they are next shown. Fourteen pages asking at once is more than
-//! the daemon lets one client ask in a moment.
+//! read one at a time after them, a moment apart ([`next_to_catch_up`]), or
+//! at once if shown before their turn. Fourteen pages asking at once is more
+//! than the daemon lets one client ask in a moment, and a page that hasn't
+//! read offers the palette none of its commands.
 
 mod about;
 mod assistants;
@@ -263,6 +265,13 @@ impl PageHandle {
         self.stale.set(true);
     }
 
+    /// Whether the daemon answered while the page was hidden, and it hasn't
+    /// read since.
+    #[must_use]
+    pub fn is_stale(&self) -> bool {
+        self.stale.get()
+    }
+
     /// Read from the daemon, if it answered while the page was hidden.
     pub fn reach_if_stale(&self, window: &mut Window, cx: &mut App) {
         if self.stale.get() {
@@ -367,6 +376,14 @@ impl<T: PageView> PageCalls for Entity<T> {
     fn pretend(&self, scenes: &[&str], window: &mut Window, cx: &mut App) {
         self.update(cx, |page, cx| page.pretend(scenes, window, cx));
     }
+}
+
+/// The page to read next among those left behind when the daemon answered:
+/// the first still waiting, in the sidebar's order.
+pub fn next_to_catch_up(pages: impl IntoIterator<Item = (Page, bool)>) -> Option<Page> {
+    pages
+        .into_iter()
+        .find_map(|(page, stale)| stale.then_some(page))
 }
 
 /// A heading in the sidebar.
@@ -588,6 +605,41 @@ mod tests {
         for page in Page::ALL {
             assert_eq!(Page::from_slug(page.slug()), Some(page));
         }
+    }
+
+    /// The pages left behind read one at a time in the sidebar's order, each
+    /// once: one already read, shown before its turn, is passed over.
+    #[test]
+    fn the_pages_left_behind_read_one_at_a_time_in_order() {
+        let mut stale: Vec<(Page, bool)> = Page::ALL
+            .into_iter()
+            .map(|page| (page, !page.reads_while_hidden() && page != Page::SttModels))
+            .collect();
+        // Shown before its turn: it read then.
+        stale
+            .iter_mut()
+            .filter(|(page, _)| *page == Page::Contexts)
+            .for_each(|(_, s)| *s = false);
+        let mut read = Vec::new();
+        while let Some(page) = next_to_catch_up(stale.iter().copied()) {
+            read.push(page);
+            stale
+                .iter_mut()
+                .filter(|(p, _)| *p == page)
+                .for_each(|(_, s)| *s = false);
+        }
+        assert_eq!(
+            read,
+            [
+                Page::SttBehavior,
+                Page::TtsModels,
+                Page::TtsBehavior,
+                Page::Shortcuts,
+                Page::Assistants,
+                Page::Settings,
+                Page::About,
+            ]
+        );
     }
 
     /// Every word the shell shows is in the English catalog: a missing key
