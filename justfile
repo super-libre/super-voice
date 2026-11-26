@@ -463,7 +463,7 @@ bundle-macos:
     identity="${SUPER_VOICE_SIGN_IDENTITY:-}"
     if [ -z "$identity" ]; then
         echo "codesign: SUPER_VOICE_SIGN_IDENTITY unset, signing the bundle ad hoc." >&2
-        echo "          macOS drops its Accessibility/Keychain grants on every rebuild." >&2
+        echo "          macOS drops its Device Control (Accessibility) and Keychain grants on every rebuild." >&2
         echo "          See CONTRIBUTING.md, \"Sign your local builds\"." >&2
         identity="-"
     fi
@@ -527,7 +527,7 @@ codesign-macos bin identifier:
     identity="${SUPER_VOICE_SIGN_IDENTITY:-}"
     if [ -z "$identity" ]; then
         echo "codesign: SUPER_VOICE_SIGN_IDENTITY unset, leaving {{ bin }} ad-hoc." >&2
-        echo "          macOS drops its Accessibility/Keychain grants on every rebuild." >&2
+        echo "          macOS drops its Device Control (Accessibility) and Keychain grants on every rebuild." >&2
         echo "          See CONTRIBUTING.md, \"Sign your local builds\"." >&2
         exit 0
     fi
@@ -1183,9 +1183,10 @@ install-macos:
     echo "Open Super Voice once, and allow its notifications when asked. Two more"
     echo "macOS permissions are needed, and neither can be granted from here:"
     echo ""
-    echo "  • Accessibility — macOS asks when the daemon starts. If not, add"
+    echo "  • Device Control (called Accessibility before macOS 27) — macOS asks"
+    echo "    when the daemon starts. If not, add"
     echo "    {{ macos_bundle_dst }}/Contents/MacOS/{{ daemon_bin_name }}"
-    echo "    under System Settings › Privacy & Security › Accessibility."
+    echo "    under System Settings › Privacy & Security › Device Control."
     echo "    Without it the daemon's keystrokes are discarded silently: a"
     echo "    recording will transcribe and then type nothing."
     echo ""
@@ -1514,7 +1515,8 @@ uninstall-macos:
     echo ""
     echo "✓ Super Voice uninstalled"
     echo ""
-    echo "macOS keeps its own record of the Accessibility and Microphone grants."
+    echo "macOS keeps its own record of the Device Control (Accessibility before"
+    echo "macOS 27) and Microphone grants."
     echo "Remove the stale entries in System Settings › Privacy & Security if"
     echo "you are not reinstalling."
 

@@ -207,7 +207,8 @@ fn describe_connection_failure(e: NewConError) -> anyhow::Error {
         #[cfg(target_os = "macos")]
         return anyhow::anyhow!(
             "Super Voice is not allowed to control your keyboard. Add {exe} under \
-             System Settings › Privacy & Security › Accessibility, then {}.",
+             System Settings › Privacy & Security › Device Control (called \
+             Accessibility before macOS 27), then {}.",
             restart_instruction()
         );
         #[cfg(not(target_os = "macos"))]

@@ -278,8 +278,8 @@ mod tests {
     #[test]
     fn a_keyboard_failure_carries_its_remedy_whole() {
         let remedy = "Super Voice is not allowed to control your keyboard. Add \
-                      /usr/local/bin/super-voice-daemon under Accessibility, then restart \
-                      it: launchctl kickstart -k gui/501/org.superlibre.super-voice.";
+                      /usr/local/bin/super-voice-daemon under Device Control (called \
+                      Accessibility before macOS 27), then restart it: launchctl kickstart -k gui/501/org.superlibre.super-voice.";
         let f = Failure::keyboard_unavailable(remedy);
         assert_eq!(f.summary, "Cannot type");
         assert_eq!(f.body, remedy);
