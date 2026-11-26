@@ -75,11 +75,29 @@ async fn sigterm_shuts_down_gracefully() {
     );
 }
 
+/// Give SIGINT its default disposition in this process, so the daemon it
+/// starts gets it too.
+///
+/// A shell without job control starts a background job (`nohup … &`)
+/// with SIGINT ignored, and an ignored signal stays ignored across fork and
+/// exec: the daemon would start with it ignored, as no daemon run from a
+/// terminal or a service manager does. The test daemon's builder has no
+/// hook into the child before exec, so the reset happens here, before the
+/// spawn, and the child inherits it.
+fn default_sigint() {
+    // SAFETY: `signal` with `SIG_DFL` installs no handler of ours; it only
+    // undoes an inherited `SIG_IGN`. Nothing in this test relies on SIGINT
+    // being ignored.
+    let previous = unsafe { libc::signal(libc::SIGINT, libc::SIG_DFL) };
+    assert_ne!(previous, libc::SIG_ERR, "could not reset SIGINT");
+}
+
 /// SIGINT already worked; it must keep working now that it shares the wait.
 #[tokio::test]
 async fn sigint_still_shuts_down_gracefully() {
     use std::os::unix::process::ExitStatusExt;
 
+    default_sigint();
     let (mut guard, _socket) = start_daemon().await;
     let status = signal_and_wait(&mut guard, libc::SIGINT, Duration::from_secs(30))
         .await
