@@ -187,12 +187,12 @@ def symbolic_path() -> str:
         return unary_union([back, box(60, cy - half, 335, cy + half), dome])
 
     # The cape fans back from the seam, as on the master's cape-00, and ends
-    # in a straight hem square to the mic's axis.
-    CAPE_HEM = -75  # the straight hem, square to the flight axis
-    top = 52 + (CAPE_HEM + 140) * 0.34  # the flanks widen behind the seam
+    # in a straight hem level with the mic's flat bottom.
+    CAPE_HEM = 9  # the straight hem, level with the mic's flat bottom
     # Wider than the mic right at the seam, so the cape's sides show from the
     # seam all the way down instead of appearing only halfway down the body.
-    cape = Polygon([(236, 117), (CAPE_HEM, 267 - 220), (CAPE_HEM, 267 + 220), (236, 417)])
+    # Same flank angle as before; the hem now ends level with the mic.
+    cape = Polygon([(236, 117), (CAPE_HEM, 66), (CAPE_HEM, 468), (236, 417)])
     cape = cape.buffer(10, quad_segs=6).buffer(-10, quad_segs=6)
 
     def fit(geoms, anchor, size=16, margin=1.0):
