@@ -4,14 +4,14 @@
 > **Updated since this research:** the symbolic icon is no longer traced separately. It is the shared small icon, drawn by `menubar_svg` in `brand/icon/macos/tools/build.py` (cut for 2x so the S shows on HiDPI panels). Sections below that describe its earlier geometry are history.
 
 
-The Linux (freedesktop hicolor) icons for the settings app, built from
+The Linux (freedesktop hicolor) icons for the app, built from
 `brand/icon/master/super-voice-icon.svg`: the caped desk USB mic flying at
 45° through orange-to-coral glass bands, with the pop roundel S.
 
 To rebuild everything here after the master changes, run
 `python3 brand/icon/linux/build.py` from the repository root. It needs
 `rsvg-convert` (librsvg2-bin), `scour` and `shapely` (pip), Pillow, lxml and numpy. Then copy
-`brand/icon/linux/hicolor/.` over `super-voice-app/resources/icons/hicolor/`.
+`brand/icon/linux/hicolor/.` over `super-voice-gpui/resources/icons/hicolor/`.
 
 ## Files and where they're installed
 
@@ -118,8 +118,8 @@ loaded elements and 500,000 resolved references (`rsvg/src/limits.rs`).
 
 ## Wiring
 
-- `super-voice-app/resources/icons/hicolor/` now holds the full set. The
-  release workflows already copy `super-voice-app/resources/*` into the
+- `super-voice-gpui/resources/icons/hicolor/` now holds the full set. The
+  release workflows already copy `super-voice-gpui/resources/*` into the
   tarball, so the PNGs and the symbolic icon ship with no workflow change.
 - `justfile`: `install-app` installs the SVG, every PNG size and the symbolic
   icon, then runs `gtk-update-icon-cache -f -t` on the theme root as before.
@@ -144,12 +144,12 @@ loaded elements and 500,000 resolved references (`rsvg/src/limits.rs`).
 ### App ID
 
 The metainfo `<id>` and the window's Wayland `app_id` are
-`ai.menjivar.SuperVoice`. The desktop file and the icon are
+`org.superlibre.SuperVoice`. The desktop file and the icon are
 `super-voice-app`. They're linked by `<launchable type="desktop-id">` and
-by `StartupWMClass=ai.menjivar.SuperVoice`, which is valid for a native
+by `StartupWMClass=org.superlibre.SuperVoice`, which is valid for a native
 install. Flatpak/Flathub would require both the desktop file and the icon to
-be named after the app ID (`ai.menjivar.SuperVoice.desktop`,
-`ai.menjivar.SuperVoice.svg`, `ai.menjivar.SuperVoice-symbolic.svg`). The
+be named after the app ID (`org.superlibre.SuperVoice.desktop`,
+`org.superlibre.SuperVoice.svg`, `org.superlibre.SuperVoice-symbolic.svg`). The
 rename also lets the shells match the window by `app_id` without
 `StartupWMClass`. That change touches the installer, the daemon's
 notification icon, the portal registration and the macOS recipe, so it isn't
@@ -168,7 +168,7 @@ After `just install-app`, or after running the installer:
   recipe restarts `cosmic-app-library` and `cosmic-launcher`; if the icon is
   stale, log out and back in. Launch the app and check the dock icon. It
   matches through `StartupWMClass` because the window's app_id is
-  `ai.menjivar.SuperVoice`. Settings → Appearance → Icons: try a non-default
+  `org.superlibre.SuperVoice`. Settings → Appearance → Icons: try a non-default
   icon theme. hicolor is the fallback, so the icon should stay the same.
 - **GNOME:** Activities overview and the dash, plus Alt+Tab and the
   notification from `voice record` when the daemon reports an error. Settings
@@ -180,7 +180,7 @@ After `just install-app`, or after running the installer:
   22–48 px PNGs. `kiconfinder6 super-voice-app` (kf6 tools) prints the path it
   resolves, which should be the PNG or SVG under `/usr/local`.
 - **AppStream / software centres:**
-  `appstreamcli validate super-voice-app/resources/super-voice-app.metainfo.xml`,
+  `appstreamcli validate super-voice-gpui/resources/super-voice-app.metainfo.xml`,
   and `appstreamcli compose` as above to check the icon is found and cached.
 
 ## Research and sources

@@ -1,6 +1,6 @@
 ---
 name: super-voice-icon
-description: Everything about the Super Voice app icon (the caped desk microphone flying through glass bands) - its design rules, generating the icon files for macOS, Linux and Windows, and animating it. Use when changing the icon's artwork, regenerating or adding platform icon files (.icns, Icon Composer, hicolor PNG/SVG, symbolic, .ico, MSIX, tray, menu bar), checking an icon change, or making the icon move anywhere (the macOS Dock tile while the app listens or speaks, a splash or onboarding screen, the settings app, the COSMIC applet, the website or README, a video).
+description: Everything about the Super Voice app icon (the caped desk microphone flying through glass bands) - its design rules, generating the icon files for macOS, Linux and Windows, and animating it. Use when changing the icon's artwork, regenerating or adding platform icon files (.icns, Icon Composer, hicolor PNG/SVG, symbolic, .ico, MSIX, tray, menu bar), checking an icon change, or making the icon move anywhere (the macOS Dock tile while the app listens or speaks, a splash or onboarding screen, the app, the COSMIC applet, the website or README, a video).
 ---
 
 # The Super Voice icon
@@ -38,7 +38,7 @@ Run `brand/icon/build.sh` after any change to the layers. It needs Python 3 with
 3. `brand/icon/linux/build.py` builds the Linux files.
 4. `brand/icon/windows/src/build.py` builds the Windows files.
 
-The script then copies the Linux theme into `super-voice-app/resources/icons/hicolor/`. Rebuilds are reproducible: unchanged layers give byte-identical icons, apart from rounding noise of one step out of 255 in a few macOS preview images and the PDF's timestamp. Don't commit noise-only changes.
+The script then copies the Linux theme into `super-voice-gpui/resources/icons/hicolor/`. Rebuilds are reproducible: unchanged layers give byte-identical icons, apart from rounding noise of one step out of 255 in a few macOS preview images and the PDF's timestamp. Don't commit noise-only changes.
 
 ### macOS (`brand/icon/macos/`, research in `reference/macos.md`)
 
@@ -55,7 +55,7 @@ The script then copies the Linux theme into `super-voice-app/resources/icons/hic
 - **librsvg compatibility:** the scalable SVG has no nested `<svg>` elements, it expands `feDropShadow` into basic filter steps, and it uses `xlink:href`, so older librsvg draws it.
 - **Symbolic icon:** this is the shared small icon, cut for 2x and recoloured with `currentColor` and KDE's `ColorScheme-Text` class.
 - **Installing:** `just install-app` installs every size and runs `gtk-update-icon-cache`, and `uninstall.sh` removes them. The release installer lives in the super-engine repo; until `super-engine-installer-icons.patch` is applied there, it installs only the SVG.
-- **Names:** the desktop entry and icon are named `super-voice-app`, and the metainfo and Wayland app ID are `ai.menjivar.SuperVoice`. Flathub would need both renamed to the ID.
+- **Names:** the desktop entry and icon are named `super-voice-app`, and the metainfo and Wayland app ID are `org.superlibre.SuperVoice`. Flathub would need both renamed to the ID.
 
 ### Windows (`brand/icon/windows/`, research in `reference/windows.md`)
 
@@ -119,8 +119,7 @@ Be precise about what each platform allows (`reference/apple-layered-icons.md`).
   - give `NSDockTile` a custom `contentView` that draws the stack, and call `display()` each tick;
   - pre-render the frames and the bands at tile size, then composite them;
   - play it while listening or speaking, and return to the rest frame when idle.
-- **SwiftUI (`super-voice-macos/`).** Use a `ZStack` clipped to `RoundedRectangle(cornerRadius: size * 112 / 512, style: .continuous)`. Drive the offsets and frame index from one `TimelineView(.animation)` date, and check `accessibilityReduceMotion`.
-- **Settings app (libcosmic/iced).** Stack `svg` widgets and drive them with `iced::time::every`. Redraw only while visible.
+- **The app (GPUI, `super-voice-gpui/`, on Linux and macOS).** It draws the still icon today: `src/assets.rs` serves the scalable hicolor SVG as `APP_ICON`, for the sidebar header, the About page and the title bar. To animate it, stack the layers clipped to the rounded square (radius `size * 112 / 512`), drive the offsets and frame index from one clock, redraw only while visible, and respect reduced motion.
 - **Web, README and video.** Use `player.html`, or export a loop (below). GitHub READMEs don't run scripts, so use a GIF, APNG or WebP there.
 - **Linux app icon, installer and tray.** These are static. Use the platform files above.
 

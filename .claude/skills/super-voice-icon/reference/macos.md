@@ -34,7 +34,7 @@ shapely. It runs on Linux: no Xcode, `iconutil`, `actool` or `sips` is needed.
 ## Wiring
 
 `justfile` → `macos-icon` now copies the prebuilt `AppIcon.icns`.
-`super-voice-macos/app-icon.swift` is removed. The copy is simpler and more
+The old renderer, `app-icon.swift`, is removed. The copy is simpler and more
 robust than rendering at bundle time, for three reasons:
 
 - The old renderer drew artwork onto a grey tile. The new art carries its own tile, so that renderer's premise is gone.
