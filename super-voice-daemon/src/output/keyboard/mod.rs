@@ -297,6 +297,21 @@ impl Simulator {
     }
 }
 
+impl Simulator {
+    /// Whether another app holds secure keyboard entry, which drops every
+    /// key this simulator would send. The test backend types into a buffer,
+    /// so it never asks the machine it runs on.
+    #[must_use]
+    #[cfg_attr(not(test), allow(clippy::unused_self))]
+    pub fn secure_input_on(&self) -> bool {
+        #[cfg(test)]
+        if matches!(self, Self::Capture(_)) {
+            return false;
+        }
+        secure_input_on()
+    }
+}
+
 #[cfg(test)]
 impl Simulator {
     /// A simulator that accumulates typed text instead of driving a keyboard.

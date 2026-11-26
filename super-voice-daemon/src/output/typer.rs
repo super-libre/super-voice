@@ -271,16 +271,16 @@ impl Typer {
 
     /// Type `text` and the space after it, or say why not.
     async fn type_final(&mut self, text: &str) -> Result<(), Untyped> {
-        if self.keyboard_simulator.is_none() {
+        let Some(simulator) = self.keyboard_simulator.as_ref() else {
             return Err(Untyped::NoKeyboard(
                 self.unable
                     .clone()
                     .unwrap_or_else(|| "this recording has no keyboard".to_string()),
             ));
-        }
+        };
         // Checked before the first key: with it on, macOS drops every
         // synthetic key and says nothing.
-        if crate::output::keyboard::secure_input_on() {
+        if simulator.secure_input_on() {
             return Err(Untyped::SecureInput);
         }
         let final_text = format!("{text} ");
