@@ -40,7 +40,8 @@ const NOTIFY_IFACE: &str = "org.freedesktop.Notifications";
 /// Sent as the notification's `app_name`, which is where the user learns who
 /// this bubble is from. The summary is free to name the failure instead.
 pub(crate) const APP_NAME: &str = "Super Voice";
-/// Installed into `share/icons/hicolor/scalable/apps` by the justfile.
+/// The hicolor icon name: the justfile and the installer put it in
+/// `share/icons/hicolor` (scalable SVG, PNG sizes and a symbolic variant).
 #[cfg(target_os = "linux")]
 const APP_ICON: &str = "super-voice-app";
 /// 0 = low, 1 = normal, 2 = critical.

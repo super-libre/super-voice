@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 512 512" width="1024" height="1024">
+<defs>
+<linearGradient id="lg2r2b-rim" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="512" y2="512"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".55" stop-color="#fff" stop-opacity=".2"/><stop offset="1" stop-color="#fff" stop-opacity=".55"/></linearGradient>
+<linearGradient id="lg2r2b-tint" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ee5a32" stop-opacity="0.2"/><stop offset="1" stop-color="#b8203f"/></linearGradient>
+<linearGradient id="lg2r2b-glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".38"/><stop offset=".35" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+
+</defs>
+<g id="lg2r2b-band">
+<rect x="-260" y="296" width="1032" height="176" rx="88" transform="rotate(45 256 256)" fill="url(#lg2r2b-tint)"/>
+<rect x="-260" y="296" width="1032" height="176" rx="88" transform="rotate(45 256 256)" fill="url(#lg2r2b-glow)" stroke="url(#lg2r2b-rim)" stroke-width="2.2"/>
+</g>
+<use href="#lg2r2b-band" transform="translate(721.2489 -721.2489)"/>
+<use href="#lg2r2b-band" transform="translate(480.8326 -480.8326)"/>
+<use href="#lg2r2b-band" transform="translate(240.4163 -240.4163)"/>
+<use href="#lg2r2b-band" transform="translate(-240.4163 240.4163)"/>
+<use href="#lg2r2b-band" transform="translate(-480.8326 480.8326)"/>
+<use href="#lg2r2b-band" transform="translate(-721.2489 721.2489)"/>
+</svg>

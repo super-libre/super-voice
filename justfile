@@ -55,6 +55,12 @@ app_desktop_file_src := app_resources / app_desktop_file_name
 app_icon_src := app_resources / 'icons' / 'hicolor' / 'scalable' / 'apps' / 'super-voice-app.svg'
 app_desktop_file_dst := desktop_dir / app_desktop_file_name
 app_icon_dst := icons_dir / 'super-voice-app.svg'
+# The rest of the app's hicolor icon set, built by brand/icon/linux/build.py:
+# a PNG at each of these sizes (`<N>x<N>/apps/super-voice-app.png`) for
+# renderers that do not draw the SVG, and the one-colour
+# `symbolic/apps/super-voice-app-symbolic.svg` for panels and trays.
+app_icon_theme_src := app_resources / 'icons' / 'hicolor'
+app_icon_sizes := '16 22 24 32 48 64 128 256 512'
 
 # Service file
 service_file := service_name + '.service'
@@ -116,7 +122,9 @@ hotkey_target := launchd_domain + '/' + hotkey_label
 
 # The labels Super Voice's agents had before its IDs moved to superlibre.org.
 # `install-macos` and `uninstall-macos` retire them, so an upgrade never runs
-# a second daemon or shortcut beside the new ones.
+# a second daemon or shortcut beside the new ones. The app retires them on
+# launch too, for a drag-install: keep this list the same as `OLD_LABELS` in
+# super-voice-shared/src/launch_agents.rs.
 old_launchd_labels := 'ai.menjivar.super-voice.hotkey ai.menjivar.super-voice'
 
 # Default recipe which runs `just build-release`
@@ -455,7 +463,7 @@ bundle-macos:
     identity="${SUPER_VOICE_SIGN_IDENTITY:-}"
     if [ -z "$identity" ]; then
         echo "codesign: SUPER_VOICE_SIGN_IDENTITY unset, signing the bundle ad hoc." >&2
-        echo "          macOS drops its Accessibility/Keychain grants on every rebuild." >&2
+        echo "          macOS drops its Device Control (Accessibility) and Keychain grants on every rebuild." >&2
         echo "          See CONTRIBUTING.md, \"Sign your local builds\"." >&2
         identity="-"
     fi
@@ -469,24 +477,14 @@ bundle-macos:
 
     echo "✓ Built $bundle ($version)"
 
-# Render the macOS app icon into an .icns at `out`, from the SVG the Linux
-# desktop entry uses. See super-voice-gpui/macos/app-icon.swift.
+# Put the macOS app icon at `out`. The .icns is prebuilt and checked in:
+# brand/icon/macos/tools/build.py makes it from the master SVG, already on
+# Apple's 1024 grid, with simplified art at 16 and 32 px. AppKit's own SVG
+# reader can't draw the icon's filters, so rendering it here would differ.
+# See .claude/skills/super-voice-icon/reference/macos.md.
 [private]
 macos-icon out:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    work=$(mktemp -d)
-    trap 'rm -rf "$work"' EXIT
-    swift {{ macos_resources }}/app-icon.swift {{ app_icon_src }} "$work/icon.png"
-    iconset="$work/AppIcon.iconset"
-    mkdir "$iconset"
-    for size in 16 32 128 256 512; do
-        sips -z "$size" "$size" "$work/icon.png" \
-            --out "$iconset/icon_${size}x${size}.png" >/dev/null
-        sips -z "$((size * 2))" "$((size * 2))" "$work/icon.png" \
-            --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
-    done
-    iconutil -c icns "$iconset" -o "{{ out }}"
+    cp brand/icon/macos/AppIcon.icns "{{ out }}"
 
 # Re-sign a freshly built binary with a stable local code-signing identity.
 #
@@ -529,7 +527,7 @@ codesign-macos bin identifier:
     identity="${SUPER_VOICE_SIGN_IDENTITY:-}"
     if [ -z "$identity" ]; then
         echo "codesign: SUPER_VOICE_SIGN_IDENTITY unset, leaving {{ bin }} ad-hoc." >&2
-        echo "          macOS drops its Accessibility/Keychain grants on every rebuild." >&2
+        echo "          macOS drops its Device Control (Accessibility) and Keychain grants on every rebuild." >&2
         echo "          See CONTRIBUTING.md, \"Sign your local builds\"." >&2
         exit 0
     fi
@@ -970,6 +968,12 @@ install-app:
     sudo install -m755 "{{ app_src }}" "{{ app_dst }}"
     sudo install -Dm0644 "{{ app_desktop_file_src }}" "{{ app_desktop_file_dst }}"
     sudo install -Dm0644 "{{ app_icon_src }}" "{{ app_icon_dst }}"
+    for size in {{ app_icon_sizes }}; do
+        icon="${size}x${size}/apps/{{ app_name }}.png"
+        sudo install -Dm0644 "{{ app_icon_theme_src }}/$icon" "{{ icon_theme_dir }}/$icon"
+    done
+    symbolic="symbolic/apps/{{ app_name }}-symbolic.svg"
+    sudo install -Dm0644 "{{ app_icon_theme_src }}/$symbolic" "{{ icon_theme_dir }}/$symbolic"
     for app in {{ old_apps }}; do
         sudo rm -f "{{ bin_dir }}/$app" "{{ desktop_dir }}/$app.desktop" "{{ icons_dir }}/$app.svg"
     done
@@ -1179,9 +1183,10 @@ install-macos:
     echo "Open Super Voice once, and allow its notifications when asked. Two more"
     echo "macOS permissions are needed, and neither can be granted from here:"
     echo ""
-    echo "  • Accessibility — macOS asks when the daemon starts. If not, add"
+    echo "  • Device Control (called Accessibility before macOS 27) — macOS asks"
+    echo "    when the daemon starts. If not, add"
     echo "    {{ macos_bundle_dst }}/Contents/MacOS/{{ daemon_bin_name }}"
-    echo "    under System Settings › Privacy & Security › Accessibility."
+    echo "    under System Settings › Privacy & Security › Device Control."
     echo "    Without it the daemon's keystrokes are discarded silently: a"
     echo "    recording will transcribe and then type nothing."
     echo ""
@@ -1400,6 +1405,10 @@ uninstall-app:
     echo "Uninstalling the apps..."
     for app in {{ app_name }} {{ old_apps }}; do
         sudo rm -f "{{ bin_dir }}/$app" "{{ desktop_dir }}/$app.desktop" "{{ icons_dir }}/$app.svg"
+        for size in {{ app_icon_sizes }}; do
+            sudo rm -f "{{ icon_theme_dir }}/${size}x${size}/apps/$app.png"
+        done
+        sudo rm -f "{{ icon_theme_dir }}/symbolic/apps/$app-symbolic.svg"
     done
 
     # Update desktop database
@@ -1506,7 +1515,8 @@ uninstall-macos:
     echo ""
     echo "✓ Super Voice uninstalled"
     echo ""
-    echo "macOS keeps its own record of the Accessibility and Microphone grants."
+    echo "macOS keeps its own record of the Device Control (Accessibility before"
+    echo "macOS 27) and Microphone grants."
     echo "Remove the stale entries in System Settings › Privacy & Security if"
     echo "you are not reinstalling."
 

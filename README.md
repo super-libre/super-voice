@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/assets/super-stt-icon.svg" width="128" height="128" alt="Super Voice">
+<img src="brand/icon/master/super-voice-icon.svg" width="128" height="128" alt="Super Voice">
 
 # Super Voice
 

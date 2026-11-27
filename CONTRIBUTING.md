@@ -91,7 +91,7 @@ Super Voice.app/Contents/
   MacOS/super-voice-cli           `voice` on the PATH is a wrapper around this
   Helpers/super-voice-cli         the same CLI, which the shortcut agent runs
   Library/LaunchAgents/           the daemon's and the shortcut's agents
-  Resources/AppIcon.icns          rendered from the app's SVG
+  Resources/AppIcon.icns          brand/icon/macos/AppIcon.icns
 ```
 
 The daemon and the CLI sit beside the app for two reasons. The daemon trusts
@@ -181,9 +181,10 @@ ad-hoc, and an ad-hoc requirement is the content hash — so every `cargo
 build` produces what macOS considers a different program from the one you
 granted. What you actually see:
 
-- The Accessibility pane lists `super-voice-daemon` with its switch **on**
-  while the daemon insists it is not allowed to control the keyboard. The row
-  is keyed by path, so it survives; the requirement behind it does not.
+- The Device Control pane (Accessibility before macOS 27) lists
+  `super-voice-daemon` with its switch **on** while the daemon insists it is
+  not allowed to control the keyboard. The row is keyed by path, so it
+  survives; the requirement behind it does not.
 - The Keychain re-prompts no matter how many times you click Always Allow.
 - The daemon's `exe_changed` session revocation fires on every rebuild, and
   the client retries against a session it can never get back.
@@ -231,7 +232,7 @@ Either way this is the development loop only. Neither signature is
 notarized, so neither says anything to Gatekeeper on someone else's machine;
 shipping is separate work.
 
-After signing for the first time, remove the stale Accessibility entry with
+After signing for the first time, remove the stale Device Control entry with
 `-` and re-add the binary — the recorded requirement is only rewritten on
 re-add, not on toggling the switch.
 

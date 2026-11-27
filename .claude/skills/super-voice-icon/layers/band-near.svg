@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="-512 -512 1536 1536" width="1536" height="1536">
+<defs>
+<linearGradient id="lg2r2a-rim" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="512" y2="512"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".55" stop-color="#fff" stop-opacity=".2"/><stop offset="1" stop-color="#fff" stop-opacity=".55"/></linearGradient>
+<linearGradient id="lg2r2a-tint" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f47a2a" stop-opacity="0.35"/><stop offset="1" stop-color="#d8344e"/></linearGradient>
+<linearGradient id="lg2r2a-glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".38"/><stop offset=".35" stop-color="#fff" stop-opacity=".04"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<filter id="lg2r2a-sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="8" dy="-8" stdDeviation="10" flood-color="#7a1020" flood-opacity="0.3"/></filter>
+</defs>
+<g id="lg2r2a-band">
+<rect x="-260" y="116" width="1032" height="280" rx="140" transform="rotate(45 256 256)" fill="url(#lg2r2a-tint)" fill-opacity="0.78" filter="url(#lg2r2a-sh)"/>
+<rect x="-260" y="116" width="1032" height="280" rx="140" transform="rotate(45 256 256)" fill="url(#lg2r2a-glow)" stroke="url(#lg2r2a-rim)" stroke-width="2.2"/>
+</g>
+<use href="#lg2r2a-band" transform="translate(848.5281 -848.5281)"/>
+<use href="#lg2r2a-band" transform="translate(565.6854 -565.6854)"/>
+<use href="#lg2r2a-band" transform="translate(282.8427 -282.8427)"/>
+<use href="#lg2r2a-band" transform="translate(-282.8427 282.8427)"/>
+<use href="#lg2r2a-band" transform="translate(-565.6854 565.6854)"/>
+<use href="#lg2r2a-band" transform="translate(-848.5281 848.5281)"/>
+</svg>
