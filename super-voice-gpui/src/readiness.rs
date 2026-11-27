@@ -38,6 +38,7 @@ impl Readiness {
 
     /// A readiness that stays as `state` and asks the daemon nothing: for a
     /// screenshot.
+    #[cfg(feature = "screenshot")]
     #[must_use]
     pub fn fixed(state: ReadinessState) -> Self {
         Self {
