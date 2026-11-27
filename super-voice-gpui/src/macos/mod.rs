@@ -13,7 +13,9 @@ pub mod notifier;
 use block2::RcBlock;
 use objc2::runtime::Bool;
 use objc2_foundation::{NSBundle, NSError};
-use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
+use objc2_user_notifications::{
+    UNAuthorizationOptions, UNAuthorizationStatus, UNUserNotificationCenter,
+};
 
 /// Whether this process is the executable of an app bundle.
 #[must_use]
@@ -58,4 +60,26 @@ pub fn on_launch() {
     });
     UNUserNotificationCenter::currentNotificationCenter()
         .requestAuthorizationWithOptions_completionHandler(UNAuthorizationOptions::Alert, &block);
+}
+
+/// Whether macOS shows this bundle's notifications, which the daemon's
+/// banners are (see [`notifier`]): `None` outside a bundle, where
+/// Notification Center can't be asked, or when it doesn't answer. Blocking:
+/// it waits for Notification Center, so it runs off the UI thread.
+#[must_use]
+pub fn notifications_allowed() -> Option<bool> {
+    if !in_bundle() {
+        return None;
+    }
+    let center = UNUserNotificationCenter::currentNotificationCenter();
+    match notifier::authorization_status(&center) {
+        Ok(status) => Some(
+            status == UNAuthorizationStatus::Authorized
+                || status == UNAuthorizationStatus::Provisional,
+        ),
+        Err(e) => {
+            log::warn!("{e:#}");
+            None
+        }
+    }
 }

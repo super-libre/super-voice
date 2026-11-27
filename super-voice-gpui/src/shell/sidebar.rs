@@ -32,7 +32,7 @@ use crate::assets::APP_ICON;
 use crate::icons::Phosphor;
 use crate::pages::{Page, Section, SidebarMark};
 use crate::t;
-use crate::ui::status::{Dot, StatusPill, dot_color};
+use crate::ui::status::{Dot, StatusDot, StatusPill, dot_color};
 use crate::ui::width::WindowSize;
 
 /// What the pages' list shows, read from the shell.
@@ -44,12 +44,15 @@ pub struct Nav {
     down: bool,
     readiness: [(Feature, Readiness); 2],
     marks: Vec<(Page, SidebarMark)>,
+    /// Finish setup is listed: something macOS has to allow is missing.
+    setup_row: bool,
 }
 
 impl Nav {
     pub fn read(shell: &Shell, cx: &App) -> Self {
         let readiness = shell.shared.readiness.read(cx);
         Self {
+            setup_row: shell.setup_row_shown(cx),
             shown: shell.page_shown(cx),
             down: shell.shared.connection.read(cx).is_down(),
             readiness: Feature::ALL.map(|feature| (feature, readiness.of(feature))),
@@ -76,10 +79,14 @@ impl Nav {
     }
 
     /// The sidebar's groups, each item showing its page through `pick`.
+    /// Finish setup's, which has no heading, only while it is listed.
     fn groups(&self, pick: &Pick) -> Vec<NavGroup> {
         Section::ALL
+            .into_iter()
+            .filter(|section| *section != Section::Setup || self.setup_row)
             .map(|section| NavGroup {
                 label: t(section.key()),
+                heading: section != Section::Setup,
                 feature: section
                     .feature()
                     .map(|feature| (feature, self.readiness(feature))),
@@ -96,7 +103,6 @@ impl Nav {
                     })
                     .collect(),
             })
-            .into_iter()
             .collect()
     }
 }
@@ -204,6 +210,8 @@ pub fn palette_field(id: &'static str, shell: WeakEntity<Shell>, cx: &App) -> Bu
 #[derive(Clone)]
 struct NavGroup {
     label: SharedString,
+    /// Whether the group shows its heading: Finish setup's has none.
+    heading: bool,
     /// The feature and its readiness: its icon before the heading, its pill
     /// after.
     feature: Option<(Feature, Readiness)>,
@@ -250,6 +258,7 @@ impl NavItem {
         let badge = match (self.dot, self.mark) {
             (Some(dot), _) => Some(dot_color(dot, cx)),
             (None, Some(SidebarMark::Update)) => Some(theme.info),
+            (None, Some(SidebarMark::NeedsSetup)) => Some(dot_color(Dot::Yellow, cx)),
             _ => None,
         };
         let icon = match badge {
@@ -304,6 +313,7 @@ fn mark_element(mark: SidebarMark, cx: &App) -> AnyElement {
             .rounded_full()
             .bg(cx.theme().info)
             .into_any_element(),
+        SidebarMark::NeedsSetup => StatusDot::new(Dot::Yellow).into_any_element(),
     }
 }
 
@@ -366,7 +376,7 @@ impl SidebarItem for NavGroup {
             .gap_0p5()
             .children(self.items.into_iter().map(NavItem::menu_item));
         v_flex()
-            .child(header)
+            .when(self.heading, |group| group.child(header))
             .child(menu.render(id, window, cx))
             .into_any_element()
     }

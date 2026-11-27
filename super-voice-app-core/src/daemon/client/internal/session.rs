@@ -16,7 +16,9 @@ use super_voice_shared::validation::get_http_socket_path;
 /// cloned-voice library (`voices`), and the `/events` subscription
 /// (`recording_events` and `playback_events` for the two badges,
 /// `audio_visualization` for the meters, `daemon_status` for model-switch /
-/// download / install progress).
+/// download / install progress, `global_transcriptions` for `typing_failed`,
+/// whose toast quotes the words that went to the clipboard), and `status`
+/// for whether the daemon may type (`GET /status`).
 pub const SETTINGS_SCOPES: &[&str] = &[
     "settings",
     "secrets",
@@ -28,6 +30,8 @@ pub const SETTINGS_SCOPES: &[&str] = &[
     "playback_events",
     "audio_visualization",
     "daemon_status",
+    "global_transcriptions",
+    "status",
 ];
 /// The Super Voice app's token entry, and every app's unless it says otherwise
 /// with [`set_identity`].

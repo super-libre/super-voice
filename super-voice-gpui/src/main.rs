@@ -19,6 +19,7 @@ mod menus;
 mod pages;
 mod readiness;
 mod runtime;
+mod setup;
 mod shared;
 mod shell;
 #[cfg(feature = "screenshot")]
@@ -89,6 +90,7 @@ fn run() {
                 connection: cx.new(Connection::new),
                 readiness: cx.new(|_| Readiness::new()),
                 events: cx.new(|_| DaemonEvents::new()),
+                setup: cx.new(|_| setup::Setup::new()),
             };
             let opened = gpui_kit::open_window(window_options(cx), cx, |window, cx| {
                 cx.new(|cx| Shell::new(Page::SttModels, services, true, window, cx))

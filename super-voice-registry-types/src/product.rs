@@ -54,6 +54,7 @@ pub static SUPER_VOICE: ProductSpec = ProductSpec {
         ("transcribing_stopped", "recording_events"),
         ("partial_stt", "global_transcriptions"),
         ("final_stt", "global_transcriptions"),
+        ("typing_failed", "global_transcriptions"),
         ("speaking_state", "playback_events"),
         ("speech_progress", "playback_events"),
         ("playback_frequency_bands", "audio_visualization"),

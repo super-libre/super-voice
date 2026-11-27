@@ -90,7 +90,9 @@ fn post(title: &str, body: &str) -> Result<()> {
     add_request(&center, title, body)
 }
 
-fn authorization_status(center: &UNUserNotificationCenter) -> Result<UNAuthorizationStatus> {
+pub(crate) fn authorization_status(
+    center: &UNUserNotificationCenter,
+) -> Result<UNAuthorizationStatus> {
     let (tx, rx) = mpsc::channel();
     let block = RcBlock::new(move |settings: NonNull<UNNotificationSettings>| {
         // SAFETY: the framework passes a live settings object for the length

@@ -54,6 +54,13 @@ pub(crate) const ALL: &[&str] = &[
     TAKE_LIMIT_REACHED,
 ];
 
+/// The keys that paste, as the platform names them.
+const PASTE_KEYS: &str = if cfg!(target_os = "macos") {
+    "⌘V"
+} else {
+    "Ctrl+V"
+};
+
 /// Who authored a failure's detail, which decides how the notification body
 /// labels it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,6 +159,17 @@ impl Failure {
             typed: KEYBOARD_UNAVAILABLE,
             summary: "Cannot type",
             body: body(Origin::Daemon, detail, "The keyboard could not be set up."),
+        }
+    }
+
+    /// A dictation was transcribed and could not be typed, and its words are
+    /// on the clipboard. The body says how to paste them, in the platform's
+    /// keys; the app, when open, also shows how to let the daemon type.
+    pub(crate) fn copied_instead() -> Self {
+        Self {
+            typed: KEYBOARD_UNAVAILABLE,
+            summary: "Couldn't type",
+            body: format!("Your words are on the clipboard. Press {PASTE_KEYS} to paste them."),
         }
     }
 
@@ -254,6 +272,7 @@ mod tests {
             Failure::transcription_failed(Origin::Daemon, "d"),
             Failure::transcription_failed(Origin::Backend, "d"),
             Failure::keyboard_unavailable("d"),
+            Failure::copied_instead(),
             Failure::take_limit_reached("10 minutes"),
         ]
     }
@@ -283,6 +302,19 @@ mod tests {
         let f = Failure::keyboard_unavailable(remedy);
         assert_eq!(f.summary, "Cannot type");
         assert_eq!(f.body, remedy);
+    }
+
+    /// A dictation that went to the clipboard says so, and how to paste it.
+    #[test]
+    fn a_dictation_copied_instead_says_how_to_paste_it() {
+        let f = Failure::copied_instead();
+        assert_eq!(f.summary, "Couldn't type");
+        assert!(
+            f.body
+                .starts_with("Your words are on the clipboard. Press "),
+            "{}",
+            f.body
+        );
     }
 
     /// The reason the user reported: a backend failure the log had in full
