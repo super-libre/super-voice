@@ -176,3 +176,38 @@ fn a_dropped_stream_is_heard() {
         .is_none()
     );
 }
+
+/// A dictation that went to the clipboard reaches the app with its words and
+/// why; a reason this app doesn't know is the plain one.
+#[test]
+fn a_dictation_that_was_not_typed_is_heard() {
+    let e = event(
+        "typing_failed",
+        serde_json::json!({
+            "client_id": "daemon_recorder",
+            "timestamp": "2026-11-26T10:00:00Z",
+            "reason": "not_allowed",
+            "copied": true,
+            "text": "Call the landlord about the heater before Friday.",
+        }),
+    );
+    assert_eq!(
+        parse(&e).map(|e| match e {
+            Event::TypingFailed(failed) => Some(failed),
+            _ => None,
+        }),
+        Some(Some(TypingFailed {
+            reason: TypingFailure::NotAllowed,
+            copied: true,
+            text: "Call the landlord about the heater before Friday.".to_string(),
+        }))
+    );
+    assert_eq!(
+        TypingFailure::from_wire("secure_input"),
+        TypingFailure::SecureInput
+    );
+    assert_eq!(
+        TypingFailure::from_wire("a reason from later"),
+        TypingFailure::Failed
+    );
+}

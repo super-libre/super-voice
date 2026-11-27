@@ -616,6 +616,7 @@ mod tests {
             selected_model: selected_model.map(str::to_string),
             model_state,
             busy: false,
+            can_type: None,
         }
     }
 

@@ -196,46 +196,52 @@ impl SuperSTTDaemon {
         // backend it puts a permission dialog in front of the user and waits
         // for the answer, which stalled every such request by 10 s and threw
         // the dialog at a user who had asked for nothing to be typed.
-        let simulator = if write_mode {
+        //
+        // A keyboard that can't be built no longer refuses the take: it
+        // records, transcribes, and its words go to the clipboard
+        // (`recover_untyped`), with a notice saying so. Refusing it lost the
+        // words of everyone whose permission to type was off, which on macOS
+        // is everyone on their first dictation.
+        let (simulator, unable) = if write_mode {
             let cached = self.simulator.write().await.take();
             if let Some(s) = cached {
-                Some(s)
+                (Some(s), None)
             } else {
                 let write_method = {
                     let config = self.config.read().await;
                     config.transcription.write_method
                 };
                 match Simulator::new(write_method).await {
-                    Ok(s) => Some(s),
+                    Ok(s) => (Some(s), None),
                     Err(e) => {
                         log::error!("Failed to create keyboard simulator: {e}");
-                        // The response cannot tell the user how to fix this:
-                        // release builds cut it to "Keyboard simulator failed",
-                        // keeping local detail off the loopback listener, and a
-                        // recording started from a global shortcut has no
-                        // caller reading it anyway. So the reason, remedy
-                        // included, goes to the user directly.
-                        self.surface_keyboard_unavailable(&format!("{e:#}")).await;
-                        return DaemonResponse::error(&format!("Keyboard simulator failed: {e}"));
+                        log::warn!("This dictation goes to the clipboard instead");
+                        (None, Some(format!("{e:#}")))
                     }
                 }
             }
         } else {
-            None
+            (None, None)
         };
         // The per-request override applies to this recording only. It used to
         // be written into the daemon-wide flag for the recording's duration and
         // restored afterwards, which also reverted any `/settings/preview_typing`
         // write that landed in between — the user's toggle did not stick.
-        let preview_typing = preview.unwrap_or_else(|| {
-            self.preview_typing_enabled
-                .load(std::sync::atomic::Ordering::Relaxed)
-        });
+        // Nothing to type previews with when the keyboard could not be built.
+        let preview_typing = unable.is_none()
+            && preview.unwrap_or_else(|| {
+                self.preview_typing_enabled
+                    .load(std::sync::atomic::Ordering::Relaxed)
+            });
         // Same discipline: the override picks this take's cues without
         // touching the configured theme.
         let cue_theme = take_cue_theme(self.get_audio_theme(), audio_cues);
 
-        let mut typer = simulator.map_or_else(Typer::without_keyboard, Typer::new);
+        let mut typer = match (simulator, unable) {
+            (Some(simulator), _) => Typer::new(simulator),
+            (None, Some(why)) => Typer::unable(why),
+            (None, None) => Typer::without_keyboard(),
+        };
         let response = self
             .handle_record_internal(
                 &mut typer,

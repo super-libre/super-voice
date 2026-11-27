@@ -22,7 +22,7 @@ use super_voice_app_core::pages::about::{
     self as page, AboutState, Build, DaemonVersion, Effect, Input, Link as Address, Notice,
 };
 
-use crate::assets::APP_ICON;
+use crate::assets::app_icon;
 use crate::effects::{self, CorePage, Runner, runner};
 use crate::pages::{Page, PageView};
 use crate::shared::Shared;
@@ -115,7 +115,7 @@ impl AboutPage {
         h_flex()
             .gap_4()
             .items_center()
-            .child(img(APP_ICON).size(px(56.)).flex_shrink_0())
+            .child(img(app_icon(px(64.))).size(px(64.)).flex_shrink_0())
             .child(
                 v_flex()
                     .min_w_0()

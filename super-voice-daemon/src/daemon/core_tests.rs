@@ -3139,9 +3139,8 @@ async fn write_method_test_refuses_while_recording() {
 ///
 /// The configured method is ydotool, not the default `auto`, so a regression
 /// fails fast and harmlessly instead of reaching the live desktop. Its
-/// availability probe types an empty string. Either way the old code shows:
-/// ydotool missing fails the request with "Keyboard simulator failed" instead
-/// of `model_not_loaded`, and ydotool present leaves a simulator in the cache.
+/// availability probe types an empty string. With ydotool present the old
+/// code leaves a simulator in the cache.
 #[tokio::test]
 async fn a_recording_without_write_mode_builds_no_keyboard() {
     let daemon = test_daemon().await;
@@ -3954,4 +3953,43 @@ async fn the_end_of_a_take_restarts_every_stages_idle_time() {
 
     assert!(daemon.model.idle_for() < Duration::from_secs(5));
     assert!(daemon.post_processor.idle_for() < Duration::from_secs(5));
+}
+
+/// A dictation that could not be typed keeps its words: they go to the
+/// clipboard, the app hears `typing_failed` with them, and the user gets the
+/// notice that says how to paste them.
+#[tokio::test]
+async fn words_that_could_not_be_typed_go_to_the_clipboard() {
+    use crate::daemon::events::Topic;
+    use crate::output::typer::{NotTyped, Untyped};
+
+    let daemon = test_daemon().await;
+    let (notifier, sent) = crate::output::notification::Notifier::fake(false);
+    *daemon.notifier.lock().await = notifier;
+    let mut rx = daemon.events.subscribe(Topic::TypingFailed);
+    let words = "Call the landlord about the heater before Friday. (a test of the copy)";
+
+    daemon
+        .recover_untyped(NotTyped {
+            why: Untyped::NoKeyboard("not allowed".to_string()),
+            text: words.to_string(),
+        })
+        .await;
+
+    assert!(
+        crate::output::clipboard::copied()
+            .iter()
+            .any(|c| c == words)
+    );
+    let (_topic, event) = timeout(Duration::from_secs(5), rx.recv_json())
+        .await
+        .expect("a typing_failed event")
+        .expect("the event stream is open");
+    assert_eq!(event["text"], words);
+    assert_eq!(event["copied"], true);
+    // Linux can't tell whether it may type, so the reason is the plain one.
+    assert_eq!(event["reason"], "failed");
+    let sent = sent.lock().unwrap();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(sent[0].0, "Couldn't type");
 }

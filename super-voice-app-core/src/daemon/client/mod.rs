@@ -32,6 +32,7 @@ pub use internal::session::{SETTINGS_SCOPES, app_id, set_identity, use_scene_tok
 pub use v1::contexts::backend::{BackendContext, ContextMode};
 pub use v1::gpu_info::get_gpu_info;
 pub use v1::ping::{ping_daemon, test_daemon_connection};
+pub use v1::status::{get_can_type, get_status};
 pub use v1::transcribe::{RecordEvent, record_command_stream, stop_record_command};
 
 pub use v1::pipeline::backend::list_stage_backends;

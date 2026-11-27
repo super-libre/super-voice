@@ -285,7 +285,8 @@ pub fn socket_path() -> String {
 ///
 /// First it stops the agents an older Super Voice.app left running under the
 /// old labels (see [`retire_old_agents`]), which a drag-install over that app
-/// never stops.
+/// never stops. An enabled agent launchd refuses to start is registered again
+/// ([`register_again_if_refused`]).
 ///
 /// Blocking (`ServiceManagement` answers over XPC), so it runs off the UI
 /// thread.
@@ -294,14 +295,100 @@ pub fn register_agents() {
     use super_voice_shared::launch_agents::{Agent, Status};
     retire_old_agents();
     for agent in Agent::ALL {
-        if agent.status() != Status::NotRegistered {
-            continue;
-        }
-        match agent.register() {
-            Ok(()) => log::info!("registered {}", agent.label()),
-            Err(e) => log::warn!("{e:#}"),
+        match agent.status() {
+            Status::NotRegistered => match agent.register() {
+                Ok(()) => log::info!("registered {}", agent.label()),
+                Err(e) => log::warn!("{e:#}"),
+            },
+            Status::Enabled => register_again_if_refused(agent),
+            _ => {}
         }
     }
+}
+
+/// Register `agent` again when launchd holds it and won't start it.
+///
+/// After a switch between differently signed builds (ad hoc to team signed),
+/// `ServiceManagement` says the agent is registered and enabled, and launchd
+/// kills the job each time it starts with "Launch Constraint Violation"
+/// (exit 78, "needs LWCR update"). Registering it again changes nothing; only
+/// unregistering it first does. So an agent launchd reports not running, and
+/// still not running a few seconds later, with that exit or that state, is
+/// unregistered and registered once.
+///
+/// One `launchctl print` on a normal launch, which says the job is running.
+#[cfg(target_os = "macos")]
+fn register_again_if_refused(agent: super_voice_shared::launch_agents::Agent) {
+    use std::process::Command;
+    use std::time::Instant;
+
+    // SAFETY: getuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    let job = format!("gui/{uid}/{}", agent.label());
+    let print = || {
+        Command::new("/bin/launchctl")
+            .args(["print", job.as_str()])
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let Some(mut shown) = print() else {
+        return;
+    };
+    // launchd may be starting it, or waiting out its throttle: a few seconds.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !job_running(&shown) {
+        if Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        match print() {
+            Some(again) => shown = again,
+            None => return,
+        }
+    }
+    if job_running(&shown) || !refused_at_launch(&shown) {
+        return;
+    }
+    log::warn!("launchd won't start {job} (a launch constraint, exit 78); registering it again");
+    if let Err(e) = agent.unregister() {
+        log::warn!("{e:#}");
+        return;
+    }
+    match agent.register() {
+        Ok(()) => log::info!("registered {} again", agent.label()),
+        Err(e) => log::warn!("{e:#}"),
+    }
+}
+
+/// Whether `launchctl print` says the job is running.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn job_running(print: &str) -> bool {
+    print
+        .lines()
+        .any(|line| line.trim().replace(' ', "") == "state=running")
+}
+
+/// Whether `launchctl print` says launchd refused to run the job for its
+/// launch constraints: exit 78 (`EX_CONFIG`, what a constraint violation
+/// leaves), or the "needs LWCR update" state.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn refused_at_launch(print: &str) -> bool {
+    let print = print.to_ascii_lowercase();
+    print.contains("lwcr")
+        || print.contains("launch constraint")
+        || print.lines().any(|line| {
+            line.trim()
+                .strip_prefix("last exit code")
+                .and_then(|rest| rest.trim_start().strip_prefix('='))
+                .is_some_and(|code| {
+                    code.trim_start()
+                        .split(|c: char| !c.is_ascii_digit())
+                        .next()
+                        == Some("78")
+                })
+        })
 }
 
 /// Boot out each agent launchd still holds under an old label, and wait up to
@@ -411,6 +498,39 @@ mod tests {
 
     fn refused() -> HttpError {
         auth_denied("user_denied")
+    }
+
+    /// What `launchctl print` shows of an agent killed for its launch
+    /// constraints, and of one running.
+    const REFUSED: &str = "gui/501/org.superlibre.super-voice = {
+\tactive count = 0
+\tpath = /Applications/Super Voice.app/Contents/Library/LaunchAgents/org.superlibre.super-voice.plist
+\tstate = not running
+\tlast exit code = 78: EX_CONFIG
+\tjob state = exited
+\tproperties = needs LWCR update | inferred program
+}";
+    const RUNNING: &str = "gui/501/org.superlibre.super-voice = {
+\tactive count = 1
+\tstate = running
+\tpid = 4242
+\tlast exit code = (never exited)
+}";
+
+    #[test]
+    fn an_agent_refused_for_its_launch_constraints_is_told_apart() {
+        assert!(!job_running(REFUSED));
+        assert!(refused_at_launch(REFUSED));
+        assert!(job_running(RUNNING));
+        assert!(!refused_at_launch(RUNNING));
+        // Exit 78 alone is enough; another exit is not.
+        assert!(refused_at_launch(
+            "\tstate = not running\n\tlast exit code = 78: EX_CONFIG\n"
+        ));
+        assert!(!refused_at_launch(
+            "\tstate = not running\n\tlast exit code = 1\n"
+        ));
+        assert!(!refused_at_launch("\tlast exit code = 780\n"));
     }
 
     #[test]

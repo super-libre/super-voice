@@ -7,6 +7,7 @@ use gpui_kit::{App, Entity, WeakEntity, Window};
 use crate::connection::Connection;
 use crate::pages::Page;
 use crate::readiness::Readiness;
+use crate::setup::Setup;
 use crate::shell::Shell;
 
 /// Handed to every page when it is built.
@@ -19,6 +20,9 @@ pub struct Shared {
     /// How ready each feature is, and the GPU's memory:
     /// `readiness.read(cx).of(Feature::SpeechToText)`.
     pub readiness: Entity<Readiness>,
+    /// What macOS has to allow: the Typed card's state, whether macOS shows
+    /// notifications, the pane's name.
+    pub setup: Entity<Setup>,
     /// Show another page: `shared.nav.go(Page::Library, window, cx)`.
     pub nav: Navigator,
 }

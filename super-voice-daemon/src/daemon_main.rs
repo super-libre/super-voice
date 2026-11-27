@@ -120,8 +120,9 @@ pub async fn run() -> Result<()> {
     crate::stt_models::subprocess::cleanup_orphan_units().await;
 
     // Find out now, not mid-recording, whether macOS will let the daemon
-    // type — and let the system prompt appear while nothing is in flight.
-    // Advisory: a refusal is logged, never fatal. See the function's docs.
+    // type — and let the system prompt appear while nothing is in flight,
+    // the first time this daemon starts. Advisory: a refusal is logged,
+    // never fatal. See the function's docs.
     #[cfg(target_os = "macos")]
     crate::output::keyboard::probe_accessibility_permission();
 

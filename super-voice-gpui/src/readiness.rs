@@ -19,6 +19,8 @@ const GPU_REFRESH: Duration = Duration::from_secs(15);
 /// The readiness, as a GPUI model.
 pub struct Readiness {
     state: ReadinessState,
+    /// A screenshot's: it asks the daemon nothing.
+    fixed: bool,
     /// The GPU timer, while the daemon answers.
     timer: Option<Task<()>>,
 }
@@ -27,14 +29,22 @@ impl Readiness {
     /// Nothing known until the daemon answers.
     #[must_use]
     pub fn new() -> Self {
-        Self::fixed(ReadinessState::default())
+        Self {
+            state: ReadinessState::default(),
+            fixed: false,
+            timer: None,
+        }
     }
 
     /// A readiness that stays as `state` and asks the daemon nothing: for a
     /// screenshot.
     #[must_use]
     pub fn fixed(state: ReadinessState) -> Self {
-        Self { state, timer: None }
+        Self {
+            state,
+            fixed: true,
+            timer: None,
+        }
     }
 
     /// How ready `feature` is.
@@ -43,11 +53,39 @@ impl Readiness {
         page::readiness(&self.state, feature)
     }
 
+    /// How ready `feature`'s model is, typing aside: what a recording that
+    /// types nothing (a note) needs.
+    #[must_use]
+    pub fn model_of(&self, feature: Feature) -> FeatureReadiness {
+        page::model_readiness(&self.state, feature)
+    }
+
     /// `feature`'s stage as the daemon last reported it: its backend and
     /// model. What the Clips page names a clip's voice for.
     #[must_use]
     pub fn stage(&self, feature: Feature) -> Option<&StageState> {
         self.state.views.get(&feature.stage())
+    }
+
+    /// Whether the daemon may type into other apps: `None` while that isn't
+    /// known (the daemon can't tell, can't be reached, or hasn't said).
+    #[must_use]
+    pub fn can_type(&self) -> Option<bool> {
+        self.state.can_type.filter(|_| self.state.connected)
+    }
+
+    /// Whether the daemon said it may not type.
+    #[must_use]
+    pub fn typing_blocked(&self) -> bool {
+        page::typing_blocked(&self.state)
+    }
+
+    /// Ask the daemon again whether it may type. A screenshot's readiness
+    /// asks nothing.
+    pub fn check_typing(&mut self, cx: &mut Context<Self>) {
+        if !self.fixed {
+            self.send(Input::CheckTyping, cx);
+        }
     }
 
     /// The first GPU's memory, when the daemon reported a GPU.
@@ -66,6 +104,9 @@ impl Readiness {
                 }
                 Effect::ReadGpus => {
                     effects::spawn(page::run_read_gpus(), cx, Self::send).detach();
+                }
+                Effect::ReadTyping => {
+                    effects::spawn(page::run_read_typing(), cx, Self::send).detach();
                 }
             }
         }

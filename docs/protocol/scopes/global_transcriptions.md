@@ -20,6 +20,7 @@ that is part of [`transcribe`](./transcribe.md), returned inline on the
 |---------------|------------------------------------------------------|
 | `partial_stt` | `{ text, confidence, source }` — live transcription preview; `source` says whether `text` is the take so far (`stream`) or only the last few seconds (`window`) |
 | `final_stt`   | `{ text, confidence }` — final transcription text    |
+| `typing_failed` | `{ client_id, timestamp, reason, copied, text }` — a dictation that could not be typed, and its words, which went to the clipboard when `copied` |
 
 Full payload semantics and the SSE framing rules live on
 [`/events`](../endpoints/v1/events.md). A subscription that requests a topic

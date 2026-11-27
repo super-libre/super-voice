@@ -92,7 +92,7 @@ async fn process_final_text_types_nothing_for_an_empty_transcript() {
     let (sim, buf) = Simulator::capture();
     let mut typer = Typer::new(sim);
 
-    typer.process_final_text("").await;
+    typer.process_final_text("").await.expect("typed");
 
     assert_eq!(*buf.lock().unwrap(), "");
 }
@@ -104,7 +104,7 @@ async fn process_final_text_types_nothing_for_a_whitespace_transcript() {
     let (sim, buf) = Simulator::capture();
     let mut typer = Typer::new(sim);
 
-    typer.process_final_text("   ").await;
+    typer.process_final_text("   ").await.expect("typed");
 
     assert_eq!(*buf.lock().unwrap(), "");
 }
@@ -115,7 +115,10 @@ async fn process_final_text_still_types_a_non_empty_transcript() {
     let (sim, buf) = Simulator::capture();
     let mut typer = Typer::new(sim);
 
-    typer.process_final_text("hello world").await;
+    typer
+        .process_final_text("hello world")
+        .await
+        .expect("typed");
 
     assert!(
         buf.lock().unwrap().contains("Hello world"),
@@ -133,7 +136,7 @@ async fn process_final_text_resets_state_even_when_it_types_nothing() {
     typer.state.prev_text = "stale".to_string();
     typer.state.full_session_text = "stale session".to_string();
 
-    typer.process_final_text("").await;
+    typer.process_final_text("").await.expect("typed");
 
     assert_eq!(typer.state.prev_text, "");
     assert_eq!(typer.state.full_session_text, "");
@@ -271,7 +274,10 @@ async fn the_final_transcript_follows_a_cleared_preview_with_nothing_in_between(
     .await;
 
     typer.clear_preview(&mut typed).await;
-    typer.process_final_text("hello there world").await;
+    typer
+        .process_final_text("hello there world")
+        .await
+        .expect("typed");
 
     assert_eq!(*screen.lock().unwrap(), "Hello there world. ");
 }
@@ -388,4 +394,37 @@ async fn a_repeated_preview_types_nothing() {
         .await;
 
     assert_eq!(*screen.lock().unwrap(), "Hello world!");
+}
+
+/// A write-mode take whose keyboard could not be built still has its words:
+/// they come back as they would have been typed, with why, for the
+/// clipboard. And the state is reset for the next take.
+#[tokio::test]
+async fn a_take_with_no_keyboard_hands_its_words_back() {
+    let mut typer = Typer::unable("not allowed to type".to_string());
+    typer.state.full_session_text = "stale session".to_string();
+
+    let not_typed = typer
+        .process_final_text("call the landlord about the heater")
+        .await
+        .expect_err("nothing can be typed");
+
+    assert_eq!(
+        not_typed,
+        super::NotTyped {
+            why: super::Untyped::NoKeyboard("not allowed to type".to_string()),
+            text: "Call the landlord about the heater.".to_string(),
+        }
+    );
+    assert_eq!(typer.state.full_session_text, "");
+}
+
+/// An empty take has nothing to hand back, keyboard or not.
+#[tokio::test]
+async fn an_empty_take_with_no_keyboard_is_not_a_failure() {
+    let mut typer = Typer::unable("not allowed to type".to_string());
+    typer
+        .process_final_text("  ")
+        .await
+        .expect("nothing to type");
 }

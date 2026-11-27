@@ -23,7 +23,9 @@ use super_voice_shared::models::status::{FeatureStatus, VoiceStatus};
     description = "\
 A snapshot of what the daemon is running, one part per feature: which model is \
 loaded, on which accelerator, and whether the feature is at work — a recording \
-cycle for `stt`, an utterance for `tts`.
+cycle for `stt`, an utterance for `tts`. `stt.can_type` says whether the daemon \
+may type into other apps (macOS: Device Control, called Accessibility before \
+macOS 27); it is absent where the daemon can't tell without trying.
 
 Subscriber introspection and other operator detail are not exposed here — see \
 `GET /stt/pipeline/1` and `GET /tts/pipeline/1`, which need the `settings` scope.",
@@ -55,7 +57,11 @@ pub(crate) async fn status(State(s): State<AppState>) -> Response {
         model_state: Some(tts_slot.state),
         selected_model: tts_slot.model,
         busy: tts.busy.unwrap_or(false),
+        can_type: None,
     };
+    // Asked of macOS on every read, not kept: the user switches it on in
+    // System Settings while the app asks every 2 s.
+    let can_type = crate::output::keyboard::typing_allowed();
     narrowed(stt, |r| VoiceStatus {
         status: "success".to_string(),
         stt: FeatureStatus {
@@ -65,6 +71,7 @@ pub(crate) async fn status(State(s): State<AppState>) -> Response {
             model_state: Some(stt_slot.state),
             selected_model: stt_slot.model,
             busy: r.busy.unwrap_or(false),
+            can_type,
         },
         tts,
     })

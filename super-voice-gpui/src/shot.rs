@@ -27,14 +27,17 @@ use gpui_kit::{
 };
 use super_voice_app_core::daemon::client::{ModelState, StageState};
 use super_voice_app_core::pages::readiness::{Input, ReadinessState, update};
+use super_voice_app_core::pages::setup::{Input as SetupInput, Pane, SetupState};
 use super_voice_app_core::state::Stage;
 use super_voice_app_core::state::connection::DaemonStatus;
+use super_voice_shared::models::notification_method::NotificationMethod;
 use super_voice_shared::models::protocol::{DownloadProgress, GpuInfo};
 
 use crate::connection::Connection;
 use crate::daemon_events::DaemonEvents;
 use crate::pages::Page;
 use crate::readiness::Readiness;
+use crate::setup::Setup;
 use crate::shell::{Services, Shell};
 
 /// The flag that selects this mode.
@@ -45,8 +48,31 @@ pub const FLAG: &str = "--shot";
 const ANIMATION_FRAMES: u32 = 6;
 const FRAME: std::time::Duration = std::time::Duration::from_millis(60);
 
-/// The shell's own scenes.
-const SHELL_SCENES: &[&str] = &["palette", "drawer", "refused", "stopped"];
+/// The shell's own scenes. The `typing-*` and `notifications-*` ones set what
+/// macOS allows: `typing-off` (the daemon may not type: the Typed card and
+/// Finish setup say how to allow it), `typing-checking` (after Open Device
+/// Control, the path copied), `typing-ready` (just allowed: the Ready card),
+/// `typing-allowed` (allowed, with Finish setup still shown);
+/// `notifications-off` and `notifications-on` (Settings' row, Finish
+/// setup's item); `accessibility` (the pane's name before macOS 27);
+/// `typing-failed` and `typing-failed-secure` (the toast for a dictation that
+/// went to the clipboard); `scroll-typed` (Models scrolled to the Typed step).
+const SHELL_SCENES: &[&str] = &[
+    "palette",
+    "drawer",
+    "refused",
+    "stopped",
+    "typing-off",
+    "typing-checking",
+    "typing-ready",
+    "typing-allowed",
+    "notifications-off",
+    "notifications-on",
+    "accessibility",
+    "typing-failed",
+    "typing-failed-secure",
+    "scroll-typed",
+];
 
 /// What the command line asks for.
 struct Shot {
@@ -146,10 +172,27 @@ fn shoot(shot: &Shot) -> anyhow::Result<()> {
                 Readiness::fixed(if down {
                     ReadinessState::default()
                 } else {
-                    pretend_readiness()
+                    pretend_readiness(&scenes)
                 })
             }),
             events: cx.new(|_| DaemonEvents::new()),
+            setup: cx.new(|cx| {
+                let pane = if scenes.contains(&"accessibility") {
+                    Pane::Accessibility
+                } else {
+                    Pane::DeviceControl
+                };
+                let mut state = SetupState::new(
+                    pane,
+                    "/Applications/Super Voice.app/Contents/MacOS/super-voice-daemon".into(),
+                );
+                state.notification_method = Some(NotificationMethod::Auto);
+                let mut setup = Setup::fixed(state);
+                for input in pretend_setup(&scenes) {
+                    setup.send(input, cx);
+                }
+                setup
+            }),
         };
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(Bounds {
@@ -203,12 +246,61 @@ fn shoot(shot: &Shot) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// What the setup scenes did: the inputs that bring the setup there.
+fn pretend_setup(scenes: &[&str]) -> Vec<SetupInput> {
+    let mut inputs = Vec::new();
+    if scenes.contains(&"notifications-off") {
+        inputs.push(SetupInput::NotificationsRead(Some(false)));
+    }
+    if scenes.contains(&"notifications-on") {
+        inputs.push(SetupInput::NotificationsRead(Some(true)));
+    }
+    if scenes
+        .iter()
+        .any(|scene| matches!(*scene, "typing-off" | "typing-checking" | "typing-ready"))
+    {
+        inputs.push(SetupInput::Typing {
+            can_type: Some(false),
+        });
+    }
+    if scenes.contains(&"typing-checking") {
+        inputs.extend([SetupInput::OpenPane, SetupInput::CopyPath]);
+    }
+    if scenes.contains(&"typing-ready") {
+        inputs.push(SetupInput::Typing {
+            can_type: Some(true),
+        });
+    }
+    inputs
+}
+
+/// Whether the daemon may type, as the scenes have it: not in `typing-off`
+/// and `typing-checking`, yes in `typing-ready` and `typing-allowed`, and
+/// not known otherwise, as on Linux.
+fn pretend_can_type(scenes: &[&str]) -> Option<bool> {
+    if scenes
+        .iter()
+        .any(|scene| matches!(*scene, "typing-off" | "typing-checking"))
+    {
+        Some(false)
+    } else if scenes
+        .iter()
+        .any(|scene| matches!(*scene, "typing-ready" | "typing-allowed"))
+    {
+        Some(true)
+    } else {
+        None
+    }
+}
+
 /// The shell's made-up state: speech to text ready on Whisper's
 /// `large-v3-turbo`, text to speech downloading `kokoro-82m`, an RTX 3090
-/// with 6.1 of its 24 GiB in use.
-fn pretend_readiness() -> ReadinessState {
+/// with 6.1 of its 24 GiB in use; whether the daemon may type as the scenes
+/// say.
+fn pretend_readiness(scenes: &[&str]) -> ReadinessState {
     let mut state = ReadinessState::default();
     update(&mut state, Input::Reached);
+    update(&mut state, Input::TypingRead(Ok(pretend_can_type(scenes))));
     update(
         &mut state,
         Input::Viewed(

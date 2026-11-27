@@ -9,12 +9,13 @@
 //! row, so a narrow window puts it under its words.
 
 use gpui_kit::component::IndexPath;
+use gpui_kit::component::button::Button;
 use gpui_kit::component::select::{
     SearchableVec, Select, SelectDelegate, SelectEvent, SelectItem, SelectState,
 };
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::v_flex;
+use gpui_kit::component::{IconName, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -26,6 +27,7 @@ use super_voice_app_core::languages;
 use super_voice_app_core::pages::settings::{
     self as page, Effect, IdleTime, Input, NOTIFICATION_METHODS, Notice,
 };
+use super_voice_app_core::pages::setup::Input as SetupInput;
 use super_voice_app_core::state::language::LanguageState;
 use super_voice_app_core::state::settings::SettingsState;
 use super_voice_shared::models::notification_method::NotificationMethod;
@@ -36,6 +38,7 @@ use crate::shared::Shared;
 use crate::ui::card::Card;
 use crate::ui::page_header::PageHeader;
 use crate::ui::settings_row::SettingsRow;
+use crate::ui::status::{Dot, StatusPill};
 use crate::ui::toast::{self, Toast};
 use crate::ui::width;
 use crate::{t, t_with};
@@ -117,6 +120,7 @@ impl<V: Clone + PartialEq + 'static> Picker<V> {
 }
 
 pub struct SettingsPage {
+    shared: Shared,
     state: SettingsState,
     language: LanguageState,
     primary_language: Picker<Option<String>>,
@@ -126,7 +130,9 @@ pub struct SettingsPage {
 }
 
 impl PageView for SettingsPage {
-    fn new(_: Page, _: &Shared, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(_: Page, shared: &Shared, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // macOS notifications' row follows the setup.
+        cx.observe(&shared.setup, |_, _, cx| cx.notify()).detach();
         let primary_language: Picker<Option<String>> = Picker::new(true, window, cx);
         let notification_method: Picker<NotificationMethod> = Picker::new(false, window, cx);
         let idle_unload: Picker<u64> = Picker::new(false, window, cx);
@@ -167,6 +173,7 @@ impl PageView for SettingsPage {
             ),
         ];
         let mut page = Self {
+            shared: shared.clone(),
             state: SettingsState::default(),
             language: LanguageState::default(),
             primary_language,
@@ -290,15 +297,58 @@ impl SettingsPage {
         )
     }
 
-    fn notifications(&self, stacked: bool) -> Card {
+    fn notifications(&self, stacked: bool, cx: &mut Context<Self>) -> Card {
         Card::new().title(t("notifications")).child(
-            SettingsRow::new(t("failure-notices"))
-                .description(failure_notices_description())
-                .control(sized(
-                    Select::new(&self.notification_method.state)
-                        .accessibility_label(t("failure-notices")),
-                    stacked,
-                )),
+            v_flex()
+                .child(
+                    SettingsRow::new(t("failure-notices"))
+                        .description(failure_notices_description())
+                        .control(sized(
+                            Select::new(&self.notification_method.state)
+                                .accessibility_label(t("failure-notices")),
+                            stacked,
+                        )),
+                )
+                .when_some(self.macos_notifications(cx), |rows, row| {
+                    rows.child(Separator::horizontal()).child(row)
+                }),
+        )
+    }
+
+    /// Whether macOS shows Super Voice's notifications, which are the
+    /// daemon's banners, and a way to switch them on. Off is the user's
+    /// choice, not a fault: a grey dot. Only where the app can tell (macOS,
+    /// from its bundle).
+    fn macos_notifications(&self, cx: &mut Context<Self>) -> Option<SettingsRow> {
+        let on = self.shared.setup.read(cx).state.notifications?;
+        let (dot, state, words) = if on {
+            (Dot::Green, t("status-on"), t("macos-notifications-on"))
+        } else {
+            (Dot::Grey, t("status-off"), t("macos-notifications-off"))
+        };
+        let heading = h_flex()
+            .gap_2()
+            .items_center()
+            .child(t("macos-notifications"))
+            .child(StatusPill::new(dot, state));
+        let row = SettingsRow::new(t("macos-notifications"))
+            .heading(heading)
+            .description(words);
+        if on {
+            return Some(row);
+        }
+        let setup = self.shared.setup.clone();
+        Some(
+            row.control(
+                Button::new("open-notifications")
+                    .icon(IconName::ExternalLink)
+                    .label(t("open-notifications"))
+                    .on_click(move |_, _, cx| {
+                        setup.update(cx, |setup, cx| {
+                            setup.send(SetupInput::OpenNotifications, cx);
+                        });
+                    }),
+            ),
         )
     }
 
@@ -356,7 +406,7 @@ impl Render for SettingsPage {
                             .pb_6()
                             .gap_4()
                             .child(self.language(stacked))
-                            .child(self.notifications(stacked))
+                            .child(self.notifications(stacked, cx))
                             .child(self.memory(cx)),
                     ),
             )
@@ -471,6 +521,12 @@ mod tests {
             "sleep-when-idle",
             "sleep-when-idle-description",
             "type-into-window",
+            "macos-notifications",
+            "macos-notifications-off",
+            "macos-notifications-on",
+            "open-notifications",
+            "status-on",
+            "status-off",
         ] {
             assert!(
                 super_voice_app_core::i18n::LANGUAGE_LOADER.has(key),

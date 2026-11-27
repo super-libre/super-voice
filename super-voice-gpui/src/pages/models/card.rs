@@ -86,7 +86,7 @@ impl Rail {
     }
 
     /// A mark: drawn in the text's colour while its step is filled.
-    fn mark(self, icon: Icon, on: bool, cx: &App) -> impl IntoElement + use<> {
+    fn mark(self, icon: Icon, on: bool, cx: &App) -> gpui_kit::Div {
         let theme = cx.theme();
         let color = if on {
             theme.foreground
@@ -163,6 +163,20 @@ impl Rail {
     /// A step a model fills, with its card.
     pub fn step(self, icon: Icon, filled: bool, card: AnyElement, cx: &App) -> AnyElement {
         self.row(self.mark(icon, filled, cx), false, card, cx)
+    }
+
+    /// The last step as a card: the Typed step when it says something. Its
+    /// mark's ring is yellow while it needs setup (`warning`), the text's
+    /// colour otherwise.
+    pub fn last_card(self, icon: Icon, warning: bool, card: AnyElement, cx: &App) -> AnyElement {
+        let mark = if warning {
+            self.mark(icon, true, cx)
+                .border_color(cx.theme().warning)
+                .into_any_element()
+        } else {
+            self.mark(icon, true, cx).into_any_element()
+        };
+        self.row(mark, true, card, cx)
     }
 }
 

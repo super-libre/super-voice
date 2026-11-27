@@ -15,9 +15,10 @@ use std::rc::Rc;
 
 use gpui_kit::component::button::Button;
 use gpui_kit::component::notification::{Notification, NotificationType};
-use gpui_kit::component::{Sizable as _, WindowExt as _};
-use gpui_kit::{App, SharedString, Window};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _};
+use gpui_kit::{App, IntoElement as _, ParentElement as _, SharedString, Styled as _, Window, div};
 use super_voice_app_core::pages::connection::says_unreachable;
+use super_voice_app_core::pages::setup::TypingToast;
 
 /// What a toast says, and what it offers.
 #[derive(Clone)]
@@ -25,6 +26,9 @@ pub struct Toast {
     kind: NotificationType,
     title: Option<SharedString>,
     message: SharedString,
+    /// Words quoted under the message, muted, behind a rule: what went to
+    /// the clipboard.
+    quote: Option<SharedString>,
     action: Option<(SharedString, ToastAction)>,
 }
 
@@ -60,8 +64,17 @@ impl Toast {
             kind,
             title: None,
             message: message.into(),
+            quote: None,
             action: None,
         }
+    }
+
+    /// Words quoted under the message, on one line: what was copied.
+    #[must_use]
+    pub fn quote(mut self, quote: impl Into<SharedString>) -> Self {
+        let quote = quote.into();
+        self.quote = (!quote.is_empty()).then_some(quote);
+        self
     }
 
     /// A bold line above the message.
@@ -101,6 +114,23 @@ impl Toast {
         };
         if let Some(title) = self.title {
             note = note.title(title);
+        }
+        if let Some(quote) = self.quote {
+            note = note.content(move |_, _, cx| {
+                let theme = cx.theme();
+                div()
+                    .mt_1p5()
+                    .pl_2()
+                    .border_l_2()
+                    .border_color(theme.border)
+                    .text_sm()
+                    .text_color(theme.muted_foreground)
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .child(quote.clone())
+                    .into_any_element()
+            });
         }
         if let Some((label, on_press)) = self.action {
             note = note.action(move |_, _, _| {
@@ -165,3 +195,32 @@ pub fn notice<P: 'static>(
         show::<P>(window, cx, toast);
     }
 }
+
+/// The toast for a dictation that went to the clipboard: Couldn't type, how
+/// to paste the words, the words, and Allow typing when the permission is
+/// what stopped it, which `allow_typing` does.
+pub fn typing_failed(
+    toast: &TypingToast,
+    allow_typing: impl Fn(&mut Window, &mut App) + 'static,
+) -> Toast {
+    let message = if toast.copied {
+        crate::t_with("typing-failed-body", &[("keys", PASTE_KEYS)])
+    } else {
+        crate::t("typing-failed-not-copied")
+    };
+    let shown = Toast::warning(message)
+        .title(crate::t("typing-failed-title"))
+        .quote(toast.quote.clone());
+    if toast.allow_typing {
+        shown.action(crate::t("allow-typing"), allow_typing)
+    } else {
+        shown
+    }
+}
+
+/// The keys that paste, as the platform names them.
+const PASTE_KEYS: &str = if cfg!(target_os = "macos") {
+    "⌘V"
+} else {
+    "Ctrl+V"
+};

@@ -24,6 +24,7 @@ pub mod registry;
 pub mod settings;
 pub mod shortcuts;
 pub mod speak;
+pub mod status;
 pub mod synthesize;
 pub mod transcribe;
 pub mod update;

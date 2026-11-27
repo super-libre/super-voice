@@ -33,7 +33,8 @@ use gpui_kit::component::{ActiveTheme as _, Icon, IconName, WindowExt as _, v_fl
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div, px,
+    Render, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window,
+    div, px,
 };
 use super_voice_app_core::daemon::backends::BackendInfo;
 use super_voice_app_core::daemon::client::v1::contexts::ContextCatalog;
@@ -44,6 +45,7 @@ use super_voice_app_core::pages::model_language::{self as language, Focus, Model
 use super_voice_app_core::pages::model_voice as voice;
 use super_voice_app_core::pages::models::{self as page, ModelsState};
 use super_voice_app_core::pages::readiness::{Feature, Readiness};
+use super_voice_app_core::pages::setup::{self, TypedCard};
 use super_voice_app_core::rules::gpu::accel_name;
 use super_voice_app_core::state::Stage;
 use super_voice_app_core::state::language::ModelLanguages;
@@ -54,8 +56,11 @@ use self::pickers::{PickerKey, Pickers};
 use crate::effects::{self, CorePage, Runner, runner};
 use crate::pages::{Page, PageView, PaletteCommand};
 use crate::shared::Shared;
+use crate::ui::card::Card;
 use crate::ui::page_header::PageHeader;
+use crate::ui::status::{Dot, StatusPill};
 use crate::ui::toast::{self, Toast};
+use crate::ui::typing;
 use crate::ui::width::{self, WindowSize};
 use crate::{t, t_with};
 
@@ -83,6 +88,8 @@ pub struct ModelsPage {
     pickers: Pickers<Self>,
     /// Checks for a stalled download or load, while the daemon answers.
     ticker: Option<Task<()>>,
+    /// The steps' scroll: Allow typing scrolls to the Typed step, the last.
+    scroll: ScrollHandle,
 }
 
 /// What happened, for any of the core's pages this page runs.
@@ -134,6 +141,7 @@ impl PageView for ModelsPage {
             library: LibraryState::default(),
             pickers: Pickers::new(Self::picked),
             ticker: None,
+            scroll: ScrollHandle::new(),
         }
     }
 
@@ -246,6 +254,12 @@ impl PageView for ModelsPage {
     }
 
     fn run(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        // The toast's Allow typing: the Typed step is the last.
+        if id == crate::pages::ALLOW_TYPING {
+            self.scroll.scroll_to_bottom();
+            cx.notify();
+            return;
+        }
         if id == "unload-all-models" {
             self.unload_all(window, cx);
             return;
@@ -710,6 +724,37 @@ impl ModelsPage {
     }
 }
 
+impl ModelsPage {
+    /// The Typed step as a card: Needs setup with how to let the daemon
+    /// type, or Ready for a moment once it may.
+    fn typed_card(&self, typed: TypedCard, narrow: bool, cx: &App) -> AnyElement {
+        if typed == TypedCard::Ready {
+            return Card::new()
+                .title(t("typed"))
+                .status(StatusPill::new(Dot::Green, t("ready")))
+                .child(typing::allowed(cx))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!(
+                            "{} {}",
+                            t("typed-with-the-write-method"),
+                            t("typing-allowed-folds")
+                        )),
+                )
+                .into_any_element();
+        }
+        Card::new()
+            .title(t("typed"))
+            .status(StatusPill::new(Dot::Yellow, t("status-needs-setup")))
+            .child(typing::why(cx))
+            .child(typing::steps(&self.shared.setup, narrow, cx))
+            .child(typing::footer(typed, cx))
+            .into_any_element()
+    }
+}
+
 /// The step an effect reads for, when it only reads: the other feature's are
 /// left to its page.
 const fn effect_stage(effect: &page::Effect) -> Option<Stage> {
@@ -773,7 +818,18 @@ impl Render for ModelsPage {
             let body = self.step_card(stage, card_width, window, cx);
             steps.push(rail.step(card::stage_icon(stage), filled, body, cx));
         }
-        steps.push(rail.edge(sink.0, sink.1, sink.2, true, cx));
+        // Speech to text's Typed step says what's wrong while the daemon may
+        // not type, and folds back by itself once it may.
+        let typed = match self.feature {
+            Feature::SpeechToText => setup::typed_card(&self.shared.setup.read(cx).state),
+            Feature::TextToSpeech => TypedCard::Plain,
+        };
+        if typed == TypedCard::Plain {
+            steps.push(rail.edge(sink.0, sink.1, sink.2, true, cx));
+        } else {
+            let body = self.typed_card(typed, narrow, cx);
+            steps.push(rail.last_card(sink.0, typed != TypedCard::Ready, body, cx));
+        }
         v_flex()
             .size_full()
             .child(PageHeader::new(self.page).description(t(description)))
@@ -785,6 +841,7 @@ impl Render for ModelsPage {
                     })
                     .flex_1()
                     .min_h_0()
+                    .track_scroll(&self.scroll)
                     .overflow_y_scroll()
                     .child(
                         v_flex()

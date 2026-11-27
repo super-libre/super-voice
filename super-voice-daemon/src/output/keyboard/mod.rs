@@ -297,6 +297,21 @@ impl Simulator {
     }
 }
 
+impl Simulator {
+    /// Whether another app holds secure keyboard entry, which drops every
+    /// key this simulator would send. The test backend types into a buffer,
+    /// so it never asks the machine it runs on.
+    #[must_use]
+    #[cfg_attr(not(test), allow(clippy::unused_self))]
+    pub fn secure_input_on(&self) -> bool {
+        #[cfg(test)]
+        if matches!(self, Self::Capture(_)) {
+            return false;
+        }
+        secure_input_on()
+    }
+}
+
 #[cfg(test)]
 impl Simulator {
     /// A simulator that accumulates typed text instead of driving a keyboard.
@@ -341,15 +356,14 @@ mod tests {
     }
 }
 
-/// Ask macOS, once at daemon startup, whether the daemon may type — and let
-/// the system's Accessibility prompt appear if it may not.
+/// Ask macOS at daemon startup whether the daemon may type, and let the
+/// system's Accessibility prompt appear if it may not: once for each place
+/// the daemon is installed, not at every start.
 ///
-/// Without Accessibility the daemon transcribes perfectly and types nothing,
-/// which is the worst shape a failure can take: everything looks like it
-/// worked. The grant cannot be requested programmatically — only the user can
-/// give it, in System Settings — so the most the daemon can do is ask at a
-/// moment when asking is not disruptive, and say clearly what is wrong when
-/// the answer is no.
+/// Without Accessibility the daemon transcribes perfectly and types nothing;
+/// its words go to the clipboard instead. The grant cannot be requested
+/// programmatically, only the user can give it in System Settings, so the
+/// most the daemon can do is ask at a moment when asking is not disruptive.
 ///
 /// Startup is that moment. The alternative, prompting from the recording
 /// path, puts a modal dialog on screen in the instant between the user
@@ -357,16 +371,148 @@ mod tests {
 /// window they were dictating into. So this is the one place that prompts,
 /// and [`EnigoBackend::new`] never does.
 ///
+/// Once: launchd starts the daemon again at every login and after every
+/// exit, and a prompt at each of those, for a switch the user may have left
+/// off on purpose, is nagging. The first prompt also puts the daemon in the
+/// pane's list, switched off, which is what the app's Typed card then tells
+/// the user to switch on. A daemon at a new path (the app moved, or a second
+/// install) asks again, since its entry is a new one.
+///
 /// Advisory only: a `false` here does not stop the daemon. Transcription over
 /// the HTTP protocol works without ever typing anything, and a client that
 /// only reads transcripts has no use for the grant.
 #[cfg(target_os = "macos")]
 pub fn probe_accessibility_permission() {
+    if macos::is_trusted() {
+        debug!("Accessibility permission granted; write mode can type");
+        return;
+    }
+    let exe = std::env::current_exe().map_or_else(|_| String::new(), |p| p.display().to_string());
+    let mark = super_voice_shared::paths::state_dir().join(PROMPTED_MARK);
+    if !first_prompt(&mark, &exe) {
+        log::warn!(
+            "Write mode will not be able to type until {exe} is switched on in System \
+             Settings › Privacy & Security › Device Control (Accessibility before macOS 27); \
+             macOS was asked once already, so it is not asked again (dictations go to the \
+             clipboard meanwhile)"
+        );
+        return;
+    }
     match EnigoBackend::probe_accessibility_permission() {
         Ok(()) => debug!("Accessibility permission granted; write mode can type"),
         Err(e) => log::warn!(
             "Write mode will not be able to type: {e} \
              (transcription itself is unaffected)"
         ),
+    }
+}
+
+/// The file in the state directory that says which daemon already asked
+/// macOS for Accessibility: its path.
+#[cfg(any(target_os = "macos", test))]
+const PROMPTED_MARK: &str = "accessibility-prompted";
+
+/// Whether the daemon at `exe` should put the Accessibility prompt up: not
+/// when `mark` says it did already. Leaves the mark when it should, so the
+/// next start doesn't. A mark that can't be written costs a prompt at the
+/// next start, nothing more.
+#[cfg(any(target_os = "macos", test))]
+fn first_prompt(mark: &std::path::Path, exe: &str) -> bool {
+    if std::fs::read_to_string(mark).is_ok_and(|asked| asked.trim() == exe) {
+        return false;
+    }
+    let left = mark
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(mark, exe));
+    if let Err(e) = left {
+        log::warn!("Could not note that macOS was asked for Accessibility: {e}");
+    }
+    true
+}
+
+#[cfg(test)]
+mod prompt_tests {
+    use super::{PROMPTED_MARK, first_prompt};
+
+    /// The prompt comes up once for a daemon, and again for one at a new
+    /// path, whose entry in the pane is a new one.
+    #[test]
+    fn the_accessibility_prompt_comes_up_once_per_daemon() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let mark = dir.path().join("state").join(PROMPTED_MARK);
+        let daemon = "/Applications/Super Voice.app/Contents/MacOS/super-voice-daemon";
+        assert!(first_prompt(&mark, daemon));
+        assert!(!first_prompt(&mark, daemon));
+        assert!(first_prompt(
+            &mark,
+            "/Users/me/Super Voice.app/Contents/MacOS/super-voice-daemon"
+        ));
+    }
+}
+
+/// Whether the daemon may type into other apps, as far as it can tell
+/// without trying: on macOS, whether it holds Device Control (Accessibility
+/// before macOS 27). `None` elsewhere: a Linux keyboard is a compositor's
+/// global, a portal session or ydotool, and finding out means building one,
+/// which with the portal puts a dialog in front of the user.
+///
+/// Asked afresh on each call. It is what `GET /status` reports as
+/// `stt.can_type`, which the app reads every 2 s while it shows how to switch
+/// it on, so a switch flipped in System Settings shows at once.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn typing_allowed() -> Option<bool> {
+    Some(macos::is_trusted())
+}
+
+/// See the macOS one: elsewhere the daemon can't tell without trying.
+#[cfg(not(target_os = "macos"))]
+#[must_use]
+pub const fn typing_allowed() -> Option<bool> {
+    None
+}
+
+/// Whether another app holds secure keyboard entry (a password field, a
+/// terminal with Secure Keyboard Entry on): macOS then hands no synthetic key
+/// to anyone, and typing would drop every key without an error. Never on
+/// other platforms.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn secure_input_on() -> bool {
+    macos::secure_input_on()
+}
+
+/// See the macOS one: no other platform has secure keyboard entry.
+#[cfg(not(target_os = "macos"))]
+#[must_use]
+pub const fn secure_input_on() -> bool {
+    false
+}
+
+/// The two questions only macOS can answer, each one call.
+#[cfg(target_os = "macos")]
+mod macos {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    unsafe extern "C" {
+        /// `Boolean AXIsProcessTrusted(void)`: never prompts.
+        fn AXIsProcessTrusted() -> u8;
+    }
+
+    #[link(name = "Carbon", kind = "framework")]
+    unsafe extern "C" {
+        /// `Boolean IsSecureEventInputEnabled(void)`.
+        fn IsSecureEventInputEnabled() -> u8;
+    }
+
+    pub fn is_trusted() -> bool {
+        // SAFETY: no arguments and no preconditions; it reads the TCC entry
+        // of the calling process.
+        unsafe { AXIsProcessTrusted() != 0 }
+    }
+
+    pub fn secure_input_on() -> bool {
+        // SAFETY: no arguments and no preconditions.
+        unsafe { IsSecureEventInputEnabled() != 0 }
     }
 }

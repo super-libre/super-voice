@@ -54,6 +54,32 @@ pub struct TranscribingStoppedEvent {
     pub error: Option<String>,
 }
 
+/// Why a dictation was not typed: what `typing_failed`'s `reason` says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TypingFailure {
+    /// The daemon may not type: Device Control (Accessibility before macOS
+    /// 27) is switched off for it.
+    NotAllowed,
+    /// Another app held secure keyboard entry (a password field).
+    SecureInput,
+    /// The keyboard failed for another reason, or could not be built.
+    Failed,
+}
+
+/// `typing_failed` — a write-mode dictation was transcribed and could not be
+/// typed. Its words went to the clipboard instead, when `copied`.
+#[derive(Clone, Debug, Serialize)]
+pub struct TypingFailedEvent {
+    pub client_id: String,
+    pub timestamp: String,
+    pub reason: TypingFailure,
+    /// Whether the words are on the clipboard.
+    pub copied: bool,
+    /// The words, as they would have been typed.
+    pub text: String,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct RecordingStateEvent {
     pub is_recording: bool,
@@ -100,6 +126,12 @@ super_engine_daemon::event_topics! {
         wire: "final_stt", scope: "global_transcriptions",
         field: final_stt, payload: SttEvent, capacity: STATE_BUF_CAPACITY,
     },
+    /// A dictation that could not be typed, with its words: in
+    /// `global_transcriptions` because it carries them.
+    TypingFailed {
+        wire: "typing_failed", scope: "global_transcriptions",
+        field: typing_failed, payload: TypingFailedEvent, capacity: STATE_BUF_CAPACITY,
+    },
     /// Whether speech is currently coming out of the speakers.
     SpeakingState {
         wire: "speaking_state", scope: "playback_events",
@@ -134,6 +166,12 @@ impl EventBus {
 
     pub fn publish_recording_stopped(&self, evt: RecordingStoppedEvent) {
         let _ = self.recording_stopped.send(evt);
+    }
+
+    /// Publish a `typing_failed` event: a dictation's words went to the
+    /// clipboard instead of the focused app.
+    pub fn publish_typing_failed(&self, evt: TypingFailedEvent) {
+        let _ = self.typing_failed.send(evt);
     }
 
     /// Publish a `transcribing_started` event (paired with `publish_transcribing_stopped`).
