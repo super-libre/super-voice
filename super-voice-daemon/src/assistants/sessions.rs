@@ -114,6 +114,11 @@ impl Entry {
         self.recordings > 0 || now.saturating_duration_since(self.last_active) < idle
     }
 
+    /// What names it to people: the last part of the folder it works in.
+    fn label(&self) -> Option<String> {
+        self.folder.as_deref().map(folder_name)
+    }
+
     fn view(&self) -> SessionView {
         SessionView {
             caller: self.caller.clone(),
@@ -126,6 +131,14 @@ impl Entry {
             last_used_at: self.used_at,
         }
     }
+}
+
+/// The last part of `folder`, or all of it when it has none, as `/` does.
+fn folder_name(folder: &str) -> String {
+    std::path::Path::new(folder).file_name().map_or_else(
+        || folder.to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
 /// How many of a session's replies are kept to read aloud again.
@@ -212,6 +225,13 @@ impl Sessions {
             entry.utterance = Some(utterance);
             entry.used_at = Some(Utc::now());
         });
+    }
+
+    /// What names `who`'s session to people, as the app's Assistants page
+    /// names it. `None` when nothing does.
+    #[must_use]
+    pub fn label(&self, who: &Who) -> Option<String> {
+        self.read(who, Entry::label).flatten()
     }
 
     /// `who` asked to speak, on `task`.
@@ -431,6 +451,19 @@ mod tests {
         assert_eq!(list.len(), 3, "{list:?}");
         assert_eq!(list[0].folder.as_deref(), Some("/home/me/project"));
         assert_eq!(list[0].agents, 1);
+    }
+
+    /// A session is named by its folder's last part, once a request says it.
+    #[test]
+    fn a_session_is_named_by_its_folder() {
+        let sessions = Sessions::default();
+        let mut one = who("a", Some("s1"));
+        sessions.touch(&one);
+        assert_eq!(sessions.label(&one), None);
+        one.named.folder = Some("/home/me/super-voice".to_string());
+        sessions.touch(&one);
+        assert_eq!(sessions.label(&one).as_deref(), Some("super-voice"));
+        assert_eq!(sessions.label(&who("a", Some("s2"))), None);
     }
 
     /// A connection a session named itself on names it for a call that names

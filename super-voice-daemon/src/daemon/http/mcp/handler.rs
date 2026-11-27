@@ -198,6 +198,17 @@ pub(crate) async fn post(
         }
         Handled::Call { id, tool } => {
             let call = call_context(&state, &caller, assistant, &message["params"], &headers).await;
+            if matches!(tool, Tool::Listen { .. }) {
+                info!(
+                    "{}",
+                    listen_log(
+                        &assistant_of(&state, &caller, assistant),
+                        &session_of(&state, &call),
+                        &message["params"]["arguments"],
+                        call.uses_context,
+                    )
+                );
+            }
             let progress = progress_token(&message["params"]);
             stream_call(Arc::clone(&state.daemon), caller, call, id, tool, progress)
         }
@@ -219,6 +230,77 @@ fn describe(caller: &Caller) -> String {
         Caller::Key(key) => format!("key {key}"),
         Caller::Session(_) => "a session".to_string(),
     }
+}
+
+/// Who made a call, for the log: the assistant, a key made by hand by the
+/// name the user gave it, or a client with a session. Never a key or a token.
+fn assistant_of(state: &AppState, caller: &Caller, assistant: Option<AssistantId>) -> String {
+    match (caller, assistant) {
+        (_, Some(id)) => id.display_name().to_string(),
+        (Caller::Key(key), None) => state
+            .auth
+            .assistant_keys()
+            .into_iter()
+            .find(|made| made.id == *key)
+            .map_or_else(
+                || describe(caller),
+                |made| format!("the key {:?}", made.name),
+            ),
+        (Caller::Session(_), None) => "a client with a session token".to_string(),
+    }
+}
+
+/// The session a call is for, for the log: what names it, as the
+/// Assistants page shows it, its id, and the agent within it that made the
+/// call.
+fn session_of(state: &AppState, call: &tools::CallContext) -> String {
+    let named = &call.who.named;
+    let session = match (
+        state.daemon.assistants.sessions.label(&call.who),
+        named.id.as_deref(),
+    ) {
+        (Some(label), Some(id)) => format!("session {label:?} ({id})"),
+        (Some(label), None) => format!("session {label:?}"),
+        (None, Some(id)) => format!("session {id}"),
+        (None, None) => "its one session".to_string(),
+    };
+    match &named.agent {
+        Some(agent) => format!("{session}, agent {agent}"),
+        None => session,
+    }
+}
+
+/// What the log says of a `listen` call as it arrives, before anything
+/// records: who it is from, `session`, and the context its client sent in
+/// `args`, whole, as it came, before the daemon cuts it to fit. The user
+/// reads it to see what an assistant sends. One field a line, each as JSON,
+/// so a line break in one stays on its line.
+fn listen_log(from: &str, session: &str, args: &Value, uses_context: bool) -> String {
+    let field = |value: &Value| {
+        if value.is_null() {
+            "none".to_string()
+        } else {
+            value.to_string()
+        }
+    };
+    let by = if args["asked"].as_bool() == Some(true) {
+        "the user"
+    } else {
+        "the model"
+    };
+    let unused = if uses_context {
+        ""
+    } else {
+        ", heard without its context: the user turned the conversation's context off"
+    };
+    let context = &args["context"];
+    format!(
+        "MCP listen from {from}, {session}, asked by {by}{unused}\n  \
+         question: {}\n  prompt: {}\n  vocabulary: {}",
+        field(&args["question"]),
+        field(&context["prompt"]),
+        field(&context["vocabulary"]),
+    )
 }
 
 fn json(status: StatusCode, message: &Value) -> Response {
@@ -246,8 +328,12 @@ fn stream_call(
 ) -> Response {
     let name = tool.name();
     // The plugin's checks come every second or so, and a draft's at each
-    // pause in typing: not worth a line each.
-    if !matches!(tool, Tool::Status | Tool::Turn(TurnEvent::Draft { .. })) {
+    // pause in typing: not worth a line each. A `listen` has its own line,
+    // with its context, as it arrives.
+    if !matches!(
+        tool,
+        Tool::Status | Tool::Listen { .. } | Tool::Turn(TurnEvent::Draft { .. })
+    ) {
         info!("MCP {name} from {}", describe(&caller));
     }
     let in_flight = daemon
@@ -318,8 +404,36 @@ fn stream_call(
 
 #[cfg(test)]
 mod tests {
-    use super::{keepalive, progress_token};
+    use super::{keepalive, listen_log, progress_token};
     use serde_json::{Value, json};
+
+    /// A `listen`'s log line has what its client sent, each field on a line
+    /// of its own, whole.
+    #[test]
+    fn a_listens_log_says_what_its_client_sent() {
+        let args = json!({
+            "question": "Which one?",
+            "context": {
+                "prompt": "Topic: the release.\nFiles: CHANGELOG.md",
+                "vocabulary": ["Super Voice", "GPUI"],
+            },
+        });
+        assert_eq!(
+            listen_log("Claude Code", "session \"super-voice\" (s1)", &args, true),
+            "MCP listen from Claude Code, session \"super-voice\" (s1), asked by the model\n  \
+             question: \"Which one?\"\n  \
+             prompt: \"Topic: the release.\\nFiles: CHANGELOG.md\"\n  \
+             vocabulary: [\"Super Voice\",\"GPUI\"]"
+        );
+
+        let talk = json!({ "asked": true });
+        assert_eq!(
+            listen_log("Codex", "its one session", &talk, false),
+            "MCP listen from Codex, its one session, asked by the user, heard without its \
+             context: the user turned the conversation's context off\n  \
+             question: none\n  prompt: none\n  vocabulary: none"
+        );
+    }
 
     #[test]
     fn a_request_names_its_progress_token_in_meta() {

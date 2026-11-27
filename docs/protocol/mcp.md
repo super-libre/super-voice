@@ -85,6 +85,12 @@ Assistants page (`conversation_context` on
 turn it off. Off, a `listen` is heard with the user's context alone, as if it
 brought none. A key made by hand has no switch: its client chose to send it.
 
+The daemon logs each `listen` at info as it arrives, before anything records:
+the assistant, its session (by name, as the Assistants page shows it, and
+id), whether the model or the user asked, and the `question`, the `context`'s
+`prompt` and its `vocabulary` whole, as the client sent them, one line each.
+It never logs a key or a token.
+
 A tool that cannot do its work answers with a result whose `isError` is `true`
 and whose text says why, so the model can tell the user: no model loaded, a
 recording in the way, and so on. Silence is not an error: `listen` answers
