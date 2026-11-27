@@ -12,7 +12,8 @@
 //! ```
 
 use gpui_kit::component::breadcrumb::Breadcrumb;
-use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
+use gpui_kit::component::tag::Tag;
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -54,6 +55,37 @@ fn text_width(text: &str, size: f32, weight: FontWeight, window: &Window) -> Pix
             None,
         )
         .width
+}
+
+/// The tag that marks a preview page ([`Page::is_preview`]), beside its name
+/// in the header and the sidebar.
+#[must_use]
+pub fn preview_tag() -> Tag {
+    Tag::secondary().small().child(t("preview"))
+}
+
+/// The breadcrumb and the page's name, with its preview tag.
+fn title(page: Page) -> impl IntoElement {
+    v_flex()
+        .flex_shrink_0()
+        .gap_0p5()
+        .child(
+            Breadcrumb::new()
+                .child(t(page.section().key()))
+                .child(t(page.key())),
+        )
+        .child(
+            h_flex()
+                .gap_2()
+                .items_center()
+                .child(
+                    div()
+                        .text_xl()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(t(page.key())),
+                )
+                .when(page.is_preview(), |row| row.child(preview_tag())),
+        )
 }
 
 /// A page's header.
@@ -138,20 +170,7 @@ impl RenderOnce for PageHeader {
                 })
                 .into_any_element();
         }
-        let title = v_flex()
-            .flex_shrink_0()
-            .gap_0p5()
-            .child(
-                Breadcrumb::new()
-                    .child(t(self.page.section().key()))
-                    .child(t(self.page.key())),
-            )
-            .child(
-                div()
-                    .text_xl()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(t(self.page.key())),
-            );
+        let title = title(self.page);
         let description = |text: SharedString| {
             div()
                 .text_sm()

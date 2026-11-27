@@ -467,6 +467,13 @@ pub enum Page {
 }
 
 impl Page {
+    /// Whether the page is a preview: it works, but may still change. A
+    /// "Preview" tag sits beside its name in the sidebar and its header.
+    #[must_use]
+    pub const fn is_preview(self) -> bool {
+        matches!(self, Self::Assistants)
+    }
+
     pub const ALL: [Self; 15] = [
         Self::FinishSetup,
         Self::SttModels,

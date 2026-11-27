@@ -244,6 +244,9 @@ impl NavItem {
             .when_some(self.mark, |item, mark| {
                 item.suffix(move |_, cx| mark_element(mark, cx))
             })
+            .when(self.mark.is_none() && page.is_preview(), |item| {
+                item.suffix(|_, _| crate::ui::page_header::preview_tag().into_any_element())
+            })
     }
 
     /// The rail's icon: the kit's collapsed item, drawn here so the feature's
