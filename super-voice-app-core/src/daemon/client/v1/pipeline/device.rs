@@ -13,9 +13,9 @@ use serde::Deserialize;
 
 use crate::daemon::client::internal::response::{require_success, require_unit};
 use crate::daemon::client::internal::session::with_settings_token;
+use crate::daemon::client::internal::transport;
 use crate::state::Stage;
 use super_voice_shared::daemon::http_client::HttpResult;
-use super_voice_shared::daemon::http_client::transport;
 
 /// What the daemon reports for one model's device.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]

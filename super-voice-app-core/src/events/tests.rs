@@ -295,3 +295,44 @@ async fn a_dropped_stream_asks_for_every_topic_again() {
     let all = TOPICS.len();
     assert_eq!(lengths, [all, all - 1, all, all - 1]);
 }
+
+#[test]
+fn an_event_is_said_without_its_words() {
+    let said = summary(&serde_json::json!({
+        "reason": "not_allowed",
+        "copied": true,
+        "text": "Call the landlord about the heater before Friday.",
+        "timestamp": "2026-11-26T10:00:00Z",
+    }));
+    assert_eq!(said, "reason=not_allowed, copied=true, text=49 chars");
+    assert!(!said.contains("landlord"));
+    assert_eq!(
+        summary(&serde_json::json!({ "status": "downloading", "percentage": 42.857 })),
+        "status=downloading, percentage=42.9"
+    );
+    assert_eq!(summary(&serde_json::json!({})), "no details");
+}
+
+#[test]
+fn a_downloads_ticks_are_said_once_a_phase() {
+    let mut said = Said::default();
+    let tick = |status: &str, percentage: f64| {
+        event(
+            "download_progress",
+            serde_json::json!({ "feature": "stt", "stage": 1, "status": status, "percentage": percentage }),
+        )
+    };
+    assert_eq!(said.level(&tick("downloading", 1.0)), log::Level::Debug);
+    assert_eq!(said.level(&tick("downloading", 2.0)), log::Level::Trace);
+    assert_eq!(said.level(&tick("loading_model", 100.0)), log::Level::Debug);
+    let meter = event(
+        "frequency_bands",
+        serde_json::json!({ "total_energy": 0.01 }),
+    );
+    assert_eq!(said.level(&meter), log::Level::Trace);
+    let recording = event(
+        "recording_state",
+        serde_json::json!({ "is_recording": true }),
+    );
+    assert_eq!(said.level(&recording), log::Level::Debug);
+}

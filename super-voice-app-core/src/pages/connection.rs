@@ -78,8 +78,33 @@ impl Outcome {
     }
 }
 
-/// Take in `input`, and say what to do.
+/// Take in `input`, and say what to do. A change in whether the daemon
+/// answers, or in why it doesn't, is said at info.
 pub fn update(state: &mut ConnectionState, input: Input) -> Outcome {
+    let was_connected = state.is_connected();
+    let was_failure = state.failure.clone();
+    let outcome = decide(state, input);
+    if state.is_connected() != was_connected || state.failure != was_failure {
+        say_status(state, was_connected);
+    }
+    outcome
+}
+
+/// Say what the connection now is, at info.
+fn say_status(state: &ConnectionState, was_connected: bool) {
+    match (&state.failure, state.is_connected()) {
+        (None, true) if was_connected => {}
+        (None, true) => log::info!("The daemon answers"),
+        (Some(DaemonStatus::Error(why)), _) if was_connected => {
+            log::info!("The daemon stopped answering: {why}");
+        }
+        (Some(DaemonStatus::Error(why)), _) => log::info!("The daemon can't be reached: {why}"),
+        (Some(DaemonStatus::Blocked(why)), _) => log::info!("The daemon refused the app: {why}"),
+        (_, _) => log::info!("The daemon's connection is {:?}", state.status),
+    }
+}
+
+fn decide(state: &mut ConnectionState, input: Input) -> Outcome {
     match input {
         Input::Reached => {
             let reconnected = !state.is_connected();
@@ -466,8 +491,11 @@ pub fn open_login_items() {
 }
 
 /// Ping the daemon.
+///
+/// Its request is said at trace: the app pings every few seconds, and a
+/// change of status is said at info.
 pub async fn run_ping() -> Input {
-    match crate::daemon::client::ping_daemon().await {
+    match crate::daemon::client::quietly(crate::daemon::client::ping_daemon()).await {
         Ok(_) => Input::Reached,
         Err(error) => Input::Failed(error),
     }

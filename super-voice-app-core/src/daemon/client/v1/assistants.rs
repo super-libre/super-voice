@@ -4,7 +4,8 @@
 //! config and holds the keys, so the app never touches either itself.
 
 use crate::daemon::client::internal::session::with_settings_token;
-use super_voice_shared::daemon::http_client::{HttpResult, transport};
+use crate::daemon::client::internal::transport;
+use super_voice_shared::daemon::http_client::HttpResult;
 use super_voice_shared::models::assistants::{AssistantId, AssistantList, NewKey};
 
 /// `GET /assistants` — every assistant, every key made by hand, and the

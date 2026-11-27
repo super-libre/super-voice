@@ -316,9 +316,13 @@ impl Shell {
         // Only while the daemon answers: a page that doesn't need it opens
         // while it is down, and reads when it is back.
         if !self.shared.connection.read(cx).is_down() {
+            if self.handle(page).is_stale() {
+                log::debug!("caught up page {}, shown before its turn", page.slug());
+            }
             self.handle(page).reach_if_stale(window, cx);
         }
         self.handle(page).shown(window, cx);
+        log::debug!("showed page {}", page.slug());
         self.check_typing_while_shown(cx);
         cx.notify();
     }
@@ -394,13 +398,20 @@ impl Shell {
     /// they are shown if that comes first.
     fn reach_pages(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.reached_at = Some(Instant::now());
+        let mut now = Vec::new();
         for (page, handle) in &self.pages {
             if *page == self.page || page.reads_while_hidden() {
+                now.push(page.slug());
                 handle.reached(window, cx);
             } else {
                 handle.mark_stale();
             }
         }
+        log::debug!(
+            "the daemon answered: read {}; the other {} pages catch up one at a time",
+            now.join(", "),
+            self.pages.len() - now.len()
+        );
         self.catch_up = Some(cx.spawn_in(window, async move |this, cx| {
             loop {
                 cx.background_executor().timer(CATCH_UP_EVERY).await;
@@ -416,8 +427,10 @@ impl Shell {
                             .map(|(page, handle)| (*page, handle.is_stale())),
                     );
                     let Some(page) = next else {
+                        log::debug!("every page caught up");
                         return false;
                     };
+                    log::debug!("caught up page {}", page.slug());
                     shell.handle(page).clone().reached(window, cx);
                     true
                 });
@@ -620,6 +633,7 @@ impl Shell {
             .cloned()
             .collect();
         let groups = palette::entries(&pages, cx);
+        log::debug!("opened the command palette");
         self.palette.open(groups, window, cx);
     }
 
@@ -646,6 +660,7 @@ impl Shell {
     ) {
         self.go(page, window, cx);
         self.handle(page).clone().run(id, window, cx);
+        log::debug!("ran command {id} on page {}", page.slug());
     }
 
     /// Ctrl+R (Cmd+R): record a new note, on the Notes page.

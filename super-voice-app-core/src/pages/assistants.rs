@@ -154,6 +154,20 @@ pub fn update(state: &mut AssistantsState, input: Input) -> Outcome {
     match input {
         Input::Refresh => Outcome::effect(Effect::List),
         Input::Loaded(Ok(list)) | Input::FlagSaved(_, Ok(list)) | Input::KeyRemoved(Ok(list)) => {
+            if state.list.as_ref() != Some(&list) {
+                let connected = list
+                    .assistants
+                    .iter()
+                    .filter(|a| {
+                        a.state == super_voice_shared::models::assistants::AssistantState::Connected
+                    })
+                    .count();
+                log::debug!(
+                    "assistants: {connected} of {} connected, {} keys made by hand",
+                    list.assistants.len(),
+                    list.custom_keys.len()
+                );
+            }
             state.list = Some(list);
             Outcome::default()
         }
@@ -465,8 +479,15 @@ pub fn made_on_now(created_at: &str) -> MadeOn {
     made_on(created_at, &chrono::Local::now())
 }
 
+///
+/// Said at trace, as the page reads it every 2 s while shown; a list that
+/// changed is said at debug when it is taken in.
 pub async fn run_list() -> Input {
-    Input::Loaded(client::list_assistants().await.map_err(|e| e.to_string()))
+    Input::Loaded(
+        crate::daemon::client::quietly(client::list_assistants())
+            .await
+            .map_err(|e| e.to_string()),
+    )
 }
 
 pub async fn run_connect(id: AssistantId) -> Input {

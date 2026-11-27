@@ -145,10 +145,19 @@ where
 {
     let first: Updates = Box::pin(open(TOPICS));
     futures_util::stream::unfold(
-        (first, TOPICS.len(), open),
-        |(mut updates, mut kept, open)| async move {
+        (first, TOPICS.len(), open, Said::default()),
+        |(mut updates, mut kept, open, mut said)| async move {
             loop {
                 let update = updates.next().await?;
+                match &update {
+                    WidgetSubscriptionUpdate::Connected if kept < TOPICS.len() => log::info!(
+                        "/events connected, without the {} topics the daemon doesn't know",
+                        TOPICS.len() - kept
+                    ),
+                    WidgetSubscriptionUpdate::Connected => log::info!("/events connected"),
+                    WidgetSubscriptionUpdate::Event(event) => said.say(event),
+                    _ => {}
+                }
                 if let WidgetSubscriptionUpdate::Disconnected { reason } = &update {
                     if let Some(fewer) = fewer_topics(reason, kept) {
                         warn!(
@@ -166,7 +175,7 @@ where
                     }
                 }
                 if let Some(event) = from_update(update) {
-                    return Some((event, (updates, kept, open)));
+                    return Some((event, (updates, kept, open, said)));
                 }
             }
         },
@@ -187,7 +196,7 @@ fn from_update(update: WidgetSubscriptionUpdate) -> Option<Event> {
         WidgetSubscriptionUpdate::Connected => Some(Event::Connected),
         WidgetSubscriptionUpdate::Event(event) => parse(&event),
         WidgetSubscriptionUpdate::Disconnected { reason } => {
-            warn!("/events disconnected ({reason}); reconnecting");
+            log::info!("/events disconnected ({reason}); reconnecting");
             Some(Event::Disconnected)
         }
         WidgetSubscriptionUpdate::NeedsReauth { reason } => {
@@ -198,6 +207,94 @@ fn from_update(update: WidgetSubscriptionUpdate) -> Option<Event> {
             warn!("/events refused by the user ({reason}); the stream has ended");
             Some(Event::Blocked(reason))
         }
+    }
+}
+
+/// What the events say in the log: each one's topic and a few of its fields,
+/// at debug. The meters, and a download's or an install's ticks within one
+/// phase, come many times a second, and are said at trace.
+#[derive(Default)]
+struct Said {
+    /// Each download's or install's last phase, by what it is for.
+    phases: std::collections::HashMap<String, String>,
+}
+
+/// The fields an event is said with. Never `text`, the dictated words: only
+/// their length.
+const SAID_FIELDS: &[&str] = &[
+    "type",
+    "feature",
+    "stage",
+    "status",
+    "setting",
+    "model",
+    "model_name",
+    "source",
+    "phase",
+    "version",
+    "error",
+    "reason",
+    "is_recording",
+    "is_speaking",
+    "utterance_id",
+    "copied",
+    "percentage",
+];
+
+impl Said {
+    fn say(&mut self, event: &WidgetEvent) {
+        let level = self.level(event);
+        if log::log_enabled!(level) {
+            log::log!(level, "event {}: {}", event.name, summary(&event.payload));
+        }
+    }
+
+    fn level(&mut self, event: &WidgetEvent) -> log::Level {
+        let p = &event.payload;
+        let text = |key: &str| p.get(key).map_or_default(ToString::to_string);
+        let phase = match event.name.as_str() {
+            "frequency_bands" | "playback_frequency_bands" => return log::Level::Trace,
+            "download_progress" => Some((
+                format!("{}/{}", text("feature"), text("stage")),
+                text("status"),
+            )),
+            "registry_install" => Some((text("install_id"), text("phase"))),
+            _ => None,
+        };
+        match phase {
+            Some((what, phase)) if self.phases.get(&what) == Some(&phase) => log::Level::Trace,
+            Some((what, phase)) => {
+                self.phases.insert(what, phase);
+                log::Level::Debug
+            }
+            None => log::Level::Debug,
+        }
+    }
+}
+
+/// An event's payload in a few words: its [`SAID_FIELDS`], and the length of
+/// its words, if it carries any.
+fn summary(payload: &Value) -> String {
+    let mut parts: Vec<String> = SAID_FIELDS
+        .iter()
+        .filter_map(|&key| {
+            let value = payload.get(key)?;
+            let value = match value {
+                Value::String(s) => s.clone(),
+                Value::Number(n) if n.is_f64() => format!("{:.1}", n.as_f64().unwrap_or_default()),
+                Value::Null | Value::Array(_) | Value::Object(_) => return None,
+                other => other.to_string(),
+            };
+            Some(format!("{key}={value}"))
+        })
+        .collect();
+    if let Some(text) = payload.get("text").and_then(Value::as_str) {
+        parts.push(format!("text={} chars", text.chars().count()));
+    }
+    if parts.is_empty() {
+        "no details".to_string()
+    } else {
+        parts.join(", ")
     }
 }
 

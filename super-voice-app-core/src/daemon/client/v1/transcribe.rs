@@ -5,7 +5,7 @@ use crate::daemon::client::internal::response::require_unit;
 use crate::daemon::client::internal::session::{
     SETTINGS_SCOPES, app_id, app_name, socket_path, with_settings_token,
 };
-use super_voice_shared::daemon::http_client;
+use crate::daemon::client::internal::transport;
 use super_voice_shared::daemon::http_client::HttpResult;
 use super_voice_shared::daemon::session;
 use super_voice_shared::models::protocol::PreviewSource;
@@ -76,7 +76,7 @@ async fn run_take(channel: tokio::sync::mpsc::Sender<RecordEvent>) {
             let token = session::obtain(socket.clone(), app_id(), app_name(), SETTINGS_SCOPES)
                 .await
                 .map_err(|e| e.to_string())?;
-            match http_client::transcribe_stream(socket.clone(), &token, opts.clone()).await {
+            match transport::transcribe_stream(socket.clone(), &token, opts.clone()).await {
                 Ok(s) => Box::pin(s),
                 Err(HttpError::InvalidSession { .. }) => {
                     let _ = session::forget(app_id());
@@ -85,7 +85,7 @@ async fn run_take(channel: tokio::sync::mpsc::Sender<RecordEvent>) {
                             .await
                             .map_err(|e| e.to_string())?;
                     Box::pin(
-                        http_client::transcribe_stream(socket, &token, opts)
+                        transport::transcribe_stream(socket, &token, opts)
                             .await
                             .map_err(|e| e.to_string())?,
                     )
@@ -126,7 +126,7 @@ async fn run_take(channel: tokio::sync::mpsc::Sender<RecordEvent>) {
 /// Send a stop signal to a running recording (HTTP `POST /stt/transcribe/stop`).
 pub async fn stop_record_command() -> HttpResult<()> {
     with_settings_token(|socket, token| async move {
-        let resp = http_client::transcribe_stop(socket, &token).await?;
+        let resp = transport::transcribe_stop(socket, &token).await?;
         require_unit(resp, "stop_record_command")
     })
     .await

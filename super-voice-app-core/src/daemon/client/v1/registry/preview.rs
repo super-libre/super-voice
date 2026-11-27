@@ -4,8 +4,8 @@
 //! sees the backend before committing to it.
 
 use crate::daemon::client::internal::session::with_settings_token;
+use crate::daemon::client::internal::transport;
 use super_voice_shared::daemon::http_client::HttpResult;
-use super_voice_shared::daemon::http_client::transport;
 use super_voice_shared::registry::PreviewResponse;
 
 /// Resolve `repo_url` and describe the backend it would install.

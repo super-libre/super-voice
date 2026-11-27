@@ -6,12 +6,13 @@
 //! what only the status says: `stt.can_type`.
 
 use crate::daemon::client::internal::session::with_settings_token;
-use super_voice_shared::daemon::http_client::{self, HttpResult};
+use crate::daemon::client::internal::transport;
+use super_voice_shared::daemon::http_client::HttpResult;
 use super_voice_shared::models::status::VoiceStatus;
 
 /// The daemon's status (HTTP `GET /status`).
 pub async fn get_status() -> HttpResult<VoiceStatus> {
-    with_settings_token(|socket, token| async move { http_client::status(socket, &token).await })
+    with_settings_token(|socket, token| async move { transport::status(socket, &token).await })
         .await
 }
 

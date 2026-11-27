@@ -7,8 +7,8 @@
 
 use crate::daemon::client::internal::response::require_unit;
 use crate::daemon::client::internal::session::with_settings_token;
+use crate::daemon::client::internal::transport;
 use super_voice_shared::daemon::http_client::HttpResult;
-use super_voice_shared::daemon::http_client::transport;
 
 /// Set a backend option (HTTP `POST /backend/{source}/option/{name}`).
 pub async fn set_backend_option(source: String, name: String, value: String) -> HttpResult<()> {

@@ -16,9 +16,9 @@ pub mod backend;
 
 use crate::daemon::client::internal::response::require_unit;
 use crate::daemon::client::internal::session::with_settings_token;
+use crate::daemon::client::internal::transport;
 use serde::Deserialize;
 use super_voice_shared::daemon::http_client::HttpResult;
-use super_voice_shared::daemon::http_client::transport;
 use super_voice_shared::models::contexts::DictationContext;
 
 /// Every context, and which one is in force.

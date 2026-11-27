@@ -17,7 +17,7 @@ macro_rules! settings_getter {
             crate::daemon::client::internal::session::with_settings_token(
                 |socket, token| async move {
                     let $resp = crate::daemon::client::internal::response::require_success(
-                        super_voice_shared::daemon::http_client::transport::settings_get(
+                        crate::daemon::client::internal::transport::settings_get(
                             socket, &token, $path,
                         )
                         .await?,
@@ -46,7 +46,7 @@ macro_rules! settings_setter {
                     let body = body.clone();
                     async move {
                         let resp =
-                            super_voice_shared::daemon::http_client::transport::settings_post(
+                            crate::daemon::client::internal::transport::settings_post(
                                 socket, &token, $path, &body,
                             )
                             .await?;

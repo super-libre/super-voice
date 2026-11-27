@@ -3,7 +3,8 @@
 //! owns them, so the app never writes desktop settings itself.
 
 use crate::daemon::client::internal::session::with_settings_token;
-use super_voice_shared::daemon::http_client::{HttpResult, transport};
+use crate::daemon::client::internal::transport;
+use super_voice_shared::daemon::http_client::HttpResult;
 use super_voice_shared::models::shortcuts::{ShortcutId, ShortcutList};
 
 /// `GET /shortcuts` — every shortcut, where it stands, and the method.

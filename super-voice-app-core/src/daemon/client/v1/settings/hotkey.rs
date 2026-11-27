@@ -6,8 +6,8 @@
 
 use crate::daemon::client::internal::response::require_success;
 use crate::daemon::client::internal::session::with_settings_token;
+use crate::daemon::client::internal::transport;
 use super_voice_shared::daemon::http_client::HttpResult;
-use super_voice_shared::daemon::http_client::transport;
 use super_voice_shared::models::hotkey::DEFAULT_BINDING;
 use super_voice_shared::models::protocol::DaemonResponse;
 

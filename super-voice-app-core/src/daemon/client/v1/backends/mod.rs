@@ -12,7 +12,7 @@ pub mod secrets;
 use crate::daemon::backends::BackendInfo;
 use crate::daemon::client::internal::response::require_success;
 use crate::daemon::client::internal::session::with_settings_token;
-use super_voice_shared::daemon::http_client::transport;
+use crate::daemon::client::internal::transport;
 use super_voice_shared::daemon::http_client::{HttpError, HttpResult};
 use super_voice_shared::registry::UninstallResponse;
 

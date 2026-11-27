@@ -2,9 +2,9 @@
 //! Daemon-facing operations for the app.
 //!
 //! Mirrors the daemon's server `v1/` tree: one module per endpoint
-//! family under [`v1`], built on the shared Unix-socket transport
-//! (`super_voice_shared::daemon::http_client::transport`) and the cached
-//! `settings`-scope token ([`internal::session`]).
+//! family under [`v1`], built on the shared Unix-socket transport, which
+//! [`internal::transport`] wraps to say each request in the log, and the
+//! cached `settings`-scope token ([`internal::session`]).
 
 #[cfg(test)]
 mod path_contract;
@@ -29,6 +29,7 @@ pub use v1::backends::secrets::{clear_backend_secret, list_backend_secrets, set_
 // the handler that makes it does.
 pub(crate) use internal::session::app_name;
 pub use internal::session::{SETTINGS_SCOPES, app_id, set_identity, use_scene_token};
+pub use internal::transport::quietly;
 pub use v1::contexts::backend::{BackendContext, ContextMode};
 pub use v1::gpu_info::get_gpu_info;
 pub use v1::ping::{ping_daemon, test_daemon_connection};

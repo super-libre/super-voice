@@ -16,8 +16,8 @@
 //! those terms rather than folding them into "every daemon setting".
 
 use crate::daemon::client::internal::session::with_settings_token;
+use crate::daemon::client::internal::transport;
 use super_voice_shared::daemon::http_client::HttpResult;
-use super_voice_shared::daemon::http_client::transport;
 use super_voice_shared::tts::models::voices::{
     VoiceDeletedResponse, VoiceInfo, VoiceListResponse, VoiceModelSupport, VoiceResponse,
 };

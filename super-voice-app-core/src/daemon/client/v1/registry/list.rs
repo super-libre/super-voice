@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use crate::daemon::client::internal::session::with_settings_token;
+use crate::daemon::client::internal::transport;
 use crate::daemon::client::v1::registry::ListFilters;
 use super_voice_shared::daemon::http_client::HttpResult;
-use super_voice_shared::daemon::http_client::transport;
 use super_voice_shared::registry::RegistryListResponse;
 
 /// `GET /registry/backend/list` — fetch the backend catalog, optionally filtered.

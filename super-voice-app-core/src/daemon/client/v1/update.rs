@@ -2,7 +2,7 @@
 //! GET /v1/update and POST /v1/update/check.
 //! Contract: docs/protocol/endpoints/v1/update.md
 
-use super_voice_shared::daemon::http_client::transport;
+use crate::daemon::client::internal::transport;
 use super_voice_shared::daemon::http_client::{HttpError, HttpResult};
 use super_voice_shared::models::self_update::SelfUpdateStatus;
 

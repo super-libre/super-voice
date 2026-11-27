@@ -38,6 +38,15 @@ pub enum Feature {
 impl Feature {
     pub const ALL: [Self; 2] = [Self::SpeechToText, Self::TextToSpeech];
 
+    /// Its name in the log.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::SpeechToText => "Speech to text",
+            Self::TextToSpeech => "Text to speech",
+        }
+    }
+
     /// The stage whose model the feature needs to work.
     #[must_use]
     pub const fn stage(self) -> Stage {
@@ -166,6 +175,23 @@ pub struct Outcome {
 
 /// Take in `input`, and say what to do.
 pub fn update(known: &mut ReadinessState, input: Input) -> Outcome {
+    let before = Feature::ALL.map(|feature| readiness(known, feature));
+    let outcome = decide(known, input);
+    for (feature, was) in Feature::ALL.into_iter().zip(before) {
+        let now = readiness(known, feature);
+        if now != was {
+            let model = known
+                .views
+                .get(&feature.stage())
+                .and_then(|view| view.model.as_deref())
+                .map_or_default(|model| format!(" with {model}"));
+            log::info!("{} is {now:?}{model} (was {was:?})", feature.label());
+        }
+    }
+    outcome
+}
+
+fn decide(known: &mut ReadinessState, input: Input) -> Outcome {
     let effects = match input {
         Input::Reached => {
             known.connected = true;
@@ -347,13 +373,25 @@ pub async fn run_read_stage(stage: Stage) -> Input {
 }
 
 /// Ask the daemon whether it may type.
+///
+/// Said at trace, as the app asks every 2 s while it may not.
 pub async fn run_read_typing() -> Input {
-    Input::TypingRead(client::get_can_type().await.map_err(|e| e.to_string()))
+    Input::TypingRead(
+        client::quietly(client::get_can_type())
+            .await
+            .map_err(|e| e.to_string()),
+    )
 }
 
 /// Read the machine's GPUs from the daemon.
+///
+/// Said at trace, as the app reads them again every 15 s.
 pub async fn run_read_gpus() -> Input {
-    Input::GpusRead(client::get_gpu_info().await.unwrap_or_default())
+    Input::GpusRead(
+        client::quietly(client::get_gpu_info())
+            .await
+            .unwrap_or_default(),
+    )
 }
 
 #[cfg(test)]

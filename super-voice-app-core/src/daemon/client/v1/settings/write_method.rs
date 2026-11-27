@@ -21,7 +21,7 @@ pub async fn test_write_method()
 -> super_voice_shared::daemon::http_client::HttpResult<Option<WriteMethod>> {
     crate::daemon::client::internal::session::with_settings_token(|socket, token| async move {
         let resp = crate::daemon::client::internal::response::require_success(
-            super_voice_shared::daemon::http_client::transport::settings_post(
+            crate::daemon::client::internal::transport::settings_post(
                 socket,
                 &token,
                 "/settings/write_method/test",

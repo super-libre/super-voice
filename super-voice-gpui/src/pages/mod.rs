@@ -526,8 +526,7 @@ impl Page {
     }
 
     /// A name for the page that stays the same in every language, for
-    /// `just app-shot`.
-    #[cfg(any(test, feature = "screenshot"))]
+    /// `just app-shot` and the log.
     #[must_use]
     pub const fn slug(self) -> &'static str {
         match self {

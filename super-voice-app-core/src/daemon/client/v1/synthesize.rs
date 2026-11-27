@@ -6,7 +6,8 @@
 //! synthesis: that is how the tab's Cancel works.
 
 use crate::daemon::client::internal::session::with_settings_token;
-use super_voice_shared::daemon::http_client::{HttpResult, transport};
+use crate::daemon::client::internal::transport;
+use super_voice_shared::daemon::http_client::HttpResult;
 
 /// `POST /tts/synthesize` — `text`, in the voice and language the user set, as
 /// a mono 16-bit WAV file.
