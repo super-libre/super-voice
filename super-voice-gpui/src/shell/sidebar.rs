@@ -28,7 +28,7 @@ use gpui_kit::{
 use super_voice_app_core::pages::readiness::{Feature, Readiness};
 
 use super::{Shell, version};
-use crate::assets::APP_ICON;
+use crate::assets::app_icon;
 use crate::icons::Phosphor;
 use crate::pages::{Page, Section, SidebarMark};
 use crate::t;
@@ -124,7 +124,7 @@ pub fn sidebar(shell: &Shell, size: WindowSize, cx: &mut Context<Shell>) -> impl
                 .w_full()
                 .flex()
                 .justify_center()
-                .child(img(APP_ICON).size_7()),
+                .child(img(app_icon(px(32.))).size_8()),
         )
     } else {
         let weak = cx.weak_entity();
@@ -162,7 +162,7 @@ pub fn brand(cx: &App) -> impl IntoElement + use<> {
         .gap_2()
         .items_center()
         .min_w_0()
-        .child(img(APP_ICON).size_8().flex_shrink_0())
+        .child(img(app_icon(px(32.))).size_8().flex_shrink_0())
         .child(
             v_flex()
                 .min_w_0()

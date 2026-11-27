@@ -17,7 +17,7 @@ use gpui_kit::{Context, FontWeight, IntoElement, ParentElement as _, Styled as _
 
 use super::Shell;
 use super::sidebar::palette_field;
-use crate::assets::APP_ICON;
+use crate::assets::app_icon;
 use crate::icons::Phosphor;
 use crate::t;
 use crate::ui::width::WindowSize;
@@ -29,7 +29,7 @@ pub fn render(shell: &Shell, size: WindowSize, cx: &mut Context<Shell>) -> impl 
         h_flex()
             .gap_2()
             .items_center()
-            .child(img(APP_ICON).size_4())
+            .child(img(app_icon(px(16.))).size_4())
             .child(
                 div()
                     .text_sm()
