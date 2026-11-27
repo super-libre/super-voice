@@ -211,3 +211,87 @@ fn a_dictation_that_was_not_typed_is_heard() {
         TypingFailure::Failed
     );
 }
+
+#[test]
+fn only_an_unknown_topic_drops_one() {
+    assert_eq!(fewer_topics("invalid_topic (HTTP 400)", 8), Some(7));
+    assert_eq!(
+        fewer_topics("invalid_topic: unknown topic (HTTP 400)", 3),
+        Some(2)
+    );
+    assert_eq!(fewer_topics("stream ended", 8), None);
+    assert_eq!(fewer_topics("scope_denied (HTTP 403)", 8), None);
+    // The daemon refuses an empty list too: the last topic stays.
+    assert_eq!(fewer_topics("invalid_topic (HTTP 400)", 1), None);
+}
+
+/// A daemon that knows every topic but the newest: it refuses the full list,
+/// and takes the rest. Each subscription's topics are kept in `asked`; the
+/// first one it takes drops once, as when the daemon restarts.
+fn older_daemon(
+    asked: std::sync::Arc<std::sync::Mutex<Vec<Vec<&'static str>>>>,
+) -> impl Fn(
+    &'static [&'static str],
+) -> futures_util::stream::BoxStream<'static, WidgetSubscriptionUpdate>
++ Send
++ 'static {
+    move |topics| {
+        let mut asked = asked.lock().expect("the list of subscriptions");
+        asked.push(topics.to_vec());
+        let taken = asked.iter().filter(|t| t.len() < TOPICS.len()).count();
+        let updates = if topics.contains(&"typing_failed") {
+            vec![WidgetSubscriptionUpdate::Disconnected {
+                reason: "invalid_topic (HTTP 400)".to_string(),
+            }]
+        } else {
+            let mut updates = vec![
+                WidgetSubscriptionUpdate::Connected,
+                WidgetSubscriptionUpdate::Event(event(
+                    "recording_state",
+                    serde_json::json!({ "is_recording": true }),
+                )),
+            ];
+            if taken == 1 {
+                updates.push(WidgetSubscriptionUpdate::Disconnected {
+                    reason: "stream ended".to_string(),
+                });
+            }
+            updates
+        };
+        futures_util::stream::iter(updates)
+            .chain(futures_util::stream::pending())
+            .boxed()
+    }
+}
+
+#[tokio::test]
+async fn an_older_daemon_is_subscribed_to_without_the_newest_topic() {
+    let asked = std::sync::Arc::default();
+    let events: Vec<Event> = subscribe_with(older_daemon(std::sync::Arc::clone(&asked)))
+        .take(2)
+        .collect()
+        .await;
+
+    assert!(matches!(events[0], Event::Connected), "{events:?}");
+    assert!(matches!(events[1], Event::Recording(true)), "{events:?}");
+    let asked = asked.lock().expect("the list of subscriptions");
+    assert_eq!(asked[0], TOPICS);
+    assert_eq!(asked[1], TOPICS[..TOPICS.len() - 1]);
+    assert_eq!(asked.len(), 2);
+}
+
+#[tokio::test]
+async fn a_dropped_stream_asks_for_every_topic_again() {
+    let asked = std::sync::Arc::default();
+    let events: Vec<Event> = subscribe_with(older_daemon(std::sync::Arc::clone(&asked)))
+        .take(5)
+        .collect()
+        .await;
+
+    assert!(matches!(events[2], Event::Disconnected), "{events:?}");
+    assert!(matches!(events[3], Event::Connected), "{events:?}");
+    let asked = asked.lock().expect("the list of subscriptions");
+    let lengths: Vec<usize> = asked.iter().map(Vec::len).collect();
+    let all = TOPICS.len();
+    assert_eq!(lengths, [all, all - 1, all, all - 1]);
+}

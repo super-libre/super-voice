@@ -31,6 +31,10 @@ use crate::daemon::client::SETTINGS_SCOPES;
 /// model-switch progress and the Library's install cards (`daemon_status`),
 /// and `typing_failed` the toast for a dictation that went to the clipboard
 /// (`global_transcriptions`, since it carries the words).
+///
+/// Oldest first: a new topic goes at the end. A daemon older than the app
+/// refuses a topic it doesn't know (`400 invalid_topic`), and [`subscribe`]
+/// then asks again without the newest ones.
 pub const TOPICS: &[&str] = &[
     "recording_state",
     "frequency_bands",
@@ -112,15 +116,69 @@ impl TypingFailure {
 
 /// The daemon's `/events` stream, as [`Event`]s, until the user refuses this
 /// app.
+///
+/// A daemon older than the app refuses the whole stream for a topic it
+/// doesn't know, so the stream is asked for again without the newest topic,
+/// one at a time, until the daemon takes it. When that stream drops later
+/// (the daemon may have been updated), every topic is asked for again.
 pub fn subscribe() -> impl Stream<Item = Event> + Send + 'static {
-    let config = WidgetSubscriptionConfig::new(
-        crate::daemon::client::app_id(),
-        crate::daemon::client::app_name(),
-        SETTINGS_SCOPES,
-        TOPICS,
-    );
-    run_widget_subscription(get_http_socket_path(), config)
-        .filter_map(|update| async move { from_update(update) })
+    subscribe_with(|topics| {
+        let config = WidgetSubscriptionConfig::new(
+            crate::daemon::client::app_id(),
+            crate::daemon::client::app_name(),
+            SETTINGS_SCOPES,
+            topics,
+        );
+        run_widget_subscription(get_http_socket_path(), config)
+    })
+}
+
+/// A subscription's updates, boxed so a new one can take its place.
+type Updates = std::pin::Pin<Box<dyn Stream<Item = WidgetSubscriptionUpdate> + Send>>;
+
+/// [`subscribe`], with `open` starting the subscription to the topics given.
+fn subscribe_with<S>(
+    open: impl Fn(&'static [&'static str]) -> S + Send + 'static,
+) -> impl Stream<Item = Event> + Send + 'static
+where
+    S: Stream<Item = WidgetSubscriptionUpdate> + Send + 'static,
+{
+    let first: Updates = Box::pin(open(TOPICS));
+    futures_util::stream::unfold(
+        (first, TOPICS.len(), open),
+        |(mut updates, mut kept, open)| async move {
+            loop {
+                let update = updates.next().await?;
+                if let WidgetSubscriptionUpdate::Disconnected { reason } = &update {
+                    if let Some(fewer) = fewer_topics(reason, kept) {
+                        warn!(
+                            "The daemon is older than the app: it doesn't know the event topic `{}`; \
+                             subscribing without it",
+                            TOPICS[fewer]
+                        );
+                        kept = fewer;
+                        updates = Box::pin(open(&TOPICS[..kept]));
+                        continue;
+                    }
+                    if kept < TOPICS.len() {
+                        kept = TOPICS.len();
+                        updates = Box::pin(open(TOPICS));
+                    }
+                }
+                if let Some(event) = from_update(update) {
+                    return Some((event, (updates, kept, open)));
+                }
+            }
+        },
+    )
+}
+
+/// How many of [`TOPICS`] to ask for next, when the stream asking for the
+/// first `kept` dropped for `reason`: one fewer when the daemon refused a
+/// topic it doesn't know, or `None` to ask for the same again. Never none:
+/// the daemon refuses an empty list too.
+fn fewer_topics(reason: &str, kept: usize) -> Option<usize> {
+    (reason.starts_with("invalid_topic") && kept > 1).then(|| kept - 1)
 }
 
 /// What the stream's `update` tells an app, or `None` for one it needn't hear.
