@@ -67,6 +67,7 @@ pub struct ContextsPage {
     editing: Option<String>,
     /// The list, as the keyboard reaches it.
     keys: KeyListState,
+    shared: Shared,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -78,7 +79,7 @@ struct Term {
 }
 
 impl PageView for ContextsPage {
-    fn new(_: Page, _: &Shared, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(_: Page, shared: &Shared, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let name =
             cx.new(|cx| InputState::new(window, cx).placeholder(t("context-name-placeholder")));
         let prompt = cx.new(|cx| TextareaState::new(window, cx).auto_grow(3, 10));
@@ -118,6 +119,7 @@ impl PageView for ContextsPage {
             terms: Vec::new(),
             editing: None,
             keys: KeyListState::new(cx),
+            shared: shared.clone(),
             _subscriptions: subscriptions,
         }
     }
@@ -133,8 +135,17 @@ impl PageView for ContextsPage {
         if setting_changed(event) == Some("contexts") {
             self.send(Input::Reload, window, cx);
         }
-        // A backend installed or removed changes how far a context reaches.
-        if matches!(event, Event::Install(_)) {
+        // A backend installed changes how far a context reaches. Only once
+        // it is in: an install's progress comes many times a second.
+        if page::changes_reach(event) {
+            Self::read_reach(cx);
+        }
+    }
+
+    /// A backend removed sends no event: read how far a context reaches
+    /// each time the page is shown.
+    fn shown(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if !self.shared.connection.read(cx).is_down() {
             Self::read_reach(cx);
         }
     }

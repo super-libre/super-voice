@@ -318,6 +318,20 @@ pub fn row_summary(context: &DictationContext) -> String {
     }
 }
 
+/// Whether `event` may change how far a context reaches: a backend install
+/// that finished. Not its progress, which comes many times a second while it
+/// downloads; and an uninstall sends no event, so the page reads the reach
+/// again when it is shown.
+#[must_use]
+pub fn changes_reach(event: &crate::events::Event) -> bool {
+    matches!(
+        event,
+        crate::events::Event::Install(
+            super_voice_shared::registry::events::RegistryEvent::Completed { .. }
+        )
+    )
+}
+
 /// How far a context reaches among the installed backends, read from the
 /// daemon: `None` when there is nothing to say.
 ///
@@ -359,6 +373,30 @@ pub async fn run_save(context: DictationContext) -> Input {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_finished_install_changes_the_reach() {
+        use crate::events::Event;
+        use super_voice_shared::registry::events::{InstallPhase, RegistryEvent};
+        let progress = Event::Install(RegistryEvent::Progress {
+            install_id: "1".into(),
+            source: "kokoro".into(),
+            phase: InstallPhase::Downloading,
+            bytes_done: Some(9),
+            bytes_total: Some(90),
+        });
+        let completed = Event::Install(RegistryEvent::Completed {
+            install_id: "1".into(),
+            source: "kokoro".into(),
+            version: "0.2.1".into(),
+        });
+        assert!(!changes_reach(&progress));
+        assert!(changes_reach(&completed));
+        assert!(!changes_reach(&Event::MicrophoneLevel {
+            level: 0.5,
+            is_speech: true
+        }));
+    }
 
     #[test]
     fn the_reach_is_said_only_when_some_backend_misses_out() {
