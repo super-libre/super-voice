@@ -8,11 +8,10 @@
 //! runs what it returns with [`effects`]: the daemon's version is read on the
 //! core's runtime, while copying and opening a link happen at once.
 
-use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::description_list::DescriptionList;
 use gpui_kit::component::link::Link;
-use gpui_kit::component::{ActiveTheme as _, IconName, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, FontWeight, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
@@ -24,6 +23,7 @@ use super_voice_app_core::pages::about::{
 
 use crate::assets::APP_ICON;
 use crate::effects::{self, CorePage, Runner, runner};
+use crate::icons::Phosphor;
 use crate::pages::{Page, PageView};
 use crate::shared::Shared;
 use crate::ui::card::Card;
@@ -167,7 +167,7 @@ impl AboutPage {
             .action(
                 Button::new("copy-details")
                     .small()
-                    .icon(IconName::Copy)
+                    .icon(Phosphor::Copy)
                     .label(t("about-copy-details"))
                     .on_click(Self::press(Input::CopyDetails, cx)),
             )
@@ -218,11 +218,11 @@ impl AboutPage {
             .gap_2()
             .child(
                 Self::address("source", Address::Source, "about-source-code", cx)
-                    .icon(IconName::Github),
+                    .icon(Phosphor::GithubLogo),
             )
             .child(
                 Self::address("issues", Address::Issues, "about-report-a-problem", cx)
-                    .icon(Lucide::Bug),
+                    .icon(Phosphor::Bug),
             )
     }
 
@@ -231,7 +231,7 @@ impl AboutPage {
         Button::new(id)
             .outline()
             .label(t(key))
-            .icon(IconName::ExternalLink)
+            .icon(Phosphor::ArrowSquareOut)
             .on_click(Self::press(Input::Open(address), cx))
     }
 }

@@ -7,11 +7,10 @@
 //! The pages that work without the daemon (Shortcuts, Settings, Updates,
 //! About) stay open in the sidebar.
 
-use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::clipboard::Clipboard;
 use gpui_kit::component::description_list::DescriptionList;
-use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, Entity, InteractiveElement as _, IntoElement,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
@@ -22,6 +21,7 @@ use super_voice_app_core::state::connection::DaemonStatus;
 
 use super::Shell;
 use crate::connection::Connection;
+use crate::icons::Phosphor;
 use crate::t;
 use crate::ui::code_line;
 use crate::ui::empty_state::EmptyState;
@@ -94,7 +94,7 @@ fn steps(fix: Fix, connection: &Entity<Connection>, narrow: bool, cx: &App) -> V
     match fix {
         Fix::Reauthorize { restart } => {
             body.push(
-                EmptyState::new(Lucide::ShieldX, t("connection-refused-title"))
+                EmptyState::new(Phosphor::ShieldSlash, t("connection-refused-title"))
                     .description(t("connection-refused-body"))
                     .into_any_element(),
             );
@@ -109,7 +109,7 @@ fn steps(fix: Fix, connection: &Entity<Connection>, narrow: bool, cx: &App) -> V
                 "connection-ask-again",
                 Button::new("retry-authorization")
                     .primary()
-                    .icon(IconName::RefreshCw)
+                    .icon(Phosphor::ArrowsClockwise)
                     .label(t("retry-authorization"))
                     .on_click(send(Input::RetryAuthorization))
                     .into_any_element(),
@@ -118,7 +118,7 @@ fn steps(fix: Fix, connection: &Entity<Connection>, narrow: bool, cx: &App) -> V
         }
         Fix::Start { command: start } => {
             body.push(
-                EmptyState::new(Lucide::ServerOff, t("connection-not-running-title"))
+                EmptyState::new(Phosphor::Plugs, t("connection-not-running-title"))
                     .description(t("connection-not-running-body"))
                     .into_any_element(),
             );
@@ -132,7 +132,7 @@ fn steps(fix: Fix, connection: &Entity<Connection>, narrow: bool, cx: &App) -> V
                 2,
                 "connection-try-now",
                 Button::new("retry")
-                    .icon(IconName::RefreshCw)
+                    .icon(Phosphor::ArrowsClockwise)
                     .label(t("retry"))
                     .on_click(send(Input::Retry))
                     .into_any_element(),
@@ -141,7 +141,7 @@ fn steps(fix: Fix, connection: &Entity<Connection>, narrow: bool, cx: &App) -> V
         }
         Fix::TurnOn => {
             body.push(
-                EmptyState::new(Lucide::ServerOff, t("connection-switched-off-title"))
+                EmptyState::new(Phosphor::Plugs, t("connection-switched-off-title"))
                     .description(t("super-voice-s-background-service-is-switched"))
                     .action(
                         Button::new("open-login-items")
@@ -154,7 +154,7 @@ fn steps(fix: Fix, connection: &Entity<Connection>, narrow: bool, cx: &App) -> V
         }
         Fix::Register => {
             body.push(
-                EmptyState::new(Lucide::ServerOff, t("connection-not-registered-title"))
+                EmptyState::new(Phosphor::Plugs, t("connection-not-registered-title"))
                     .description(t("super-voice-s-background-service-is-not"))
                     .action(
                         Button::new("register")
@@ -193,7 +193,7 @@ fn command(command: String, narrow: bool, cx: &App) -> AnyElement {
     } else {
         let text = command.clone();
         Button::new("copy-command")
-            .icon(Icon::new(IconName::Copy))
+            .icon(Icon::new(Phosphor::Copy))
             .label(t("copy"))
             .on_click(move |_, _, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));

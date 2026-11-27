@@ -42,8 +42,11 @@ Source: https://github.com/phosphor-icons/core
 Unlike the entries above, these are redistributed in this repository rather
 than fetched at build time: the SVGs under
 super-voice-consent/resources/icons/phosphor/ are copied verbatim from that
-project's raw/regular/ directory and embedded in the consent dialog. The MIT
-license text they are provided under sits beside them.
+project's raw/regular/ directory and embedded in the consent dialog, and the
+SVGs under super-voice-gpui/resources/icons/phosphor/ are copied verbatim from
+the @phosphor-icons/core 2.1.1 npm package (assets/regular/, and
+assets/fill/star-fill.svg) and embedded in the app. The MIT license text they
+are provided under sits beside each set.
 
 GPUI and GPUI Kit
 -----------------
@@ -58,7 +61,8 @@ Lucide Icons
 Copyright (c) Lucide Contributors
 Licensed under the ISC License
 Source: https://github.com/lucide-icons/lucide
-The app draws the Lucide icons GPUI Kit embeds (gpui-kit-assets).
+GPUI Kit carries them (gpui-kit-assets). The app draws none: it answers each
+icon the kit asks for with a Phosphor one (super-voice-gpui/src/icons.rs).
 
 Rust Ecosystem Libraries
 ------------------------

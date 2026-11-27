@@ -12,6 +12,7 @@ mod connection;
 mod daemon_events;
 mod effects;
 mod hot;
+mod icons;
 #[cfg(target_os = "macos")]
 mod macos;
 mod menus;

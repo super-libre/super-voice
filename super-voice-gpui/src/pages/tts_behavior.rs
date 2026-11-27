@@ -14,7 +14,7 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::select::{Select, SelectEvent, SelectItem, SelectState};
-use gpui_kit::component::{Disableable as _, IconName, IndexPath, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{Disableable as _, IndexPath, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
     App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
     ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
@@ -27,6 +27,7 @@ use super_voice_app_core::state::SpeechState;
 use super_voice_shared::models::read_method::ReadMethod;
 
 use crate::effects::{self, CorePage, Runner, runner};
+use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand};
 use crate::shared::Shared;
 use crate::ui::card::Card;
@@ -174,18 +175,18 @@ impl PageView for TtsBehaviorPage {
     fn commands(&self, _: &App) -> Vec<PaletteCommand> {
         let feature = t("text-to-speech");
         let mut commands = vec![
-            PaletteCommand::new("test-speech", t("test-the-speech"), IconName::Play)
+            PaletteCommand::new("test-speech", t("test-the-speech"), Phosphor::Play)
                 .detail(feature.clone()),
         ];
         if self.speech.status != super_voice_app_core::state::SpeakingStatus::Idle {
             commands.push(
-                PaletteCommand::new("stop-speaking", t("stop-speaking"), IconName::Square)
+                PaletteCommand::new("stop-speaking", t("stop-speaking"), Phosphor::Stop)
                     .detail(feature.clone()),
             );
         }
         if READS_ALOUD {
             commands.push(
-                PaletteCommand::new("read-aloud-now", t("read-aloud-now"), IconName::BookOpen)
+                PaletteCommand::new("read-aloud-now", t("read-aloud-now"), Phosphor::BookOpen)
                     .detail(feature),
             );
         }
@@ -340,7 +341,7 @@ impl TtsBehaviorPage {
         let action = if saying == Saying::Nothing {
             Button::new("speak")
                 .primary()
-                .icon(IconName::Play)
+                .icon(Phosphor::Play)
                 .label(t("speak"))
                 .disabled(!speech::can_speak(&self.speech))
                 .on_click(cx.listener(|this, _, window, cx| {
@@ -349,7 +350,7 @@ impl TtsBehaviorPage {
         } else {
             Button::new("stop-speaking")
                 .danger()
-                .icon(IconName::Square)
+                .icon(Phosphor::Stop)
                 .label(t("stop"))
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.send(In::Speech(speech::Input::Stop), window, cx);
@@ -398,7 +399,7 @@ impl TtsBehaviorPage {
             card = card.child(
                 SettingsRow::new(t("read-test")).description(hint).control(
                     Button::new("read-now")
-                        .icon(IconName::BookOpen)
+                        .icon(Phosphor::BookOpen)
                         .label(t("read"))
                         .disabled(saying != Saying::Nothing)
                         .on_click(cx.listener(|this, _, window, cx| {

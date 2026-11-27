@@ -9,7 +9,6 @@
 //! - Narrow: each feature's icon, dot and word; the GPU's memory.
 //! - While the daemon is down: only that, at every width.
 
-use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::{Icon, h_flex};
@@ -20,6 +19,7 @@ use super_voice_app_core::rules::gpu::gib;
 use super_voice_app_core::state::connection::DaemonStatus;
 
 use super::{Shell, version};
+use crate::icons::Phosphor;
 use crate::ui::status::{Dot, StatusDot};
 use crate::ui::width::WindowSize;
 use crate::{t, t_with};
@@ -103,7 +103,7 @@ fn item(dot: Option<Dot>, icon: Option<Icon>, words: SharedString) -> AnyElement
 }
 
 fn gpu_item(words: SharedString) -> AnyElement {
-    item(None, Some(Icon::from(Lucide::Microchip)), words)
+    item(None, Some(Icon::from(Phosphor::GraphicsCard)), words)
 }
 
 /// The GPU's memory: "RTX 3090 · 6.1 / 24.0 GiB", or without the name.
@@ -125,8 +125,8 @@ fn gpu_words(gpu: &GpuMemory, with_name: bool) -> SharedString {
 /// The feature's icon: the microphone, or the speaker.
 pub fn feature_icon(feature: Feature) -> Icon {
     match feature {
-        Feature::SpeechToText => Icon::from(gpui_kit::component::IconName::Mic),
-        Feature::TextToSpeech => Icon::from(Lucide::Volume2),
+        Feature::SpeechToText => Icon::from(Phosphor::Microphone),
+        Feature::TextToSpeech => Icon::from(Phosphor::SpeakerHigh),
     }
 }
 

@@ -33,8 +33,9 @@
     # weekly releases break something small: bump on purpose, with its
     # release notes, never by `cargo update`. It needs Rust 1.92 or newer.
     #
-    # Default features: components, the default Lucide icons, and X11 beside
-    # Wayland on Linux, which the app before this one had too.
+    # Default features: components, the kit's icon names (the app draws
+    # Phosphor icons in place of its Lucide ones, src/icons.rs), and X11
+    # beside Wayland on Linux, which the app before this one had too.
     gpui-kit = "=0.11.0"
     # When a clip was made, and today, for its row.
     chrono.workspace = true
