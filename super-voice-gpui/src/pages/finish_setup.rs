@@ -12,8 +12,9 @@
 //! The logic is the core's (`pages::setup`), held by the window's
 //! [`crate::setup::Setup`]; whether the daemon may type is the readiness's.
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::Button;
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -21,7 +22,6 @@ use gpui_kit::{
 };
 use super_voice_app_core::pages::setup::{self, Input, TypedCard};
 
-use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, SidebarMark};
 use crate::shared::Shared;
 use crate::t;
@@ -64,7 +64,7 @@ impl FinishSetupPage {
         let card = setup::typed_card(&self.shared.setup.read(cx).state);
         if !blocked {
             return item(
-                Phosphor::Keyboard,
+                Lucide::Keyboard.into(),
                 t("type-into-other-apps"),
                 None,
                 StatusPill::new(Dot::Green, t("status-on")),
@@ -79,7 +79,7 @@ impl FinishSetupPage {
             TypedCard::NeedsSetup
         };
         item(
-            Phosphor::Keyboard,
+            Lucide::Keyboard.into(),
             t("type-into-other-apps"),
             None,
             StatusPill::new(Dot::Yellow, t("status-needs-setup")),
@@ -117,7 +117,7 @@ impl FinishSetupPage {
                     .child(
                         Button::new("open-notifications")
                             .small()
-                            .icon(Phosphor::ArrowSquareOut)
+                            .icon(IconName::ExternalLink)
                             .label(t("open-notifications"))
                             .on_click(move |_, _, cx| {
                                 setup.update(cx, |setup, cx| {
@@ -130,9 +130,9 @@ impl FinishSetupPage {
         }
         Some(item(
             if on {
-                Phosphor::Bell
+                IconName::Bell.into()
             } else {
-                Phosphor::BellSlash
+                Lucide::BellOff.into()
             },
             t("notifications"),
             Some(t("optional")),
@@ -146,7 +146,7 @@ impl FinishSetupPage {
 /// One item of the checklist: its icon on a tile, its name, a muted word
 /// beside it (Optional), its status on the right, and what follows under.
 fn item(
-    icon: Phosphor,
+    icon: Icon,
     title: gpui_kit::SharedString,
     aside: Option<gpui_kit::SharedString>,
     status: StatusPill,

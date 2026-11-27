@@ -11,14 +11,13 @@
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{
-    ActiveTheme as _, Icon, Selectable as _, Sizable as _, TitleBar, h_flex,
+    ActiveTheme as _, Icon, IconName, Selectable as _, Sizable as _, TitleBar, h_flex,
 };
 use gpui_kit::{Context, FontWeight, IntoElement, ParentElement as _, Styled as _, div, img, px};
 
 use super::Shell;
 use super::sidebar::palette_field;
 use crate::assets::app_icon;
-use crate::icons::Phosphor;
 use crate::t;
 use crate::ui::width::WindowSize;
 
@@ -51,7 +50,7 @@ pub fn render(shell: &Shell, size: WindowSize, cx: &mut Context<Shell>) -> impl 
             Button::new("title-search")
                 .ghost()
                 .small()
-                .icon(Phosphor::MagnifyingGlass)
+                .icon(IconName::Search)
                 .tooltip(t("go-to-or-run"))
                 .on_click(move |_, window, cx| {
                     _ = weak.update(cx, |shell, cx| shell.open_palette(window, cx));
@@ -85,7 +84,11 @@ fn narrow_title(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + us
         .ghost()
         .small()
         .selected(open)
-        .icon(Phosphor::SidebarSimple)
+        .icon(if open {
+            IconName::PanelLeftClose
+        } else {
+            IconName::PanelLeftOpen
+        })
         .tooltip(t(if open { "hide-pages" } else { "show-pages" }))
         .on_click(move |_, window, cx| {
             _ = weak.update(cx, |shell, cx| shell.toggle_drawer(window, cx));
@@ -102,7 +105,7 @@ fn narrow_title(shell: &Shell, cx: &mut Context<Shell>) -> impl IntoElement + us
                     .whitespace_nowrap()
                     .child(t(page.section().key())),
             )
-            .child(Icon::new(Phosphor::CaretRight).size_3().text_color(muted))
+            .child(Icon::new(IconName::ChevronRight).size_3().text_color(muted))
             .child(div().truncate().child(t(page.key()))),
     };
     h_flex()

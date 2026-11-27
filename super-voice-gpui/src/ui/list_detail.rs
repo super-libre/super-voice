@@ -14,7 +14,7 @@
 use std::rc::Rc;
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, IconName, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClickEvent, ElementId, InteractiveElement as _, IntoElement,
@@ -22,7 +22,6 @@ use gpui_kit::{
 };
 
 use super::width;
-use crate::icons::Phosphor;
 use crate::t_with;
 
 type OnBack = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -148,7 +147,7 @@ impl RenderOnce for ListDetail {
                         .child(
                             Button::new("back")
                                 .ghost()
-                                .icon(Phosphor::ArrowLeft)
+                                .icon(IconName::ArrowLeft)
                                 .label(name)
                                 .accessibility_label(label)
                                 .on_click(move |event, window, cx| on_back(event, window, cx)),

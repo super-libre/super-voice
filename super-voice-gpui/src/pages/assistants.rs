@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::alert::Alert;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::clipboard::Clipboard;
@@ -27,7 +28,7 @@ use gpui_kit::component::input::{Input as TextInput, InputEvent, InputState};
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _, h_flex, v_flex,
+    ActiveTheme as _, Disableable as _, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -44,7 +45,6 @@ use super_voice_shared::models::assistants::{
 };
 
 use crate::effects::{self, CorePage, Runner, runner};
-use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand};
 use crate::shared::Shared;
 use crate::ui::card::Card;
@@ -145,7 +145,7 @@ impl PageView for AssistantsPage {
             return Vec::new();
         }
         vec![
-            PaletteCommand::new("create-key", t("create-key"), Phosphor::Key)
+            PaletteCommand::new("create-key", t("create-key"), Lucide::KeyRound)
                 .detail(t("another-assistant"))
                 .keywords([t("any-mcp-assistant")]),
         ]
@@ -582,7 +582,7 @@ impl AssistantsPage {
                 .control(
                     Button::new("create-key")
                         .track_focus(&self.opener("create-key", cx))
-                        .icon(Phosphor::Key)
+                        .icon(Lucide::KeyRound)
                         .label(t("create-key-ellipsis"))
                         .on_click(Self::press(Input::AskKey, cx)),
                 )
@@ -950,7 +950,7 @@ fn tile(cx: &App) -> impl IntoElement + use<> {
         .rounded(theme.radius)
         .bg(theme.muted)
         .text_color(theme.muted_foreground)
-        .child(gpui_kit::component::Icon::new(Phosphor::Robot).small())
+        .child(gpui_kit::component::Icon::new(IconName::Bot).small())
 }
 
 /// What the assistant can do through Super Voice.

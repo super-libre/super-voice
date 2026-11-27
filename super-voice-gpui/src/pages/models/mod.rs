@@ -27,8 +27,9 @@ mod words;
 
 use std::time::Duration;
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::dialog::DialogButtonProps;
-use gpui_kit::component::{ActiveTheme as _, Icon, WindowExt as _, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Icon, IconName, WindowExt as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
@@ -53,7 +54,6 @@ use super_voice_app_core::state::voice::VoiceState;
 
 use self::pickers::{PickerKey, Pickers};
 use crate::effects::{self, CorePage, Runner, runner};
-use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand};
 use crate::shared::Shared;
 use crate::ui::card::Card;
@@ -215,7 +215,7 @@ impl PageView for ModelsPage {
                     PaletteCommand::new(
                         format!("load:{stage}"),
                         t_with("palette-load-model", &[("model", model)]),
-                        Phosphor::Play,
+                        IconName::Play,
                     )
                     .detail(detail.clone()),
                 );
@@ -228,7 +228,7 @@ impl PageView for ModelsPage {
                         PaletteCommand::new(
                             format!("reload:{stage}"),
                             t_with("palette-reload-model", &[("model", model)]),
-                            Phosphor::ArrowClockwise,
+                            IconName::RotateCw,
                         )
                         .detail(detail.clone()),
                     );
@@ -237,7 +237,7 @@ impl PageView for ModelsPage {
                     PaletteCommand::new(
                         format!("unload:{stage}"),
                         t_with("palette-unload-model", &[("model", model)]),
-                        Phosphor::Stop,
+                        IconName::Square,
                     )
                     .detail(detail),
                 );
@@ -247,7 +247,7 @@ impl PageView for ModelsPage {
             commands.push(PaletteCommand::new(
                 "unload-all-models",
                 t("unload-all-models"),
-                Phosphor::Stop,
+                IconName::Square,
             ));
         }
         commands
@@ -581,7 +581,7 @@ impl ModelsPage {
             let on_ok = on_ok.clone();
             let on_cancel = on_cancel.clone();
             alert
-                .icon(Icon::new(Phosphor::DownloadSimple).text_color(cx.theme().muted_foreground))
+                .icon(Icon::new(Lucide::Download).text_color(cx.theme().muted_foreground))
                 .title(title.clone())
                 .description(body.clone())
                 .button_props(
@@ -795,13 +795,9 @@ impl Render for ModelsPage {
         let (description, source, sink) = match self.feature {
             Feature::SpeechToText => (
                 "models-stt-description",
+                (IconName::Mic.into(), t("microphone"), t("your-voice")),
                 (
-                    Phosphor::Microphone.into(),
-                    t("microphone"),
-                    t("your-voice"),
-                ),
-                (
-                    Icon::from(Phosphor::TextT),
+                    Icon::from(Lucide::Type),
                     t("typed"),
                     t("typed-with-the-write-method"),
                 ),
@@ -809,15 +805,11 @@ impl Render for ModelsPage {
             Feature::TextToSpeech => (
                 "models-tts-description",
                 (
-                    Icon::from(Phosphor::AppWindow),
+                    Icon::from(Lucide::AppWindow),
                     t("text"),
                     t("text-from-your-app-or-assistant"),
                 ),
-                (
-                    Icon::from(Phosphor::SpeakerHifi),
-                    t("speakers"),
-                    t("read-aloud"),
-                ),
+                (Icon::from(Lucide::Speaker), t("speakers"), t("read-aloud")),
             ),
         };
         let mut steps: Vec<AnyElement> = vec![rail.edge(source.0, source.1, source.2, false, cx)];

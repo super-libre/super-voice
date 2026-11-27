@@ -1,13 +1,47 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! What the app draws that isn't code: the app's icon, and the Phosphor
-//! icons (src/icons.rs), its own and the ones drawn in place of the kit's.
+//! What the app draws that isn't code: the app's icon, the Lucide icons the
+//! kit doesn't embed by default, and the kit's own.
 
 use std::borrow::Cow;
 
+use gpui_kit::assets::icon_assets;
 use gpui_kit::{
     App, AssetSource, ImageSource, ImgResourceLoader, Pixels, Resource, Result, SharedString,
     Window,
 };
+
+// The Lucide icons the app draws beyond the kit's default set.
+icon_assets!(
+    ExtraIcons,
+    [
+        AppWindow,
+        AudioLines,
+        BellOff,
+        BookOpenText,
+        Brain,
+        Bug,
+        Cloud,
+        Download,
+        FileVolume,
+        KeyRound,
+        Keyboard,
+        LibraryBig,
+        ListChecks,
+        ListFilter,
+        Microchip,
+        NotebookPen,
+        PackagePlus,
+        ServerOff,
+        ShieldX,
+        SlidersHorizontal,
+        Speaker,
+        Type,
+        Upload,
+        UserRoundPen,
+        Volume2,
+        WandSparkles,
+    ]
+);
 
 /// The app's icon at each size the desktop gets it, as `brand/icon/linux`
 /// draws them: each size is drawn for its own pixels, small ones with a
@@ -81,8 +115,7 @@ pub fn app_icon(size: Pixels) -> ImageSource {
     })
 }
 
-/// Every asset the app loads. The kit's own Lucide icons are never served:
-/// each path the kit asks for gets its Phosphor icon.
+/// Every asset the app loads: its own first, then the kit's.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Assets;
 
@@ -94,16 +127,22 @@ impl AssetSource for Assets {
         {
             return Ok(Some(Cow::Borrowed(png)));
         }
-        Ok(crate::icons::svg(path).map(Cow::Borrowed))
+        if let Some(icon) = ExtraIcons.load(path)? {
+            return Ok(Some(icon));
+        }
+        gpui_kit::assets::Assets.load(path)
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        Ok(APP_ICONS
-            .iter()
-            .map(|&(size, _)| SharedString::from(app_icon_path(size)))
-            .chain(crate::icons::paths().map(Into::into))
-            .filter(|name| name.starts_with(path))
-            .collect())
+        let mut all = gpui_kit::assets::Assets.list(path)?;
+        all.extend(ExtraIcons.list(path)?);
+        all.extend(
+            APP_ICONS
+                .iter()
+                .map(|&(size, _)| SharedString::from(app_icon_path(size)))
+                .filter(|name| name.starts_with(path)),
+        );
+        Ok(all)
     }
 }
 

@@ -43,14 +43,14 @@ mod voices;
 use std::cell::Cell;
 use std::rc::Rc;
 
-use gpui_kit::component::Icon;
+use gpui_kit::assets::IconName as Lucide;
+use gpui_kit::component::{Icon, IconName};
 use gpui_kit::{
     AnyView, App, AppContext as _, Context, Entity, Render, SharedString, Subscription, Window,
 };
 use super_voice_app_core::events::Event;
 use super_voice_app_core::pages::readiness::Feature;
 
-use crate::icons::Phosphor;
 use crate::shared::Shared;
 use crate::shell::Shell;
 
@@ -176,7 +176,7 @@ pub struct PaletteCommand {
 // Some are for the pages built later.
 #[allow(dead_code)]
 impl PaletteCommand {
-    /// `PaletteCommand::new("unload-all", t("unload-all-models"), Phosphor::Stop)`
+    /// `PaletteCommand::new("unload-all", t("unload-all-models"), IconName::Square)`
     #[must_use]
     pub fn new(
         id: impl Into<SharedString>,
@@ -604,19 +604,19 @@ impl Page {
     #[must_use]
     pub fn icon(self) -> Icon {
         match self {
-            Self::FinishSetup => Phosphor::ListChecks.into(),
-            Self::SttModels | Self::TtsModels => Phosphor::Brain.into(),
-            Self::Notes => Phosphor::NotePencil.into(),
-            Self::Contexts => Phosphor::ChatText.into(),
-            Self::SttBehavior | Self::TtsBehavior => Phosphor::SlidersHorizontal.into(),
-            Self::Clips => Phosphor::FileAudio.into(),
-            Self::Voices => Phosphor::UserSound.into(),
-            Self::Library => Phosphor::Books.into(),
-            Self::Shortcuts => Phosphor::Keyboard.into(),
-            Self::Assistants => Phosphor::Robot.into(),
-            Self::Settings => Phosphor::Gear.into(),
-            Self::Updates => Phosphor::ArrowsClockwise.into(),
-            Self::About => Phosphor::Info.into(),
+            Self::FinishSetup => Lucide::ListChecks.into(),
+            Self::SttModels | Self::TtsModels => Lucide::Brain.into(),
+            Self::Notes => Lucide::NotebookPen.into(),
+            Self::Contexts => Lucide::BookOpenText.into(),
+            Self::SttBehavior | Self::TtsBehavior => Lucide::SlidersHorizontal.into(),
+            Self::Clips => Lucide::FileVolume.into(),
+            Self::Voices => Lucide::UserRoundPen.into(),
+            Self::Library => Lucide::LibraryBig.into(),
+            Self::Shortcuts => Lucide::Keyboard.into(),
+            Self::Assistants => IconName::Bot.into(),
+            Self::Settings => IconName::Settings.into(),
+            Self::Updates => IconName::RefreshCw.into(),
+            Self::About => IconName::Info.into(),
         }
     }
 }

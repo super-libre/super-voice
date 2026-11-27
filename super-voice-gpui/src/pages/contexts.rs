@@ -10,6 +10,7 @@
 //! What a press does is the core's (`pages::contexts`); the daemon owns the
 //! list, and this keeps the editor's fields in step with the core's draft.
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::input::{
     Input as TextInput, InputEvent, InputState, Textarea, TextareaState,
@@ -17,7 +18,7 @@ use gpui_kit::component::input::{
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::radio::Radio;
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _, h_flex, v_flex,
+    ActiveTheme as _, Disableable as _, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -31,7 +32,6 @@ use super_voice_app_core::state::contexts::{ContextsState, RowId};
 use super_voice_shared::models::contexts::DictationContext;
 
 use crate::effects::{self, CorePage, Runner, runner};
-use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand};
 use crate::shared::Shared;
 use crate::ui::empty_state::EmptyState;
@@ -152,7 +152,7 @@ impl PageView for ContextsPage {
         std::iter::once(PaletteCommand::new(
             "new-context",
             t("new-context"),
-            Phosphor::Plus,
+            IconName::Plus,
         ))
         .chain(
             self.state
@@ -163,7 +163,7 @@ impl PageView for ContextsPage {
                     PaletteCommand::new(
                         format!("use:{}", context.id),
                         t_with("use-context", &[("name", &context.display_name())]),
-                        Phosphor::ChatText,
+                        Lucide::BookOpenText,
                     )
                     .group(contexts.clone())
                 }),
@@ -404,7 +404,7 @@ impl Render for ContextsPage {
             LIST_COMPACT
         };
         let new = Button::new("new-context")
-            .icon(Phosphor::Plus)
+            .icon(IconName::Plus)
             .label(t("new-context"))
             .on_click(Self::press(Input::Create, cx));
         let list = self.list(window, cx);
@@ -597,18 +597,18 @@ impl ContextsPage {
     /// Beside the list while nothing is being edited.
     fn placeholder(&self, cx: &mut Context<Self>) -> AnyElement {
         let empty = if self.state.loaded && self.state.items.is_empty() {
-            EmptyState::new(Phosphor::ChatText, t("no-contexts-yet"))
+            EmptyState::new(Lucide::BookOpenText, t("no-contexts-yet"))
                 .description(t("contexts-add-one"))
                 .action(
                     Button::new("new-context-empty")
                         .primary()
                         .small()
-                        .icon(Phosphor::Plus)
+                        .icon(IconName::Plus)
                         .label(t("new-context"))
                         .on_click(Self::press(Input::Create, cx)),
                 )
         } else {
-            EmptyState::new(Phosphor::ChatText, t("context-pick-one"))
+            EmptyState::new(Lucide::BookOpenText, t("context-pick-one"))
         };
         div()
             .size_full()
@@ -711,7 +711,7 @@ impl ContextsPage {
                     Button::new(SharedString::from(format!("remove-{}", term.row.get())))
                         .ghost()
                         .small()
-                        .icon(Phosphor::X)
+                        .icon(IconName::Close)
                         .accessibility_label(t("remove-word"))
                         .tooltip(t("remove-word"))
                         .on_click(Self::press(Input::TermRemoved(index), cx))

@@ -7,6 +7,7 @@
 //!
 //! The same parts beside the table, in a sheet, and on a page of their own.
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::alert::Alert;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::description_list::DescriptionList;
@@ -14,7 +15,9 @@ use gpui_kit::component::link::Link;
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::tag::Tag;
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Icon, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{
+    ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, h_flex, v_flex,
+};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -27,7 +30,6 @@ use super_voice_app_core::rules::gpu::accel_name;
 use super_voice_app_core::rules::load::{Size, size};
 
 use super::{LibraryPage, Msg, kind_words, phase_words};
-use crate::icons::Phosphor;
 use crate::ui::status::{Dot, StatusPill};
 use crate::{t, t_with};
 
@@ -37,8 +39,8 @@ use crate::{t, t_with};
 pub fn heading(row: &Row, large: bool, cx: &App) -> AnyElement {
     let theme = cx.theme();
     let icon: Icon = match row.runs {
-        Runs::Local => Phosphor::Brain.into(),
-        Runs::Cloud => Phosphor::Cloud.into(),
+        Runs::Local => Lucide::Brain.into(),
+        Runs::Cloud => Lucide::Cloud.into(),
     };
     let version = if row.installed {
         t_with("library-version", &[("version", &row.version)])
@@ -179,8 +181,8 @@ fn tags(row: &Row) -> AnyElement {
         .iter()
         .map(|feature| {
             let icon: Icon = match feature {
-                Feature::SpeechToText => Phosphor::Microphone.into(),
-                Feature::TextToSpeech => Phosphor::SpeakerHigh.into(),
+                Feature::SpeechToText => IconName::Mic.into(),
+                Feature::TextToSpeech => Lucide::Volume2.into(),
             };
             tag(icon, t(feature.key())).into_any_element()
         })
@@ -189,14 +191,14 @@ fn tags(row: &Row) -> AnyElement {
     if caps.compute.gpu {
         tags.push(with_tip(
             "gpu",
-            tag(Phosphor::GraphicsCard.into(), "GPU".into()),
+            tag(Lucide::Microchip.into(), "GPU".into()),
             t("accelerated-on-gpu"),
         ));
     }
     if caps.compute.cpu {
         tags.push(with_tip(
             "cpu",
-            tag(Phosphor::Cpu.into(), "CPU".into()),
+            tag(IconName::Cpu.into(), "CPU".into()),
             t("runs-on-the-cpu"),
         ));
     }
@@ -212,21 +214,21 @@ fn tags(row: &Row) -> AnyElement {
         }
         tags.push(with_tip(
             "cloud",
-            tag(Phosphor::Cloud.into(), t("cloud")),
+            tag(Lucide::Cloud.into(), t("cloud")),
             tip.into(),
         ));
     }
     if caps.contexts {
         tags.push(with_tip(
             "contexts",
-            tag(Phosphor::ChatText.into(), t("contexts")),
+            tag(Lucide::BookOpenText.into(), t("contexts")),
             t("uses-your-dictation-context"),
         ));
     }
     if caps.voice_cloning {
         tags.push(with_tip(
             "cloning",
-            tag(Phosphor::UserSound.into(), t("voice-cloning")),
+            tag(Lucide::UserRoundPen.into(), t("voice-cloning")),
             t("speaks-in-voices-you-clone"),
         ));
     }
@@ -435,7 +437,7 @@ pub fn actions(row: &Row, this: &WeakEntity<LibraryPage>, cx: &App) -> AnyElemen
             .child(
                 Button::new("install")
                     .primary()
-                    .icon(Phosphor::DownloadSimple)
+                    .icon(Lucide::Download)
                     .label(label)
                     .loading(busy)
                     .disabled(!row.installable())
@@ -487,7 +489,7 @@ pub fn actions(row: &Row, this: &WeakEntity<LibraryPage>, cx: &App) -> AnyElemen
                 Button::new("update")
                     .primary()
                     .w_full()
-                    .icon(Phosphor::DownloadSimple)
+                    .icon(Lucide::Download)
                     .label(t_with("update-to-version", &[("version", &version)]))
                     .on_click(LibraryPage::press(
                         this,

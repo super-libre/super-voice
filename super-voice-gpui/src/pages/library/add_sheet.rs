@@ -7,12 +7,13 @@
 //! A sheet on the right, 440 px, or the window's width in a narrow one. The
 //! logic is the core's `pages::add_backend`.
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonGroup, ButtonVariants as _};
 use gpui_kit::component::input::Input as TextField;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Placement, Selectable as _, Sizable as _, WindowExt as _,
-    h_flex, v_flex,
+    ActiveTheme as _, Disableable as _, IconName, Placement, Selectable as _, Sizable as _,
+    WindowExt as _, h_flex, v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -24,7 +25,6 @@ use super_voice_app_core::state::registry::{AddSource, PreviewState};
 
 use super::{LibraryPage, Msg, Sheet, inspector, phase_words};
 use crate::effects::CorePage as _;
-use crate::icons::Phosphor;
 use crate::ui::width::{self, WindowSize};
 use crate::{t, t_with};
 
@@ -73,7 +73,7 @@ fn body(page: &LibraryPage, this: &WeakEntity<LibraryPage>, cx: &App) -> AnyElem
         let this = this.clone();
         Button::new("choose")
             .outline()
-            .icon(Phosphor::FolderOpen)
+            .icon(IconName::FolderOpen)
             .label(t("choose-progress"))
             .on_click(move |_, window, cx| {
                 _ = this.update(cx, |_, cx| LibraryPage::pick_folder(window, cx));
@@ -268,7 +268,7 @@ fn footer(page: &LibraryPage, this: &WeakEntity<LibraryPage>, cx: &App) -> AnyEl
         .child(
             Button::new("add-install")
                 .primary()
-                .icon(Phosphor::DownloadSimple)
+                .icon(Lucide::Download)
                 .label(label)
                 .loading(running)
                 .disabled(installable.is_none() || running)

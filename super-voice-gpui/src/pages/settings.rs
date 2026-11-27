@@ -15,7 +15,7 @@ use gpui_kit::component::select::{
 };
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::component::{IconName, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -33,7 +33,6 @@ use super_voice_app_core::state::settings::SettingsState;
 use super_voice_shared::models::notification_method::NotificationMethod;
 
 use crate::effects::{self, CorePage, Runner, runner};
-use crate::icons::Phosphor;
 use crate::pages::{Page, PageView};
 use crate::shared::Shared;
 use crate::ui::card::Card;
@@ -342,7 +341,7 @@ impl SettingsPage {
         Some(
             row.control(
                 Button::new("open-notifications")
-                    .icon(Phosphor::ArrowSquareOut)
+                    .icon(IconName::ExternalLink)
                     .label(t("open-notifications"))
                     .on_click(move |_, _, cx| {
                         setup.update(cx, |setup, cx| {

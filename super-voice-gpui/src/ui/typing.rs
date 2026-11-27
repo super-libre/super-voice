@@ -10,7 +10,7 @@
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Icon, Sizable, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Entity, FontWeight, IntoElement, ParentElement as _, SharedString,
@@ -18,7 +18,6 @@ use gpui_kit::{
 };
 use super_voice_app_core::pages::setup::{Input, TypedCard};
 
-use crate::icons::Phosphor;
 use crate::setup::Setup;
 use crate::{t, t_with};
 
@@ -40,7 +39,7 @@ pub fn steps(setup: &Entity<Setup>, compact: bool, cx: &App) -> AnyElement {
         let setup = setup.clone();
         Button::new("open-typing-pane")
             .primary()
-            .icon(Phosphor::ArrowSquareOut)
+            .icon(IconName::ExternalLink)
             .label(t_with("typing-open-pane-button", &[("pane", &pane)]))
             .when(compact, Sizable::small)
             .on_click(move |_, _, cx| {
@@ -50,9 +49,9 @@ pub fn steps(setup: &Entity<Setup>, compact: bool, cx: &App) -> AnyElement {
     let copy = {
         let setup = setup.clone();
         let (icon, label) = if state.copied {
-            (Phosphor::Check, t("copied"))
+            (IconName::Check, t("copied"))
         } else {
-            (Phosphor::Copy, t("copy"))
+            (IconName::Copy, t("copy"))
         };
         Button::new("copy-daemon-path")
             .icon(icon)
@@ -139,7 +138,7 @@ pub fn footer(card: TypedCard, cx: &App) -> AnyElement {
         )
     } else {
         (
-            Icon::new(Phosphor::Info)
+            Icon::new(IconName::Info)
                 .size_3p5()
                 .flex_shrink_0()
                 .into_any_element(),
@@ -168,7 +167,7 @@ pub fn allowed(cx: &App) -> AnyElement {
         .items_start()
         .text_sm()
         .child(
-            Icon::new(Phosphor::CheckCircle)
+            Icon::new(IconName::CircleCheck)
                 .size_4()
                 .flex_shrink_0()
                 .text_color(theme.success),

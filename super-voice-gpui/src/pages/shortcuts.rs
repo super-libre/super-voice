@@ -10,11 +10,14 @@
 //! the listener's background service is set to run. The logic is the core's
 //! (`pages::shortcuts`).
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{
+    ActiveTheme as _, Disableable as _, IconName, Sizable as _, h_flex, v_flex,
+};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, FocusHandle, InteractiveElement as _, IntoElement,
@@ -30,7 +33,6 @@ use super_voice_shared::models::hotkey;
 use super_voice_shared::models::shortcuts::{Shortcut, ShortcutId, ShortcutList};
 
 use crate::effects::{self, CorePage, Runner, runner};
-use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand};
 use crate::shared::Shared;
 use crate::ui::card::Card;
@@ -99,7 +101,7 @@ impl PageView for ShortcutsPage {
             return Vec::new();
         }
         vec![
-            PaletteCommand::new("change-keys", t("shortcut-change-keys"), Phosphor::Keyboard)
+            PaletteCommand::new("change-keys", t("shortcut-change-keys"), Lucide::Keyboard)
                 .detail(t("shortcut-dictate")),
         ]
     }
@@ -344,7 +346,7 @@ impl ShortcutsPage {
                         .child(
                             Button::new(element_id("added", shortcut_key(id)))
                                 .label(t("added"))
-                                .icon(Phosphor::Check)
+                                .icon(IconName::Check)
                                 .disabled(true),
                         ),
                 ),
@@ -462,7 +464,7 @@ impl ShortcutsPage {
                 Some(
                     Button::new("login-items")
                         .label(t("open-login-items"))
-                        .icon(Phosphor::ArrowSquareOut)
+                        .icon(IconName::ExternalLink)
                         .on_click(Self::press(Input::OpenLoginItems, cx)),
                 ),
             ),
@@ -563,7 +565,7 @@ const fn shortcut_key(id: ShortcutId) -> &'static str {
 /// A button that copies the command to bind by hand.
 fn copy_command(id: ShortcutId, command: String) -> Button {
     Button::new(element_id("copy", shortcut_key(id)))
-        .icon(Phosphor::Copy)
+        .icon(IconName::Copy)
         .label(t("copy-command"))
         .on_click(move |_, _, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string(command.clone()));

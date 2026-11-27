@@ -14,6 +14,7 @@
 
 use std::time::Duration;
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::input::{
     Input as TextInput, InputEvent, InputState, Textarea, TextareaState,
@@ -21,8 +22,8 @@ use gpui_kit::component::input::{
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, Selectable as _, Sizable as _, WindowExt as _, h_flex,
-    v_flex,
+    ActiveTheme as _, Disableable as _, IconName, Selectable as _, Sizable as _, WindowExt as _,
+    h_flex, v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -38,7 +39,6 @@ use super_voice_app_core::state::Microphone;
 use super_voice_app_core::state::notes::{NoteTake, NotesState, TakeTarget};
 
 use crate::effects::{self, CorePage, Runner, runner};
-use crate::icons::Phosphor;
 use crate::pages::{Page, PageView, PaletteCommand, SidebarMark, take};
 use crate::shared::Shared;
 use crate::ui::empty_state::EmptyState;
@@ -169,14 +169,14 @@ impl PageView for NotesPage {
     fn commands(&self, _: &App) -> Vec<PaletteCommand> {
         let notes = t("notes");
         std::iter::once(
-            PaletteCommand::new(crate::pages::NEW_NOTE, t("new-note"), Phosphor::Microphone)
+            PaletteCommand::new(crate::pages::NEW_NOTE, t("new-note"), IconName::Mic)
                 .keys(crate::shell::NEW_NOTE_KEYS),
         )
         .chain(self.state.items.iter().map(|note| {
             PaletteCommand::new(
                 format!("open:{}", note.id),
                 page::first_line(&note.text, 60),
-                Phosphor::NotePencil,
+                Lucide::NotebookPen,
             )
             .group(notes.clone())
         }))
@@ -534,7 +534,7 @@ impl NotesPage {
         let blocked = self.record_blocked(cx);
         Button::new("record")
             .primary()
-            .icon(Phosphor::Microphone)
+            .icon(IconName::Mic)
             .label(t("record"))
             .disabled(blocked.is_some())
             .when_some(blocked, Button::tooltip)
@@ -544,7 +544,7 @@ impl NotesPage {
     fn list(&self, two_panes: bool, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
         let search = TextInput::new(&self.search)
-            .prefix(gpui_kit::component::Icon::new(Phosphor::MagnifyingGlass).small())
+            .prefix(gpui_kit::component::Icon::new(IconName::Search).small())
             .cleanable(true);
         let header = if two_panes {
             v_flex()
@@ -687,7 +687,7 @@ impl NotesPage {
                 .gap_2()
                 .items_start()
                 .child(
-                    gpui_kit::component::Icon::new(Phosphor::Microphone)
+                    gpui_kit::component::Icon::new(IconName::Mic)
                         .small()
                         .mt_0p5()
                         .text_color(theme.primary),
@@ -715,7 +715,7 @@ impl NotesPage {
 
     /// No notes yet, and what to do.
     fn empty(&self, cx: &mut Context<Self>) -> EmptyState {
-        EmptyState::new(Phosphor::NotePencil, t("no-notes-yet"))
+        EmptyState::new(Lucide::NotebookPen, t("no-notes-yet"))
             .description(t("each-note-you-record-shows-here"))
             .action(self.record_button(cx).small())
     }
@@ -725,7 +725,7 @@ impl NotesPage {
         let empty = if self.state.loaded && self.state.items.is_empty() {
             self.empty(cx)
         } else {
-            EmptyState::new(Phosphor::NotePencil, t("no-note-open")).description(t("open-a-note"))
+            EmptyState::new(Lucide::NotebookPen, t("no-note-open")).description(t("open-a-note"))
         };
         div()
             .size_full()
@@ -869,7 +869,7 @@ impl NotesPage {
     ) -> impl IntoElement + use<> {
         let blocked = self.record_blocked(cx).filter(|_| !adding_here);
         let dictate = Button::new("dictate-more")
-            .icon(Phosphor::Microphone)
+            .icon(IconName::Mic)
             .label(t("dictate-more"))
             .selected(adding_here)
             .disabled(blocked.is_some())
@@ -883,7 +883,7 @@ impl NotesPage {
         let this = cx.entity().downgrade();
         let more = Button::new("note-more")
             .ghost()
-            .icon(Phosphor::DotsThreeVertical)
+            .icon(IconName::Ellipsis)
             .accessibility_label(t("more-actions"))
             .dropdown_menu_with_anchor(gpui_kit::Anchor::TopRight, move |menu, _, _| {
                 let export = this.clone();
@@ -967,7 +967,7 @@ impl NotesPage {
         let (border, muted) = (cx.theme().border, cx.theme().muted_foreground);
         let stop = Button::new("stop-take")
             .primary()
-            .icon(Phosphor::Stop)
+            .icon(IconName::Square)
             .label(if take.stopping {
                 t("stopping")
             } else {
