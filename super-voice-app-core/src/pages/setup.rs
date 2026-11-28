@@ -23,6 +23,8 @@
 //! `stt.can_type`), read into the window's readiness
 //! ([`crate::pages::readiness::typing_blocked`]); while the card or the page
 //! is on screen, the app asks again every [`CHECK_EVERY`].
+//! Asking macOS is the app's ([`Effect::AskToType`]): macOS decides for the
+//! daemon by the app it runs inside, and lets no background agent prompt.
 //! Whether notifications are on is the app's own bundle's to say, since the
 //! daemon's banners are posted as the app.
 
@@ -198,6 +200,8 @@ pub struct SetupState {
     /// Where typing stands, as last heard: what a change is measured
     /// against.
     typing: Typing,
+    /// The app asked macOS for the permission since it opened.
+    asked: bool,
     /// The path was just copied.
     pub copied: bool,
     /// The Finish setup page was opened on by itself.
@@ -250,6 +254,13 @@ pub enum Input {
 /// What the app should do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
+    /// Ask macOS whether the app may control the computer, letting it show
+    /// its own prompt if not. That puts Super Voice in the pane's list,
+    /// switched off, and the app's switch is the one that counts for the
+    /// daemon: macOS decides for the daemon by the app it is in. The daemon
+    /// can't ask itself, since macOS lets no background agent prompt.
+    /// An [`Effect::Open`] that follows opens the pane once macOS was asked.
+    AskToType,
     /// Open this link: a System Settings pane.
     Open(String),
     /// Put this on the clipboard.
@@ -276,7 +287,11 @@ pub fn update(state: &mut SetupState, input: Input) -> Vec<Effect> {
             }
             (false, Some(false)) => {
                 state.typing = Typing::Blocked;
-                Vec::new()
+                if state.asked {
+                    return Vec::new();
+                }
+                state.asked = true;
+                vec![Effect::AskToType]
             }
             _ => Vec::new(),
         },
@@ -284,7 +299,7 @@ pub fn update(state: &mut SetupState, input: Input) -> Vec<Effect> {
             if state.typing.blocked() {
                 state.typing = Typing::Checking;
             }
-            vec![Effect::Open(TYPING_PANE_URL.to_string())]
+            vec![Effect::AskToType, Effect::Open(TYPING_PANE_URL.to_string())]
         }
         // Read again when the user is back ([`Input::WindowActive`]).
         Input::OpenNotifications => vec![Effect::Open(notifications_url())],
@@ -473,7 +488,7 @@ mod tests {
 
         assert_eq!(
             update(&mut state, Input::OpenPane),
-            [Effect::Open(TYPING_PANE_URL.to_string())]
+            [Effect::AskToType, Effect::Open(TYPING_PANE_URL.to_string())]
         );
         assert_eq!(typed_card(&state), TypedCard::Checking);
 
@@ -502,6 +517,32 @@ mod tests {
 
         update(&mut state, Input::Folded);
         assert_eq!(typed_card(&state), TypedCard::Plain);
+    }
+
+    /// The app asks macOS once after it opens, the first time the daemon
+    /// says it may not type, and again at every Open Device Control. Asking
+    /// is what puts Super Voice in the pane's list.
+    #[test]
+    fn the_app_asks_macos_once_it_hears_typing_is_off() {
+        let mut state = SetupState::default();
+        let blocked = Input::Typing {
+            can_type: Some(false),
+        };
+        assert_eq!(update(&mut state, blocked.clone()), [Effect::AskToType]);
+        assert!(update(&mut state, blocked.clone()).is_empty());
+
+        // Allowed, then off again: not asked again until the button.
+        update(
+            &mut state,
+            Input::Typing {
+                can_type: Some(true),
+            },
+        );
+        assert!(update(&mut state, blocked).is_empty());
+        assert_eq!(
+            update(&mut state, Input::OpenPane).first(),
+            Some(&Effect::AskToType)
+        );
     }
 
     /// Typing that was never blocked shows no Ready card: an app that opens

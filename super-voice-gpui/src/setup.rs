@@ -23,6 +23,9 @@ pub struct Setup {
     fold: Option<Task<()>>,
     /// Sends `CopiedFaded` once Copied has shown long enough.
     fade: Option<Task<()>>,
+    /// Asks macOS whether the app may type: what an `Open` that follows
+    /// waits for.
+    asking: Option<Task<()>>,
 }
 
 impl Setup {
@@ -39,6 +42,7 @@ impl Setup {
             fixed: false,
             fold: None,
             fade: None,
+            asking: None,
         }
     }
 
@@ -52,6 +56,7 @@ impl Setup {
             fixed: true,
             fold: None,
             fade: None,
+            asking: None,
         }
     }
 
@@ -74,7 +79,21 @@ impl Setup {
 
     fn effect(&mut self, effect: Effect, cx: &mut Context<Self>) {
         match effect {
-            Effect::Open(url) => cx.open_url(&url),
+            Effect::AskToType => {
+                let asking = cx.background_executor().spawn(async { ask_to_type() });
+                self.asking = Some(asking);
+            }
+            // Once macOS was asked, so the pane lists Super Voice when it
+            // opens.
+            Effect::Open(url) => match self.asking.take() {
+                Some(asking) => cx
+                    .spawn(async move |this, cx| {
+                        asking.await;
+                        _ = this.update(cx, |_, cx| cx.open_url(&url));
+                    })
+                    .detach(),
+                None => cx.open_url(&url),
+            },
             Effect::Copy(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
             Effect::FadeCopied => self.fade = Some(Self::later(COPIED_FOR, Input::CopiedFaded, cx)),
             Effect::FoldLater => self.fold = Some(Self::later(READY_FOR, Input::Folded, cx)),
@@ -108,6 +127,14 @@ impl Setup {
             _ = this.update(cx, |setup, cx| setup.send(input, cx));
         })
     }
+}
+
+/// Ask macOS whether this app may type into other apps, letting it prompt
+/// and list Super Voice in the pane. Blocking: it waits for macOS. Nothing
+/// to ask elsewhere.
+fn ask_to_type() {
+    #[cfg(target_os = "macos")]
+    crate::macos::ask_to_type();
 }
 
 /// Whether macOS shows this app's notifications, which are the daemon's
