@@ -5,9 +5,9 @@
 //! tells it whether the daemon may type, and asks it what toast a dictation
 //! that went to the clipboard shows.
 
-use gpui_kit::{ClipboardItem, Context, Task};
+use gpui_kit::{Context, Task};
 use super_voice_app_core::pages::setup::{
-    self as page, COPIED_FOR, Effect, Input, Pane, READY_FOR, SetupState,
+    self as page, Effect, Input, Pane, READY_FOR, SetupState,
 };
 
 use crate::effects;
@@ -21,8 +21,6 @@ pub struct Setup {
     fixed: bool,
     /// Sends `Folded` once the Ready card has shown long enough.
     fold: Option<Task<()>>,
-    /// Sends `CopiedFaded` once Copied has shown long enough.
-    fade: Option<Task<()>>,
     /// Asks macOS whether the app may type: what an `Open` that follows
     /// waits for.
     asking: Option<Task<()>>,
@@ -32,16 +30,11 @@ impl Setup {
     /// The setup of this Mac and this install.
     #[must_use]
     pub fn new() -> Self {
-        let daemon_path = std::env::current_exe().map_or_else(
-            |_| page::DAEMON_FILE.to_string(),
-            |exe| page::daemon_beside(&exe),
-        );
         Self {
-            state: SetupState::new(Pane::here(), daemon_path),
+            state: SetupState::new(Pane::here()),
             first_launch: page::first_launch(&super_voice_shared::paths::state_dir()),
             fixed: false,
             fold: None,
-            fade: None,
             asking: None,
         }
     }
@@ -55,7 +48,6 @@ impl Setup {
             first_launch: false,
             fixed: true,
             fold: None,
-            fade: None,
             asking: None,
         }
     }
@@ -94,8 +86,6 @@ impl Setup {
                     .detach(),
                 None => cx.open_url(&url),
             },
-            Effect::Copy(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
-            Effect::FadeCopied => self.fade = Some(Self::later(COPIED_FOR, Input::CopiedFaded, cx)),
             Effect::FoldLater => self.fold = Some(Self::later(READY_FOR, Input::Folded, cx)),
             Effect::ReadNotifications => {
                 cx.spawn(async move |this, cx| {

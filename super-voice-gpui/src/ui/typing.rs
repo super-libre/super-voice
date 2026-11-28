@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! How to let the daemon type into other apps on macOS: why it can't, the
-//! two steps (open the pane; switch the daemon on, or add it by its path),
-//! and the note under them. The Typed card on Speech to text › Models and
+//! two steps (open the pane; switch Super Voice on, or add it), and the note
+//! under them. The Typed card on Speech to text › Models and
 //! the Finish setup page both draw it, from the window's [`Setup`].
 //!
 //! ```ignore
@@ -13,8 +13,7 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Entity, FontWeight, IntoElement, ParentElement as _, SharedString,
-    Styled as _, div, px,
+    AnyElement, App, Entity, FontWeight, IntoElement, ParentElement as _, Styled as _, div, px,
 };
 use super_voice_app_core::pages::setup::{Input, TypedCard};
 
@@ -30,8 +29,7 @@ pub fn why(cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-/// The two steps. `compact` (a narrow window) uses small buttons and lets the
-/// path wrap.
+/// The two steps. `compact` (a narrow window) uses a small button.
 pub fn steps(setup: &Entity<Setup>, compact: bool, cx: &App) -> AnyElement {
     let state = &setup.read(cx).state;
     let pane = t(state.pane.key());
@@ -46,38 +44,6 @@ pub fn steps(setup: &Entity<Setup>, compact: bool, cx: &App) -> AnyElement {
                 setup.update(cx, |setup, cx| setup.send(Input::OpenPane, cx));
             })
     };
-    let copy = {
-        let setup = setup.clone();
-        let (icon, label) = if state.copied {
-            (IconName::Check, t("copied"))
-        } else {
-            (IconName::Copy, t("copy"))
-        };
-        Button::new("copy-daemon-path")
-            .icon(icon)
-            .label(label)
-            .when(compact, Sizable::small)
-            .on_click(move |_, _, cx| {
-                setup.update(cx, |setup, cx| setup.send(Input::CopyPath, cx));
-            })
-    };
-    let theme = cx.theme();
-    let path = div()
-        .flex_1()
-        .min_w_0()
-        .px_2p5()
-        .py_1p5()
-        .rounded(theme.radius)
-        .bg(theme.muted)
-        .font_family(theme.mono_font_family.clone())
-        .map(|path| {
-            if compact {
-                path.text_xs()
-            } else {
-                path.text_sm()
-            }
-        })
-        .child(SharedString::from(state.daemon_path.clone()));
     v_flex()
         .gap_3p5()
         .child(step(
@@ -88,14 +54,7 @@ pub fn steps(setup: &Entity<Setup>, compact: bool, cx: &App) -> AnyElement {
                 .child(h_flex().child(open)),
             cx,
         ))
-        .child(step(
-            2,
-            v_flex()
-                .gap_2()
-                .child(t("typing-switch-on"))
-                .child(h_flex().gap_1p5().items_start().child(path).child(copy)),
-            cx,
-        ))
+        .child(step(2, t("typing-switch-on"), cx))
         .into_any_element()
 }
 

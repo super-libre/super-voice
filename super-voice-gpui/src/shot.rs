@@ -182,10 +182,7 @@ fn shoot(shot: &Shot) -> anyhow::Result<()> {
                 } else {
                     Pane::DeviceControl
                 };
-                let mut state = SetupState::new(
-                    pane,
-                    "/Applications/Super Voice.app/Contents/MacOS/super-voice-daemon".into(),
-                );
+                let mut state = SetupState::new(pane);
                 state.notification_method = Some(NotificationMethod::Auto);
                 let mut setup = Setup::fixed(state);
                 for input in pretend_setup(&scenes) {
@@ -264,7 +261,7 @@ fn pretend_setup(scenes: &[&str]) -> Vec<SetupInput> {
         });
     }
     if scenes.contains(&"typing-checking") {
-        inputs.extend([SetupInput::OpenPane, SetupInput::CopyPath]);
+        inputs.push(SetupInput::OpenPane);
     }
     if scenes.contains(&"typing-ready") {
         inputs.push(SetupInput::Typing {

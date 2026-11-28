@@ -43,9 +43,6 @@ pub const CHECK_EVERY: Duration = Duration::from_secs(2);
 /// step.
 pub const READY_FOR: Duration = Duration::from_secs(5);
 
-/// How long a Copy button says Copied.
-pub const COPIED_FOR: Duration = Duration::from_secs(2);
-
 /// System Settings at the pane that holds the switch. The same link opens
 /// Device Control on macOS 27 and Accessibility before it.
 pub const TYPING_PANE_URL: &str =
@@ -58,21 +55,6 @@ pub const BUNDLE_ID: &str = "org.superlibre.super-voice-app";
 #[must_use]
 pub fn notifications_url() -> String {
     format!("x-apple.systempreferences:com.apple.Notifications-Settings.extension?id={BUNDLE_ID}")
-}
-
-/// The daemon's file name, beside the app in `Contents/MacOS`.
-pub const DAEMON_FILE: &str = "super-voice-daemon";
-
-/// The daemon beside the app `exe`: in the bundle, both are in
-/// `Contents/MacOS`. What the user adds by its path when the daemon isn't in
-/// the pane's list.
-#[must_use]
-pub fn daemon_beside(exe: &Path) -> String {
-    exe.parent()
-        .unwrap_or_else(|| Path::new("/"))
-        .join(DAEMON_FILE)
-        .display()
-        .to_string()
 }
 
 /// The pane in Privacy & Security that holds the switch, by what macOS calls
@@ -190,8 +172,6 @@ impl Typing {
 pub struct SetupState {
     /// The pane's name on this Mac.
     pub pane: Pane,
-    /// Where the daemon is, to add it by its path.
-    pub daemon_path: String,
     /// Whether macOS shows Super Voice's notifications: `None` where the app
     /// can't tell (not macOS, or not run from its bundle).
     pub notifications: Option<bool>,
@@ -202,20 +182,16 @@ pub struct SetupState {
     typing: Typing,
     /// The app asked macOS for the permission since it opened.
     asked: bool,
-    /// The path was just copied.
-    pub copied: bool,
     /// The Finish setup page was opened on by itself.
     opened_on_setup: bool,
 }
 
 impl SetupState {
-    /// The setup of a Mac whose pane is `pane`, with the daemon at
-    /// `daemon_path`; nothing else known yet.
+    /// The setup of a Mac whose pane is `pane`; nothing else known yet.
     #[must_use]
-    pub fn new(pane: Pane, daemon_path: String) -> Self {
+    pub fn new(pane: Pane) -> Self {
         Self {
             pane,
-            daemon_path,
             ..Self::default()
         }
     }
@@ -237,10 +213,6 @@ pub enum Input {
     /// The app's window came to the front: the user may be back from System
     /// Settings, so read again whether macOS shows notifications.
     WindowActive,
-    /// Copy was pressed beside the daemon's path.
-    CopyPath,
-    /// The Copied mark has shown long enough.
-    CopiedFaded,
     /// The Ready card has shown long enough.
     Folded,
     /// Whether macOS shows Super Voice's notifications.
@@ -263,10 +235,6 @@ pub enum Effect {
     AskToType,
     /// Open this link: a System Settings pane.
     Open(String),
-    /// Put this on the clipboard.
-    Copy(String),
-    /// Send [`Input::CopiedFaded`] after [`COPIED_FOR`].
-    FadeCopied,
     /// Send [`Input::Folded`] after [`READY_FOR`].
     FoldLater,
     /// Ask macOS whether it shows Super Voice's notifications, and send
@@ -304,14 +272,6 @@ pub fn update(state: &mut SetupState, input: Input) -> Vec<Effect> {
         // Read again when the user is back ([`Input::WindowActive`]).
         Input::OpenNotifications => vec![Effect::Open(notifications_url())],
         Input::WindowActive => vec![Effect::ReadNotifications],
-        Input::CopyPath => {
-            state.copied = true;
-            vec![Effect::Copy(state.daemon_path.clone()), Effect::FadeCopied]
-        }
-        Input::CopiedFaded => {
-            state.copied = false;
-            Vec::new()
-        }
         Input::Folded => {
             if state.typing == Typing::JustAllowed {
                 state.typing = Typing::Allowed;
@@ -461,16 +421,6 @@ mod tests {
         assert_eq!(Pane::for_darwin("not a version"), Pane::DeviceControl);
     }
 
-    #[test]
-    fn the_daemon_is_beside_the_app() {
-        assert_eq!(
-            daemon_beside(Path::new(
-                "/Applications/Super Voice.app/Contents/MacOS/super-voice-app"
-            )),
-            "/Applications/Super Voice.app/Contents/MacOS/super-voice-daemon"
-        );
-    }
-
     /// The card's life: needs setup, checking after Open Device Control,
     /// Ready once allowed, then the plain step.
     #[test]
@@ -600,26 +550,6 @@ mod tests {
             },
         );
         assert_eq!(typed_card(&state), TypedCard::NeedsSetup);
-    }
-
-    #[test]
-    fn copy_says_copied_for_a_moment() {
-        let mut state = SetupState {
-            daemon_path: "/Applications/Super Voice.app/Contents/MacOS/super-voice-daemon".into(),
-            ..SetupState::default()
-        };
-        assert_eq!(
-            update(&mut state, Input::CopyPath),
-            [
-                Effect::Copy(
-                    "/Applications/Super Voice.app/Contents/MacOS/super-voice-daemon".into()
-                ),
-                Effect::FadeCopied
-            ]
-        );
-        assert!(state.copied);
-        update(&mut state, Input::CopiedFaded);
-        assert!(!state.copied);
     }
 
     /// The row appears while typing is blocked, stays while its page is shown

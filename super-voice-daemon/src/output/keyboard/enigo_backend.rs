@@ -183,19 +183,24 @@ fn restart_instruction() -> String {
 /// recording-failure notice, so it is their whole explanation.
 fn describe_connection_failure(e: NewConError) -> anyhow::Error {
     if matches!(e, NewConError::NoPermission) {
-        let exe = std::env::current_exe().map_or_else(
-            |_| "the Super Voice daemon".to_string(),
-            |p| p.display().to_string(),
-        );
+        // The switch is the app's, not the daemon binary's: macOS decides
+        // for the daemon by the app it runs inside.
         #[cfg(target_os = "macos")]
         return anyhow::anyhow!(
-            "Super Voice is not allowed to control your keyboard. Add {exe} under \
-             System Settings › Privacy & Security › Device Control (called \
-             Accessibility before macOS 27), then {}.",
+            "Super Voice is not allowed to control your keyboard. Switch on Super Voice \
+             under System Settings › Privacy & Security › Device Control (called \
+             Accessibility before macOS 27). If it isn't in the list, press + and choose \
+             Super Voice in Applications. Then {}.",
             restart_instruction()
         );
         #[cfg(not(target_os = "macos"))]
-        return anyhow::anyhow!("{exe} was refused permission to simulate input: {e}");
+        {
+            let exe = std::env::current_exe().map_or_else(
+                |_| "the Super Voice daemon".to_string(),
+                |p| p.display().to_string(),
+            );
+            return anyhow::anyhow!("{exe} was refused permission to simulate input: {e}");
+        }
     }
     anyhow::anyhow!("Failed to initialize enigo: {e}")
 }

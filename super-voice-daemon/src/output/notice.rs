@@ -152,8 +152,8 @@ impl Failure {
 
     /// The keyboard could not be set up, so nothing can be typed. On macOS
     /// this is almost always a missing or stale Accessibility grant, and the
-    /// detail names the exact binary to add — the one part of the fix the
-    /// user cannot work out for themselves, which is why it is carried whole.
+    /// detail says which switch to turn on and how to restart, which is why
+    /// it is carried whole.
     pub(crate) fn keyboard_unavailable(detail: &str) -> Self {
         Self {
             typed: KEYBOARD_UNAVAILABLE,
@@ -290,15 +290,16 @@ mod tests {
         assert_eq!(minutes(std::time::Duration::from_mins(1)), "1 minute");
     }
 
-    /// The remedy is the point of this notice: it names the exact binary to
-    /// add, and how to restart. It has to arrive whole, because the HTTP
+    /// The remedy is the point of this notice: it says which switch to turn
+    /// on, and how to restart. It has to arrive whole, because the HTTP
     /// response cannot carry it — release builds cut error messages at the
     /// first colon to keep local detail off the loopback listener.
     #[test]
     fn a_keyboard_failure_carries_its_remedy_whole() {
-        let remedy = "Super Voice is not allowed to control your keyboard. Add \
-                      /usr/local/bin/super-voice-daemon under Device Control (called \
-                      Accessibility before macOS 27), then restart it: launchctl kickstart -k gui/501/org.superlibre.super-voice.";
+        let remedy = "Super Voice is not allowed to control your keyboard. Switch on Super Voice \
+                      under Device Control (called Accessibility before macOS 27). If it isn't \
+                      in the list, press + and choose Super Voice in Applications. Then \
+                      restart it: launchctl kickstart -k gui/501/org.superlibre.super-voice.";
         let f = Failure::keyboard_unavailable(remedy);
         assert_eq!(f.summary, "Cannot type");
         assert_eq!(f.body, remedy);
