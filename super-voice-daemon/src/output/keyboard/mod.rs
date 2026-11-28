@@ -356,98 +356,59 @@ mod tests {
     }
 }
 
-/// Ask macOS at daemon startup whether the daemon may type, and let the
-/// system's Accessibility prompt appear if it may not: once for each place
-/// the daemon is installed, not at every start.
+/// Say in the log at daemon startup whether macOS lets the daemon type.
 ///
-/// Without Accessibility the daemon transcribes perfectly and types nothing;
-/// its words go to the clipboard instead. The grant cannot be requested
-/// programmatically, only the user can give it in System Settings, so the
-/// most the daemon can do is ask at a moment when asking is not disruptive.
+/// Without Device Control (Accessibility before macOS 27) the daemon
+/// transcribes perfectly and types nothing; its words go to the clipboard
+/// instead. The daemon can't ask for it: it runs as a background agent, and
+/// macOS lets no background agent put up the prompt. macOS decides for the
+/// daemon by the app it runs inside, so the app asks, and the switch to turn
+/// on is Super Voice's.
 ///
-/// Startup is that moment. The alternative, prompting from the recording
-/// path, puts a modal dialog on screen in the instant between the user
-/// finishing a sentence and expecting it to appear, stealing focus from the
-/// window they were dictating into. So this is the one place that prompts,
-/// and [`EnigoBackend::new`] never does.
-///
-/// Once: launchd starts the daemon again at every login and after every
-/// exit, and a prompt at each of those, for a switch the user may have left
-/// off on purpose, is nagging. The first prompt also puts the daemon in the
-/// pane's list, switched off, which is what the app's Typed card then tells
-/// the user to switch on. A daemon at a new path (the app moved, or a second
-/// install) asks again, since its entry is a new one.
+/// Also removes the mark an earlier daemon left when it tried to prompt
+/// itself, which nothing reads any more.
 ///
 /// Advisory only: a `false` here does not stop the daemon. Transcription over
 /// the HTTP protocol works without ever typing anything, and a client that
 /// only reads transcripts has no use for the grant.
 #[cfg(target_os = "macos")]
 pub fn probe_accessibility_permission() {
+    forget_prompted_mark(&super_voice_shared::paths::state_dir());
     if macos::is_trusted() {
         debug!("Accessibility permission granted; write mode can type");
-        return;
-    }
-    let exe = std::env::current_exe().map_or_else(|_| String::new(), |p| p.display().to_string());
-    let mark = super_voice_shared::paths::state_dir().join(PROMPTED_MARK);
-    if !first_prompt(&mark, &exe) {
+    } else {
         log::warn!(
-            "Write mode will not be able to type until {exe} is switched on in System \
+            "Write mode will not be able to type until Super Voice is switched on in System \
              Settings › Privacy & Security › Device Control (Accessibility before macOS 27); \
-             macOS was asked once already, so it is not asked again (dictations go to the \
-             clipboard meanwhile)"
+             the app asks macOS to list it there (dictations go to the clipboard meanwhile)"
         );
-        return;
-    }
-    match EnigoBackend::probe_accessibility_permission() {
-        Ok(()) => debug!("Accessibility permission granted; write mode can type"),
-        Err(e) => log::warn!(
-            "Write mode will not be able to type: {e} \
-             (transcription itself is unaffected)"
-        ),
     }
 }
 
-/// The file in the state directory that says which daemon already asked
-/// macOS for Accessibility: its path.
+/// Remove the `accessibility-prompted` mark from the state folder `dir`: an
+/// earlier daemon left it there to prompt only once. Not there is fine.
 #[cfg(any(target_os = "macos", test))]
-const PROMPTED_MARK: &str = "accessibility-prompted";
-
-/// Whether the daemon at `exe` should put the Accessibility prompt up: not
-/// when `mark` says it did already. Leaves the mark when it should, so the
-/// next start doesn't. A mark that can't be written costs a prompt at the
-/// next start, nothing more.
-#[cfg(any(target_os = "macos", test))]
-fn first_prompt(mark: &std::path::Path, exe: &str) -> bool {
-    if std::fs::read_to_string(mark).is_ok_and(|asked| asked.trim() == exe) {
-        return false;
+fn forget_prompted_mark(dir: &std::path::Path) {
+    match std::fs::remove_file(dir.join("accessibility-prompted")) {
+        Ok(()) => debug!("Removed the old accessibility-prompted mark"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => debug!("Could not remove the old accessibility-prompted mark: {e}"),
     }
-    let left = mark
-        .parent()
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| std::fs::write(mark, exe));
-    if let Err(e) = left {
-        log::warn!("Could not note that macOS was asked for Accessibility: {e}");
-    }
-    true
 }
 
 #[cfg(test)]
 mod prompt_tests {
-    use super::{PROMPTED_MARK, first_prompt};
+    use super::forget_prompted_mark;
 
-    /// The prompt comes up once for a daemon, and again for one at a new
-    /// path, whose entry in the pane is a new one.
+    /// The mark an earlier daemon left is removed, and its absence is fine.
     #[test]
-    fn the_accessibility_prompt_comes_up_once_per_daemon() {
+    fn the_old_prompted_mark_is_removed() {
         let dir = tempfile::tempdir().expect("a folder");
-        let mark = dir.path().join("state").join(PROMPTED_MARK);
-        let daemon = "/Applications/Super Voice.app/Contents/MacOS/super-voice-daemon";
-        assert!(first_prompt(&mark, daemon));
-        assert!(!first_prompt(&mark, daemon));
-        assert!(first_prompt(
-            &mark,
-            "/Users/me/Super Voice.app/Contents/MacOS/super-voice-daemon"
-        ));
+        let mark = dir.path().join("accessibility-prompted");
+        std::fs::write(&mark, "/Applications/Super Voice.app").expect("a mark");
+        forget_prompted_mark(dir.path());
+        assert!(!mark.exists());
+        forget_prompted_mark(dir.path());
     }
 }
 

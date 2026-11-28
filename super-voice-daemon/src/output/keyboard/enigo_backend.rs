@@ -17,29 +17,12 @@ impl EnigoBackend {
     /// exposing `zwp_virtual_keyboard_manager_v1` on Linux, no Accessibility
     /// grant or no window server on macOS.
     pub fn new() -> Result<Self> {
-        // `false`: never put the macOS Accessibility prompt on screen from
-        // here. This runs on the recording path, where the user has just
-        // finished speaking and is waiting for text — a modal dialog stealing
-        // focus at that moment lands in whatever window they were dictating
-        // into. The prompt belongs at startup, where nothing is in flight;
-        // that is what `probe_accessibility_permission` is for. On Linux the
-        // flag is ignored (enigo documents it as macOS-only).
-        Self::build(false)
-    }
-
-    /// Open a connection purely to find out whether macOS will allow it,
-    /// letting the system's Accessibility prompt appear if it will not.
-    ///
-    /// # Errors
-    /// As [`Self::new`].
-    #[cfg(target_os = "macos")]
-    pub fn probe_accessibility_permission() -> Result<()> {
-        Self::build(true).map(drop)
-    }
-
-    fn build(open_prompt_to_get_permissions: bool) -> Result<Self> {
+        // Never ask for the macOS Accessibility prompt: the daemon runs as a
+        // background agent, which macOS doesn't let prompt. The app asks for
+        // it instead. On Linux the flag is ignored (enigo documents it as
+        // macOS-only).
         let settings = Settings {
-            open_prompt_to_get_permissions,
+            open_prompt_to_get_permissions: false,
             ..Settings::default()
         };
         let enigo = Enigo::new(&settings).map_err(describe_connection_failure)?;
